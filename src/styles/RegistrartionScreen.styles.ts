@@ -1,0 +1,124 @@
+import {StyleSheet} from 'react-native';
+
+export const NAVY = '#0E2A5E';
+export const GRAY = '#6B7280';
+export const BORDER = '#E2E4E9';
+export const GREEN = '#1E8F5F';
+
+export const styles = StyleSheet.create({
+  safeArea: {flex: 1, backgroundColor: '#fff'},
+  container: {padding: 20, paddingBottom: 40},
+
+  header: {alignItems: 'center', marginBottom: 12},
+  logoBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: NAVY,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  logoText: {color: '#fff', fontWeight: 'bold', fontSize: 13},
+  brand: {color: NAVY, fontWeight: '700', fontSize: 15, letterSpacing: 1},
+
+  title: {fontSize: 20, fontWeight: '700', color: '#111', textAlign: 'center'},
+  subtitle: {fontSize: 12, color: GRAY, textAlign: 'center', marginBottom: 20},
+
+  stepperRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingHorizontal: 4},
+  stepItem: {alignItems: 'center', width: 70},
+  stepCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#F1F2F5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  stepCircleActive: {backgroundColor: NAVY},
+  stepCircleDone: {backgroundColor: GREEN},
+  stepNum: {fontSize: 12, color: GRAY, fontWeight: '600'},
+  stepNumActive: {color: '#fff'},
+  stepLabel: {fontSize: 9, color: GRAY, textAlign: 'center'},
+  stepLine: {flex: 1, height: 1, backgroundColor: BORDER, marginBottom: 16},
+  thumb: {width: 40, height: 40, borderRadius: 8},
+
+  card: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 20,
+  },
+
+  label: {fontSize: 12, color: GRAY, marginBottom: 6, marginTop: 10},
+  input: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    height: 46,
+    fontSize: 14,
+    color: '#111',
+  },
+  row3: {flexDirection: 'row', gap: 12},
+  col: {flex: 1},
+
+  uploadHint: {fontSize: 12, color: GRAY, marginBottom: 14},
+  uploadRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 10,
+  },
+  uploadTextWrap: {flex: 1},
+  uploadRowDone: {borderColor: GREEN, backgroundColor: '#EAF7F0'},
+  uploadIcon: {fontSize: 18},
+  uploadLabel: {fontSize: 13, fontWeight: '600', color: '#111'},
+  uploadSub: {fontSize: 11, color: GRAY, marginTop: 2},
+
+  reviewHeader: {flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 14},
+  reviewCheck: {fontSize: 16},
+  reviewTitle: {fontSize: 15, fontWeight: '700', color: '#111'},
+  reviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F5',
+  },
+  reviewLabel: {fontSize: 12, color: GRAY},
+  reviewValue: {fontSize: 12, color: '#111', fontWeight: '600', maxWidth: '60%', textAlign: 'right'},
+
+  agreeRow: {flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16},
+  checkbox: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxChecked: {backgroundColor: NAVY, borderColor: NAVY},
+  checkMark: {color: '#fff', fontSize: 12, fontWeight: '700'},
+  agreeText: {fontSize: 12, color: GRAY},
+  agreeLink: {color: NAVY, fontWeight: '700'},
+
+  navRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
+  prevBtn: {paddingVertical: 12, paddingHorizontal: 4},
+  prevBtnText: {fontSize: 13, color: GRAY, fontWeight: '600'},
+  nextBtn: {
+    backgroundColor: NAVY,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  nextBtnDisabled: {opacity: 0.4},
+  nextBtnText: {color: '#fff', fontWeight: '700', fontSize: 13},
+});

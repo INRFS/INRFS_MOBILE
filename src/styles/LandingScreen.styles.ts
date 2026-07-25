@@ -1,0 +1,70 @@
+import {StyleSheet} from 'react-native';
+
+export const NAVY = '#0E2A5E';
+
+export const styles = StyleSheet.create({
+  safeArea: {flex: 1, backgroundColor: NAVY},
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 40,
+    alignItems: 'center',
+  },
+  logoBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  logoText: {color: NAVY, fontWeight: 'bold', fontSize: 15},
+  brand: {color: '#fff', fontWeight: '600', fontSize: 16, letterSpacing: 1, marginBottom: 28},
+  heroPlaceholder: {
+    width: '100%',
+    height: 120,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 14,
+    marginBottom: 24,
+  },
+  title: {
+    color: '#fff',
+    fontSize: 22,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 30,
+    marginBottom: 8,
+  },
+  subtitle: {
+    color: '#9FB0D6',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  primaryBtn: {
+    width: '100%',
+    backgroundColor: '#fff',
+    height: 48,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  primaryBtnText: {color: NAVY, fontWeight: '700', fontSize: 15},
+  secondaryBtn: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+    height: 48,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  secondaryBtnText: {color: '#fff', fontWeight: '600', fontSize: 15},
+  trustRow: {flexDirection: 'row', gap: 16},
+  trustText: {color: '#9FB0D6', fontSize: 11},
+});
