@@ -17,11 +17,23 @@ const LoginScreen = ({navigation}: any) => {
   const [mobile, setMobile] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   const handleSubmit = () => {
     if (selectedRole === 'investor') {
+      if (!investorId.trim() || !mobile.trim()) {
+        setErrorMsg('Please enter both Investor ID and mobile number.');
+        return;
+      }
+      setErrorMsg('');
       console.log('Send OTP for', investorId, mobile);
+      navigation.navigate('OtpVerification', {investorId, mobile});
     } else {
+      if (!username.trim() || !password.trim()) {
+        setErrorMsg('Please enter both username and password.');
+        return;
+      }
+      setErrorMsg('');
       console.log('Login as', selectedRole, username, password);
     }
   };
@@ -44,7 +56,10 @@ const LoginScreen = ({navigation}: any) => {
               <TouchableOpacity
                 key={role.key}
                 style={[styles.roleCard, active && styles.roleCardActive]}
-                onPress={() => setSelectedRole(role.key)}>
+                onPress={() => {
+                  setSelectedRole(role.key);
+                  setErrorMsg('');
+                }}>
                 <Text style={styles.roleIcon}>{role.icon}</Text>
                 <Text style={[styles.roleLabel, active && styles.roleLabelActive]}>
                   {role.label}
@@ -73,6 +88,13 @@ const LoginScreen = ({navigation}: any) => {
               value={mobile}
               onChangeText={setMobile}
             />
+
+            {errorMsg ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{errorMsg}</Text>
+              </View>
+            ) : null}
+
             <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
               <Text style={styles.submitBtnText}>Send OTP  →</Text>
             </TouchableOpacity>
@@ -101,6 +123,13 @@ const LoginScreen = ({navigation}: any) => {
               value={password}
               onChangeText={setPassword}
             />
+
+            {errorMsg ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{errorMsg}</Text>
+              </View>
+            ) : null}
+
             <TouchableOpacity style={styles.submitBtn} onPress={handleSubmit}>
               <Text style={styles.submitBtnText}>Login to Dashboard  →</Text>
             </TouchableOpacity>

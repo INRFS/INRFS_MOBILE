@@ -48,6 +48,21 @@ export const styles = StyleSheet.create({
     marginBottom: 14,
   },
 
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12.5,
+    fontWeight: '500',
+  },
+
   submitBtn: {
     backgroundColor: NAVY,
     height: 48,
