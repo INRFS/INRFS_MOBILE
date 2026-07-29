@@ -6,25 +6,10 @@ import {
   TouchableOpacity,
   SafeAreaView,
   ScrollView,
-  Image,
-  Alert,
-  PermissionsAndroid,
-  Platform,
 } from 'react-native';
-import {launchImageLibrary} from 'react-native-image-picker';
 import {styles} from '../styles/RegistrartionScreen.styles';
 
-type DocKey = 'aadhaarFront' | 'aadhaarBack' | 'pan' | 'photo' | 'passbook';
-
-const docs: {key: DocKey; label: string}[] = [
-  {key: 'aadhaarFront', label: 'Aadhaar card (front)'},
-  {key: 'aadhaarBack', label: 'Aadhaar card (back)'},
-  {key: 'pan', label: 'PAN card'},
-  {key: 'photo', label: 'Passport photo'},
-  {key: 'passbook', label: 'Bank passbook'},
-];
-
-const steps = ['Personal info', 'Upload documents', 'Review & submit'];
+const steps = ['Personal info', 'Review & submit'];
 
 const RegistrationScreen = ({navigation}: any) => {
   const [step, setStep] = useState(1);
@@ -42,66 +27,10 @@ const RegistrationScreen = ({navigation}: any) => {
     pin: '',
   });
 
-  type UploadedFile = {uri: string; fileName: string} | null;
-
-  const [uploaded, setUploaded] = useState<Record<DocKey, UploadedFile>>({
-    aadhaarFront: null,
-    aadhaarBack: null,
-    pan: null,
-    photo: null,
-    passbook: null,
-  });
-
   const [agreed, setAgreed] = useState(false);
 
   const update = (key: keyof typeof form, value: string) =>
     setForm(prev => ({...prev, [key]: value}));
-
-  const requestGalleryPermission = async () => {
-    if (Platform.OS !== 'android') return true;
-    const permission =
-      Platform.Version >= 33
-        ? PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES
-        : PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE;
-    const granted = await PermissionsAndroid.request(permission);
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
-  };
-
- const pickImage = async (key: DocKey) => {
-  try {
-    Alert.alert('Debug', 'pickImage called for ' + key);
-
-    const hasPermission = await requestGalleryPermission();
-    Alert.alert('Debug', 'Permission result: ' + hasPermission);
-
-    if (!hasPermission) {
-      Alert.alert('Permission required', 'Please allow gallery access to upload documents.');
-      return;
-    }
-
-    launchImageLibrary(
-      {mediaType: 'photo', selectionLimit: 1, quality: 0.8},
-      response => {
-        Alert.alert('Debug', 'Picker response: ' + JSON.stringify(response).slice(0, 200));
-
-        if (response.didCancel) return;
-        if (response.errorCode) {
-          Alert.alert('Picker error', response.errorMessage || response.errorCode);
-          return;
-        }
-        const asset = response.assets?.[0];
-        if (asset?.uri) {
-          setUploaded(prev => ({
-            ...prev,
-            [key]: {uri: asset.uri!, fileName: asset.fileName || 'image.jpg'},
-          }));
-        }
-      },
-    );
-  } catch (err: any) {
-    Alert.alert('Caught error', err?.message || String(err));
-  }
-};
 
   const handleSubmit = () => {
     if (!agreed) return;
@@ -249,40 +178,6 @@ const RegistrationScreen = ({navigation}: any) => {
 
         {step === 2 && (
           <View style={styles.card}>
-            {/* <TouchableOpacity
-  style={{padding: 16, backgroundColor: '#eee', marginBottom: 10, borderRadius: 10}}
-  onPress={() => Alert.alert('Test', 'Button works!')}>
-  <Text>Tap me to test</Text>
-</TouchableOpacity> */}
-            <Text style={styles.uploadHint}>
-              Upload clear, legible scans. Max 5MB each.
-            </Text>
-            {docs.map(doc => {
-              const file = uploaded[doc.key];
-              return (
-                <TouchableOpacity
-                  key={doc.key}
-                  style={[styles.uploadRow, file && styles.uploadRowDone]}
-                  onPress={() => pickImage(doc.key)}>
-                  {file ? (
-                    <Image source={{uri: file.uri}} style={styles.thumb} />
-                  ) : (
-                    <Text style={styles.uploadIcon}>📤</Text>
-                  )}
-                 <View style={styles.uploadTextWrap}>
-  <Text style={styles.uploadLabel}>{doc.label}</Text>
-  <Text style={styles.uploadSub} numberOfLines={1}>
-    {file ? file.fileName : 'Tap to choose from gallery — PNG, JPG'}
-  </Text>
-</View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
-
-        {step === 3 && (
-          <View style={styles.card}>
             <View style={styles.reviewHeader}>
               <Text style={styles.reviewCheck}>✅</Text>
               <Text style={styles.reviewTitle}>Review your application</Text>
@@ -330,7 +225,7 @@ const RegistrationScreen = ({navigation}: any) => {
             </TouchableOpacity>
           )}
 
-          {step < 3 ? (
+          {step < 2 ? (
             <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(step + 1)}>
               <Text style={styles.nextBtnText}>Next step →</Text>
             </TouchableOpacity>
