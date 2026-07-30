@@ -1,7 +1,7 @@
 import React, {useEffect} from 'react';
 import {View, Text} from 'react-native';
 import {styles} from '../styles/SplashScreen.styles';
-
+// import {SafeAreaView} from 'react-native-safe-area-context';
 const SplashScreen = ({navigation}: any) => {
   useEffect(() => {
     const timer = setTimeout(() => {

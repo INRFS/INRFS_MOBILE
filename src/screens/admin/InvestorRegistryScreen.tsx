@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, SafeAreaView, TouchableOpacity, TextInput} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity, TextInput} from 'react-native';
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const tierIcon = (inv: Investor) => (inv.type === 'institution' ? '🏢' : '👤');
 
 const InvestorRegistryScreen = ({navigation}: any) => {
@@ -24,7 +24,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Investor Registry</Text>
+        <Text style={styles.title}>Investor Management</Text>
         <Text style={styles.subtitle}>Manage and monitor {investors.length.toLocaleString()} registered entities.</Text>
 
         <View style={styles.searchRow}>
@@ -88,7 +88,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
             <View style={styles.statsRow}>
               <View>
-                <Text style={styles.statLabel}>Total Invested</Text>
+                <Text style={styles.statLabel}>Investment</Text>
                 <Text style={styles.statValue}>
                   ${inv.totalInvested.toLocaleString(undefined, {minimumFractionDigits: 2})}
                 </Text>

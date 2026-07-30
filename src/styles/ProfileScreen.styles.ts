@@ -95,7 +95,13 @@ export const styles = StyleSheet.create({
     borderRadius: 14,
   },
   downloadBtnText: {color: '#fff', fontSize: 14, fontWeight: '700'},
-
+headerActions: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+settingsBtn: {
+  marginLeft: 14,
+},
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',

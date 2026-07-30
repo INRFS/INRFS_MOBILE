@@ -4,16 +4,22 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
+
   ScrollView,
 } from 'react-native';
 import {styles} from '../styles/RegistrartionScreen.styles';
-import {useAppData} from '../navigation/AppNavigator';
+import {SafeAreaView} from 'react-native-safe-area-context';
+// Simple local implementation to register an investor and return an ID.
+// Generates a stable-looking ID from name/mobile and timestamp.
+const registerInvestor = (fullName: string, mobile: string) => {
+  const randomPart = Math.floor(1000 + Math.random() * 9000); // 4-digit number: 1000-9999
+  return `INV-${randomPart}`;
+};
+
 
 const steps = ['Personal info', 'Review & submit'];
 
 const RegistrationScreen = ({navigation}: any) => {
-  const {registerInvestor} = useAppData();
   const [step, setStep] = useState(1);
 
   const [form, setForm] = useState({

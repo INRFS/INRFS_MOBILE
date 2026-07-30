@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, SafeAreaView, TouchableOpacity, Image, Alert} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-native';
 import {useAppData, KycRequest, DocStatus} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/KycApprovalsScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 type FilterKey = 'pending' | 'flagged' | 'archive';
 const filters: {key: FilterKey; label: string}[] = [
   {key: 'pending', label: 'Pending'},

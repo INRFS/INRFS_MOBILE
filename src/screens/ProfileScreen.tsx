@@ -1,9 +1,9 @@
 import React from 'react';
-import {View, Text, ScrollView, TouchableOpacity, Image} from 'react-native';
+import {View, Text, ScrollView, TouchableOpacity,Alert, Image} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/ProfileScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 // Replace this with real investor data (from context/API) once available.
 const investor = {
   name: 'Arjun Sharma',
@@ -34,15 +34,20 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
     <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Icon name="arrow-left" size={22} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Profile</Text>
-          <TouchableOpacity>
-            <Text style={styles.editText}>EDIT</Text>
-          </TouchableOpacity>
-        </View>
+       <View style={styles.header}>
+  <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+    <Icon name="arrow-left" size={22} color="#fff" />
+  </TouchableOpacity>
+  <Text style={styles.headerTitle}>My Profile</Text>
+  <View style={styles.headerActions}>
+    <TouchableOpacity onPress={() => Alert.alert('Edit Profile', 'Wire this up once the edit-profile screen is ready.')}>
+      <Text style={styles.editText}>EDIT</Text>
+    </TouchableOpacity>
+    <TouchableOpacity onPress={() => navigation.navigate('InvestorSettings')} style={styles.settingsBtn}>
+      <Icon name="cog-outline" size={20} color="#fff" />
+    </TouchableOpacity>
+  </View>
+</View>
 
         {/* Avatar block */}
         <View style={styles.avatarBlock}>
@@ -136,10 +141,10 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
         </View>
 
         {/* Actions */}
-        <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.85}>
+        {/* <TouchableOpacity style={styles.downloadBtn} activeOpacity={0.85}>
           <Icon name="file-document-outline" size={18} color="#fff" />
           <Text style={styles.downloadBtnText}>Download KYC Documents</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
 
         <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={handleLogout}>
           <Icon name="logout" size={18} color="#DC2626" />

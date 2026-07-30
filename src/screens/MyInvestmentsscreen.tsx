@@ -4,7 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
+ 
   ScrollView,
   Image,
   Share,
@@ -12,7 +12,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/MyInvestmentsScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 // ---------------------------------------------------------------------------
 // Shared investments data — lives here so both MyInvestmentsScreen and
 // InvestNowScreen can use it, without a separate store file/screen.

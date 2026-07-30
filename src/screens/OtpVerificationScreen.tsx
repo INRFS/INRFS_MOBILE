@@ -4,14 +4,14 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
+ 
   Alert,
   NativeSyntheticEvent,
   TextInputKeyPressEventData,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {styles} from '../styles/OtpVerificationScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const OTP_LENGTH = 6;
 const RESEND_SECONDS = 52;
 

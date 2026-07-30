@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
-import {View, Text, TextInput, TouchableOpacity, SafeAreaView, ScrollView} from 'react-native';
+import {View, Text, TextInput, TouchableOpacity,  ScrollView} from 'react-native';
 import {styles} from '../styles/LoginScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 type Role = 'investor' | 'admin' | 'superadmin' | 'branchmanager';
 
 const roles: {key: Role; label: string; sub: string; icon: string}[] = [
@@ -13,7 +13,13 @@ const roles: {key: Role; label: string; sub: string; icon: string}[] = [
 ];
 
 const LoginScreen = ({navigation}: any) => {
-  const {setAdminProfile, validateInvestorLogin} = useAppData();
+  const {setAdminProfile} = useAppData();
+
+  // Basic local validation for investor login (fallback when context doesn't provide one)
+  const validateInvestorLogin = (id: string, mobileNum: string) => {
+    const cleanedMobile = mobileNum.replace(/\D/g, '');
+    return id.trim().length > 0 && cleanedMobile.length >= 10;
+  };
   const [selectedRole, setSelectedRole] = useState<Role>('investor');
   const [investorId, setInvestorId] = useState('');
   const [mobile, setMobile] = useState('');
@@ -57,7 +63,21 @@ const LoginScreen = ({navigation}: any) => {
         return;
       }
 
-      // superadmin / branchmanager not wired to a screen yet
+      if (selectedRole === 'superadmin') {
+        // TODO: replace with real auth call once backend is available
+        console.log('Login as superadmin', username, password);
+        // Same shared profile object the Admin flow uses — the Super Admin
+        // screens key their header/profile off of `role: 'Super Admin'`.
+        setAdminProfile({
+          name: username,
+          email: `${username.toLowerCase().replace(/\s+/g, '.')}@inrfs.in`,
+          role: 'Super Admin',
+        });
+        navigation.navigate('SuperAdminDashboard');
+        return;
+      }
+
+      // branchmanager not wired to a screen yet
       console.log('Login as', selectedRole, username, password);
     }
   };

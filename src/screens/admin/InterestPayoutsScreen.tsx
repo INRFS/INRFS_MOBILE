@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, SafeAreaView, TouchableOpacity, TextInput, Alert} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity, TextInput, Alert} from 'react-native';
 import {useAppData, Payout} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InterestPayoutsScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const formatINR = (n: number) => '₹' + n.toLocaleString('en-IN', {minimumFractionDigits: 2});
 
 const InterestPayoutsScreen = ({navigation}: any) => {
