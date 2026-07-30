@@ -3,7 +3,9 @@ import {View, Text, TouchableOpacity} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {styles} from './BottomTabBar.styles';
 
-export type TabKey = 'Home' | 'Invest' | 'Portfolio' | 'Settings';
+// export type TabKey = 'Home' | 'Invest' | 'Portfolio' | 'Settings';
+export type TabKey = 'Home' | 'Invest' | 'Portfolio' | 'Profile';
+
 
 // NOTE: 'Home' and 'Portfolio' both point at InvestorDashboard for now since
 // this scope only covers Login -> OTP -> Dashboard -> Invest. Wire these to
@@ -13,7 +15,7 @@ const tabs: {key: TabKey; label: string; icon: string; route: string | null}[] =
   {key: 'Home', label: 'Home', icon: 'home-outline', route: 'InvestorDashboard'},
   {key: 'Invest', label: 'Invest', icon: 'wallet-outline', route: 'InvestNow'},
   {key: 'Portfolio', label: 'Portfolio', icon: 'chart-donut', route: 'InvestorDashboard'},
-  {key: 'Settings', label: 'Settings', icon: 'cog-outline', route: null},
+  {key: 'Profile', label: 'Profile', icon: 'account-outline', route: 'Profile'},
 ];
 
 const BottomTabBar = ({active, navigation}: {active: TabKey; navigation: any}) => {
