@@ -8,10 +8,12 @@ import {
   ScrollView,
 } from 'react-native';
 import {styles} from '../styles/RegistrartionScreen.styles';
+import {useAppData} from '../navigation/AppNavigator';
 
 const steps = ['Personal info', 'Review & submit'];
 
 const RegistrationScreen = ({navigation}: any) => {
+  const {registerInvestor} = useAppData();
   const [step, setStep] = useState(1);
 
   const [form, setForm] = useState({
@@ -28,13 +30,15 @@ const RegistrationScreen = ({navigation}: any) => {
   });
 
   const [agreed, setAgreed] = useState(false);
+  const [generatedId, setGeneratedId] = useState('');
 
   const update = (key: keyof typeof form, value: string) =>
     setForm(prev => ({...prev, [key]: value}));
 
   const handleSubmit = () => {
     if (!agreed) return;
-    navigation.replace('Login');
+    const newId = registerInvestor(form.fullName, form.mobile);
+    setGeneratedId(newId);
   };
 
   return (
@@ -125,7 +129,7 @@ const RegistrationScreen = ({navigation}: any) => {
               value={form.aadhaar}
               onChangeText={v => update('aadhaar', v)}
             />
-            <Text style={styles.label}>PAN number *</Text>
+            {/* <Text style={styles.label}>PAN number *</Text>
             <TextInput
               style={styles.input}
               placeholder="ABCDE1234F"
@@ -133,7 +137,7 @@ const RegistrationScreen = ({navigation}: any) => {
               autoCapitalize="characters"
               value={form.pan}
               onChangeText={v => update('pan', v)}
-            />
+            /> */}
             <Text style={styles.label}>Address</Text>
             <TextInput
               style={styles.input}
@@ -186,7 +190,7 @@ const RegistrationScreen = ({navigation}: any) => {
               ['Full name', form.fullName || '—'],
               ['Mobile', form.mobile || '—'],
               ['Email', form.email || '—'],
-              ['PAN', form.pan || '—'],
+              // ['PAN', form.pan || '—'],
               ['Aadhaar', form.aadhaar || '—'],
               [
                 'Address',
@@ -214,30 +218,55 @@ const RegistrationScreen = ({navigation}: any) => {
           </View>
         )}
 
-        <View style={styles.navRow}>
-          {step > 1 ? (
-            <TouchableOpacity style={styles.prevBtn} onPress={() => setStep(step - 1)}>
-              <Text style={styles.prevBtnText}>← Previous</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.prevBtn} onPress={() => navigation.goBack()}>
-              <Text style={styles.prevBtnText}>← Back to login</Text>
-            </TouchableOpacity>
-          )}
-
-          {step < 2 ? (
-            <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(step + 1)}>
-              <Text style={styles.nextBtnText}>Next step →</Text>
-            </TouchableOpacity>
-          ) : (
+        {generatedId ? (
+          <View style={styles.card}>
+            <View style={styles.reviewHeader}>
+              <Text style={styles.reviewCheck}>✅</Text>
+              <Text style={styles.reviewTitle}>Registration successful</Text>
+            </View>
+            <Text style={styles.label}>Your Investor ID</Text>
+            <View style={styles.input}>
+              <Text style={{fontSize: 18, fontWeight: '700', color: '#111827'}}>
+                {generatedId}
+              </Text>
+            </View>
+            <Text style={{color: '#6B7280', fontSize: 12, marginTop: 8}}>
+              Save this ID — you'll need it along with your registered mobile number to log in.
+            </Text>
             <TouchableOpacity
-              style={[styles.nextBtn, !agreed && styles.nextBtnDisabled]}
-              disabled={!agreed}
-              onPress={handleSubmit}>
-              <Text style={styles.nextBtnText}>Submit application →</Text>
+              style={[styles.nextBtn, {marginTop: 16}]}
+              onPress={() => navigation.replace('Login')}>
+              <Text style={styles.nextBtnText}>Go to Login →</Text>
             </TouchableOpacity>
-          )}
-        </View>
+          </View>
+        ) : null}
+
+        {!generatedId && (
+          <View style={styles.navRow}>
+            {step > 1 ? (
+              <TouchableOpacity style={styles.prevBtn} onPress={() => setStep(step - 1)}>
+                <Text style={styles.prevBtnText}>← Previous</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity style={styles.prevBtn} onPress={() => navigation.goBack()}>
+                <Text style={styles.prevBtnText}>← Back to login</Text>
+              </TouchableOpacity>
+            )}
+
+            {step < 2 ? (
+              <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(step + 1)}>
+                <Text style={styles.nextBtnText}>Next step →</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={[styles.nextBtn, !agreed && styles.nextBtnDisabled]}
+                disabled={!agreed}
+                onPress={handleSubmit}>
+                <Text style={styles.nextBtnText}>Submit application →</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
       </ScrollView>
     </SafeAreaView>
   );

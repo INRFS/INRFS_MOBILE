@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {View, Text, TextInput, TouchableOpacity, SafeAreaView, ScrollView} from 'react-native';
 import {styles} from '../styles/LoginScreen.styles';
+import {useAppData} from '../navigation/AppNavigator';
 
 type Role = 'investor' | 'admin' | 'superadmin' | 'branchmanager';
 
@@ -12,6 +13,7 @@ const roles: {key: Role; label: string; sub: string; icon: string}[] = [
 ];
 
 const LoginScreen = ({navigation}: any) => {
+  const {setAdminProfile, validateInvestorLogin} = useAppData();
   const [selectedRole, setSelectedRole] = useState<Role>('investor');
   const [investorId, setInvestorId] = useState('');
   const [mobile, setMobile] = useState('');
@@ -25,6 +27,12 @@ const LoginScreen = ({navigation}: any) => {
         setErrorMsg('Please enter both Investor ID and mobile number.');
         return;
       }
+
+      if (!validateInvestorLogin(investorId, mobile)) {
+        setErrorMsg('Invalid credentials. Please check your Investor ID and mobile number.');
+        return;
+      }
+
       setErrorMsg('');
       console.log('Send OTP for', investorId, mobile);
       navigation.navigate('OtpVerification', {investorId, mobile});
@@ -34,6 +42,22 @@ const LoginScreen = ({navigation}: any) => {
         return;
       }
       setErrorMsg('');
+
+      if (selectedRole === 'admin') {
+        // TODO: replace with real auth call once backend is available
+        console.log('Login as admin', username, password);
+        // NOTE: name/email are placeholders derived from the entered username
+        // until a real backend returns the logged-in admin's actual profile.
+        setAdminProfile({
+          name: username,
+          email: `${username.toLowerCase().replace(/\s+/g, '.')}@inrfs.in`,
+          role: 'Admin',
+        });
+        navigation.navigate('AdminDashboard');
+        return;
+      }
+
+      // superadmin / branchmanager not wired to a screen yet
       console.log('Login as', selectedRole, username, password);
     }
   };
