@@ -1,8 +1,8 @@
 import React from 'react';
-import {View, Text, ScrollView, SafeAreaView, TouchableOpacity, Image, Alert} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-native';
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminProfileScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const AdminProfileScreen = ({navigation}: any) => {
   const {adminProfile} = useAppData();
 
@@ -44,28 +44,50 @@ const AdminProfileScreen = ({navigation}: any) => {
           <Text style={styles.roleBadgeText}>🛡  {adminProfile.role}</Text>
         </View>
 
-        <View style={styles.actionsRow}>
+       <View style={styles.actionsRow}>
           <TouchableOpacity style={styles.actionCard}>
             <View style={styles.actionIconWrap}>
               <Text>✎</Text>
             </View>
             <Text style={styles.actionLabel}>Edit Profile</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.actionCard}>
+          <TouchableOpacity
+            style={styles.actionCard}
+            onPress={() => navigation.navigate('AdminSettings')}>
             <View style={[styles.actionIconWrap, {backgroundColor: '#DBEAFE'}]}>
-              <Text>🛡</Text>
+              <Text>⚙️</Text>
             </View>
-            <Text style={styles.actionLabel}>Security</Text>
+            <Text style={styles.actionLabel}>Settings</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={styles.sectionTitle}>Personal Information</Text>
         <View style={styles.infoCard}>
           <View style={styles.infoRow}>
+            <Text style={styles.infoIcon}>🧑</Text>
+            <View style={styles.infoTextWrap}>
+              <Text style={styles.infoLabel}>FULL NAME</Text>
+              <Text style={styles.infoValue}>{adminProfile.name}</Text>
+            </View>
+          </View>
+
+          <View style={styles.infoDivider} />
+
+          <View style={styles.infoRow}>
             <Text style={styles.infoIcon}>📞</Text>
             <View style={styles.infoTextWrap}>
               <Text style={styles.infoLabel}>MOBILE</Text>
               <Text style={styles.infoValue}>{adminProfile.mobile}</Text>
+            </View>
+          </View>
+
+          <View style={styles.infoDivider} />
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoIcon}>✉️</Text>
+            <View style={styles.infoTextWrap}>
+              <Text style={styles.infoLabel}>EMAIL</Text>
+              <Text style={styles.infoValue}>{adminProfile.email}</Text>
             </View>
           </View>
 

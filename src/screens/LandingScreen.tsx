@@ -1,7 +1,7 @@
 import React from 'react';
-import {View, Text, TouchableOpacity, SafeAreaView} from 'react-native';
+import {View, Text, TouchableOpacity,} from 'react-native';
 import {styles} from '../styles/LandingScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const LandingScreen = ({navigation}: any) => {
   return (
     <SafeAreaView style={styles.safeArea}>

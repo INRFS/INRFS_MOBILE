@@ -3,7 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
-  SafeAreaView,
+ 
   ScrollView,
   Image,
   Share,
@@ -12,7 +12,7 @@ import {
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {styles} from '../styles/BondDetailsScreen.styles';
 import {useInvestments} from './MyInvestmentsscreen';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const formatINR = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
 // ---------------------------------------------------------------------------

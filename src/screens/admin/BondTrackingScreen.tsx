@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, SafeAreaView, TouchableOpacity} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity} from 'react-native';
 import {useAppData, Bond} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/BondTrackingScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 type FilterKey = 'All Bonds' | 'Active' | 'Upcoming' | 'Settled';
 const filters: FilterKey[] = ['All Bonds', 'Active', 'Upcoming', 'Settled'];
 
@@ -123,7 +123,7 @@ const BondTrackingScreen = ({navigation}: any) => {
         </TouchableOpacity>
         <View style={styles.tabItem}>
           <Text style={styles.tabIconActive}>📁</Text>
-          <Text style={styles.tabLabelActive}>Portfolio</Text>
+          <Text style={styles.tabLabelActive}>Investments</Text>
         </View>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
           <Text style={styles.tabIcon}>💰</Text>

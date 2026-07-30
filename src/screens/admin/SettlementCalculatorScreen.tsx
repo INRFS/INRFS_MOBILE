@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, SafeAreaView, TouchableOpacity, Alert} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity, Alert, TextInput} from 'react-native';
 import {useAppData, Investor, Bond} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/SettlementCalculatorScreen.styles';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 const formatUSD = (n: number) => '$' + n.toLocaleString('en-US', {minimumFractionDigits: 2});
 
 const journeyStages = ['Q1', 'Q2', 'Q3', 'Payout'];
@@ -17,11 +17,14 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
   const [selectedBond, setSelectedBond] = useState<Bond | undefined>(
     bonds.find(b => b.status === 'Settled') ?? bonds[0],
   );
+  const todayStr = new Date().toLocaleDateString('en-GB').split('/').join('-'); // DD-MM-YYYY
+  const [settlementDate, setSettlementDate] = useState(todayStr);
 
   const principal = selectedInvestor?.totalInvested ?? 0;
   const interestRate = selectedBond?.interestRate ?? 0;
-  const totalInterest = principal * (interestRate / 100);
-  const penalty = 0;
+  const monthsActive = selectedBond?.monthsActive ?? 0;
+  const totalInterest = principal * (interestRate / 100) * (monthsActive / 12);
+  const penalty = principal * 0.02;
   const netSettlement = principal + totalInterest - penalty;
 
   const handleApprove = () => {
@@ -97,6 +100,15 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
           </View>
         )}
 
+        <Text style={styles.fieldLabel}>Settlement Date</Text>
+        <TextInput
+          style={styles.selectBox}
+          value={settlementDate}
+          onChangeText={setSettlementDate}
+          placeholder="DD-MM-YYYY"
+          placeholderTextColor="#9CA3AF"
+        />
+
         <View style={styles.breakdownCard}>
           <View style={styles.breakdownTopRow}>
             <Text style={styles.breakdownTitle}>Payout Breakdown</Text>
@@ -110,11 +122,15 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
             <Text style={styles.breakdownValue}>{formatUSD(principal)}</Text>
           </View>
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Total Interest Earned</Text>
+            <Text style={styles.breakdownLabel}>Months Active</Text>
+            <Text style={styles.breakdownValue}>{monthsActive}</Text>
+          </View>
+          <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownLabel}>Interest Earned ({monthsActive}m)</Text>
             <Text style={styles.breakdownValuePositive}>+{formatUSD(totalInterest)}</Text>
           </View>
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Penalty (Late Exit)</Text>
+            <Text style={styles.breakdownLabel}>Penalty (2%)</Text>
             <Text style={styles.breakdownValueNegative}>-{formatUSD(penalty)}</Text>
           </View>
 

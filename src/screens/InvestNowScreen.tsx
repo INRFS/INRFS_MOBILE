@@ -4,7 +4,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  SafeAreaView,
+ 
   ScrollView,
   Image,
   Alert,
@@ -14,7 +14,7 @@ import {launchImageLibrary} from 'react-native-image-picker';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/InvestNowScreen.styles';
 import {addInvestment} from './MyInvestmentsscreen';
-
+import {SafeAreaView} from 'react-native-safe-area-context';
 type Step = 'details' | 'payment' | 'confirmation';
 
 const TENURE_OPTIONS = [

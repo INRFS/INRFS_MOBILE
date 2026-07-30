@@ -47,6 +47,31 @@ export const styles = StyleSheet.create({
 
   container: {padding: 16, paddingBottom: 24},
 
+  greetingTitle: {fontSize: 19, fontWeight: '800', color: '#111827', marginBottom: 2},
+  greetingSubtitle: {fontSize: 12.5, color: GRAY, marginBottom: 16},
+
+  statGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14},
+  statGridCard: {
+    width: '48%',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 12,
+  },
+  statGridIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  statGridLabel: {fontSize: 10, color: GRAY, fontWeight: '700', letterSpacing: 0.4, marginBottom: 4},
+  statGridValue: {fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 4},
+  statGridDeltaGood: {fontSize: 10.5, color: GREEN, fontWeight: '600'},
+  statGridDeltaNeutral: {fontSize: 10.5, color: GRAY, fontWeight: '600'},
+
   portfolioCard: {
     backgroundColor: NAVY,
     borderRadius: 18,
@@ -139,6 +164,23 @@ export const styles = StyleSheet.create({
   sectionTitle: {fontSize: 16, fontWeight: '800', color: '#111827'},
   viewAllLink: {color: PRIMARY, fontSize: 13, fontWeight: '700'},
 
+  distributionCard: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 20,
+  },
+  distributionRow: {marginBottom: 12},
+  distributionLabelRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4},
+  distributionDot: {width: 8, height: 8, borderRadius: 4, marginRight: 8},
+  distributionLabel: {fontSize: 13, fontWeight: '600', color: '#111827', flex: 1},
+  distributionPct: {fontSize: 12, fontWeight: '700', color: GRAY},
+  distributionBarTrackWrap: {marginTop: 4},
+  distributionBarTrack: {height: 6, borderRadius: 3, backgroundColor: '#F1F2F5', overflow: 'hidden'},
+  distributionBarFill: {height: 6, borderRadius: 3},
+
   bondCard: {
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -166,12 +208,27 @@ export const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
   },
+  statusBadgeMuted: {backgroundColor: '#E5E7EB'},
   statusBadgeText: {color: GREEN, fontSize: 11.5, fontWeight: '700'},
+  statusBadgeTextMuted: {color: GRAY},
   bondDivider: {height: 1, backgroundColor: BORDER, marginVertical: 12},
   bondBottomRow: {flexDirection: 'row', justifyContent: 'space-between'},
   bondMetaLabel: {fontSize: 11.5, color: GRAY, marginBottom: 3},
   bondMetaValue: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   bondReturnValue: {fontSize: 13.5, fontWeight: '800', color: GREEN},
+
+  quickActionsGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20},
+  quickActionBtn: {
+    width: '48%',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    paddingVertical: 16,
+    alignItems: 'center',
+    gap: 8,
+  },
+  quickActionLabel: {fontSize: 12.5, fontWeight: '700', color: '#111827', textAlign: 'center'},
 
   txCard: {
     backgroundColor: '#fff',
@@ -179,6 +236,7 @@ export const styles = StyleSheet.create({
     borderColor: BORDER,
     borderRadius: 14,
     paddingHorizontal: 14,
+    marginBottom: 20,
   },
   txRow: {
     flexDirection: 'row',
