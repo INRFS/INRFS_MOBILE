@@ -4,7 +4,7 @@ import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {styles} from './BottomTabBar.styles';
 
 // export type TabKey = 'Home' | 'Invest' | 'Portfolio' | 'Settings';
-export type TabKey = 'Home' | 'Invest' | 'Portfolio' | 'Profile';
+export type TabKey = 'Home' | 'Invest' | 'My Investments' | 'Profile';
 
 // NOTE: 'Home' points at InvestorDashboard and 'Portfolio' points at
 // MyInvestments. Register a 'Settings' route in AppNavigator before
@@ -12,7 +12,7 @@ export type TabKey = 'Home' | 'Invest' | 'Portfolio' | 'Profile';
 const tabs: {key: TabKey; label: string; icon: string; route: string | null}[] = [
   {key: 'Home', label: 'Home', icon: 'home-outline', route: 'InvestorDashboard'},
   {key: 'Invest', label: 'Invest', icon: 'wallet-outline', route: 'InvestNow'},
-  {key: 'Portfolio', label: 'Portfolio', icon: 'chart-donut', route: 'MyInvestments'},
+  {key: 'My Investments', label: 'My Investments', icon: 'chart-donut', route: 'MyInvestments'},
   {key: 'Profile', label: 'Profile', icon: 'account-outline', route: 'Profile'},
 ];
 

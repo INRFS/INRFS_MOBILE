@@ -69,7 +69,9 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
   // ---------- View Profile routing ----------
   // Approved + Active investors go straight to their bond (with bank details).
-  // Everyone else (pending KYC, etc.) still routes through KYC Approvals.
+  // Everyone else (pending KYC, etc.) routes through KYC Approvals — and now
+  // we pass THIS investor's id along, so KycApprovalsScreen can show their
+  // specific pending request instead of the whole generic queue.
   const handleViewProfile = (inv: Investor) => {
     if (inv.kycStatus === 'Approved' && inv.status === 'Active') {
       const bond = bonds.find(b => b.investorName === inv.name);
@@ -79,7 +81,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
         Alert.alert('No bond found', `${inv.name} doesn't have an active bond record yet.`);
       }
     } else {
-      navigation.navigate('KycApprovals');
+      navigation.navigate('KycApprovals', {investorId: inv.id});
     }
   };
 
@@ -214,6 +216,10 @@ const InvestorRegistryScreen = ({navigation}: any) => {
           <Text style={styles.tabIcon}>📁</Text>
           <Text style={styles.tabLabel}>Portfolio</Text>
         </TouchableOpacity>
+        {/* <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminInvestments')}>
+          <Text style={styles.tabIcon}>💵</Text>
+          <Text style={styles.tabLabel}>Investments</Text>
+        </TouchableOpacity> */}
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
           <Text style={styles.tabIcon}>💰</Text>
           <Text style={styles.tabLabel}>Payouts</Text>

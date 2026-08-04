@@ -25,6 +25,8 @@ import KycApprovalsScreen from '../screens/admin/KycApprovalsScreen';
 import ReportsScreen from '../screens/admin/ReportsScreen';
 import AdminNotificationsScreen from '../screens/admin/NotificationsScreen';
 import AdminSettingsScreen from '../screens/admin/SettingsScreen';
+// NEW: Admin > Investments — reviews investor-submitted investment requests
+// import AdminInvestmentsScreen from '../screens/admin/AdminInvestmentsScreen';
 // ---- SUPER ADMIN SCREENS (new, own subfolder, mirrors the web Super Admin portal) ----
 import SuperAdminDashboardScreen from '../screens/superadmin/SuperAdminDashboardScreen';
 import BranchManagementScreen from '../screens/superadmin/BranchManagementScreen';
@@ -99,11 +101,18 @@ export type KycRequest = {
   avatarUri: string;
   overallFlag: 'verified' | 'flagged' | 'uploading';
   aadhaar: DocStatus;
+  // The investor's actual Aadhaar number, shown to the admin during review
+  // instead of document image / bank statement uploads.
+  aadhaarNumber: string;
   pan: DocStatus;
   bankStmt: DocStatus;
   avgWait: string;
   amlNote?: string;
   category: 'pending' | 'flagged' | 'archive';
+  // Links this KYC record back to the investor it belongs to, so screens
+  // like Investor Management -> View Profile can jump straight to THIS
+  // investor's request instead of showing the whole generic queue.
+  investorId?: string;
 };
 
 export type KycStats = {
@@ -124,6 +133,29 @@ export type Payout = {
   reference: string;
   status: 'overdue' | 'upcoming' | 'paid' | 'pending_approval' | 'approved' | 'rejected';
   overdueDays?: number;
+};
+
+// ---------------- Investment approval workflow ----------------
+// An investor submitting from InvestNowScreen creates one of these instead
+// of an immediate Bond. It only becomes a Bond once an admin approves it
+// from AdminInvestmentsScreen (Admin > Investments).
+
+export type InvestmentRequestStatus = 'Pending' | 'Approved' | 'Rejected';
+
+export type InvestmentRequest = {
+  id: string;
+  investorId: string;
+  investorName: string;
+  amount: number;
+  tenureMonths: number;
+  // Defaults to the flat rate shown on the Invest Now form (3%); the admin
+  // can edit this before approving.
+  interestRate: number;
+  transactionRef: string;
+  screenshotUri: string | null;
+  status: InvestmentRequestStatus;
+  requestedOn: string;
+  bondSeriesId?: string; // set once approved and a Bond is generated
 };
 
 // ---------------- Super Admin types ----------------
@@ -232,6 +264,16 @@ type AddBondParams = {
   reference?: string;
 };
 
+type SubmitInvestmentRequestParams = {
+  investorId: string;
+  investorName: string;
+  amount: number;
+  tenureMonths: number;
+  interestRate: number;
+  transactionRef: string;
+  screenshotUri: string | null;
+};
+
 type AddBranchParams = {
   name: string;
   city: string;
@@ -273,6 +315,15 @@ type AppDataContextType = {
   approveKyc: (id: string) => void;
   rejectKyc: (id: string) => void;
   escalateKyc: (id: string) => void;
+  approveInvestorKyc: (investorId: string) => void;
+  rejectInvestorKyc: (investorId: string) => void;
+
+  // ---- Investment approval workflow (Admin > Investments) ----
+  investmentRequests: InvestmentRequest[];
+  submitInvestmentRequest: (params: SubmitInvestmentRequestParams) => void;
+  updateInvestmentRequestRate: (id: string, rate: number) => void;
+  approveInvestmentRequest: (id: string) => void;
+  rejectInvestmentRequest: (id: string) => void;
 
   // ---- Admin Notifications / Settings ----
   adminNotifications: SANotification[];
@@ -311,41 +362,39 @@ export const useAppData = () => {
   return ctx;
 };
 
-const initialInvestors: Investor[] = [
-  {id: 'INV-0842', name: 'Global Heritage Trust', email: 'contact@globalheritagetrust.com', mobile: '9876543210', branch: 'Mumbai HQ', tier: 'PLATINUM', kycStatus: 'Approved', totalInvested: 4250000, status: 'Active', type: 'institution'},
-  {id: 'INV-1102', name: 'Alexandra Vance', email: 'alexandra.vance@email.com', mobile: '9876543211', branch: 'Delhi North', tier: 'GOLD', kycStatus: 'Approved', totalInvested: 842500, status: 'Active', type: 'individual'},
-  {id: 'INV-1459', name: 'Marcus Thorne', email: 'marcus.thorne@email.com', mobile: '9876543212', branch: 'Bangalore', tier: 'SILVER', kycStatus: 'Pending', totalInvested: 120000, status: 'Pending', type: 'individual'},
-  {id: 'INV-0012', name: 'Apex Capital Ltd', email: 'contact@apexcapital.com', mobile: '9876543213', branch: 'Chennai', tier: 'PLATINUM', kycStatus: 'Approved', totalInvested: 12400000, status: 'Active', type: 'institution'},
-];
+// ---------------------------------------------------------------------------
+// MOCK / SEED DATA
+// ---------------------------------------------------------------------------
+// Investors, Bonds, Activities, and Payouts are now seeded EMPTY. The app
+// starts with zero data across investor, admin, and super admin screens.
+// The only way a Bond (and, in turn, an Investor + Activity entry) gets
+// created is through the real flow:
+//   1. Investor submits from InvestNowScreen -> submitInvestmentRequest()
+//      (shows up as "Pending Approval" in My Investments, AND creates a
+//      Pending Investor record immediately so they show up in Investor
+//      Registry right away instead of only after approval)
+//   2. Admin reviews it in Admin > Investments (AdminInvestmentsScreen)
+//   3. Admin approves it -> approveInvestmentRequest() generates the real
+//      Bond record and flips the Investor's status to Active, which then
+//      flows through to Admin's Investor Registry / Bond Tracking and
+//      Super Admin Reports.
+//   4. Approving (or manually adding) a Bond now ALSO generates the first
+//      monthly interest Payout record for that bond (see
+//      createPayoutForBond), and marking a payout "Paid" automatically
+//      schedules the following month's payout (see
+//      scheduleNextMonthlyPayout) so ongoing investments keep flowing
+//      through Interest Payouts every cycle.
+// ---------------------------------------------------------------------------
 
-const initialBonds: Bond[] = [
-  {seriesId: 'DB-2024-X901', investorName: 'Global Heritage Trust', amount: 4250000, interestRate: 4.25, investedDate: '15 Jan 2025', maturityDate: '12 Nov 2029', subscriptionPercent: 84, monthsActive: 8, status: 'Active'},
-  {seriesId: 'DB-2024-Y212', investorName: 'Alexandra Vance', amount: 842500, interestRate: 5.1, investedDate: '18 Jan 2025', maturityDate: '22 Jan 2031', subscriptionPercent: 12, monthsActive: 3, status: 'Upcoming'},
-  {seriesId: 'DB-2023-A004', investorName: 'Marcus Thorne', amount: 120000, interestRate: 3.85, investedDate: '22 Jan 2025', maturityDate: '15 Dec 2023', subscriptionPercent: 100, monthsActive: 6, status: 'Settled'},
-  {seriesId: 'DB-2024-M550', investorName: 'Apex Capital Ltd', amount: 12400000, interestRate: 6.2, investedDate: '25 Jan 2025', maturityDate: '04 Mar 2035', subscriptionPercent: 62, monthsActive: 5, status: 'Active'},
-];
+const initialInvestors: Investor[] = [];
 
-const initialActivities: Activity[] = [
-  {id: 'a1', title: 'New Investor Registered', subtitle: 'ID: #INV-9284 • London, UK', time: '14:02', icon: 'investor'},
-  {id: 'a2', title: 'Bond Issuance Completed', subtitle: 'Series 2024-B • $500M', time: '12:45', icon: 'bond'},
-  {id: 'a3', title: 'Large Transaction Alert', subtitle: 'External Wallet • 4.2M USD', time: '10:12', icon: 'transaction'},
-];
+const initialBonds: Bond[] = [];
 
-const initialPayouts: Payout[] = [
-  {id: 'p1', investorName: 'Aditya Sharma', investorType: 'individual', bondId: 'BOND-9923', amount: 12400, dueDate: '12 Oct', reference: '–', status: 'overdue', overdueDays: 3},
-  {id: 'p2', investorName: 'Global Ventures Ltd.', investorType: 'institution', bondId: 'BOND-8812', amount: 45000, dueDate: '14 Oct', reference: '–', status: 'overdue', overdueDays: 1},
-  {id: 'p3', investorName: 'Meera Iyer', investorType: 'individual', bondId: 'BOND-7721', amount: 8500, dueDate: '20 Oct', reference: '–', status: 'upcoming'},
-  {id: 'p4', investorName: 'Rohan Kapur', investorType: 'individual', bondId: 'BOND-6654', amount: 22100, dueDate: '22 Oct', reference: '–', status: 'upcoming'},
-  {id: 'p5', investorName: 'Priya Patel', investorType: 'individual', bondId: 'BOND-5521', amount: 9479, dueDate: '18 Jul', reference: 'UTR789456', status: 'paid'},
-];
+const initialActivities: Activity[] = [];
 
-const initialAdminNotifications: SANotification[] = [
-  {id: 'an1', title: 'Investment Approved', isNew: true, message: 'Your investment BND-2025-001 of ₹5,00,000 has been approved.', time: '2 hours ago', icon: 'check'},
-  {id: 'an2', title: 'Bond Generated', isNew: true, message: 'Investment Bond BND-2025-001 has been generated. Download now.', time: '2 hours ago', icon: 'bond'},
-  {id: 'an3', title: 'Interest Credited', isNew: true, message: '₹5,000 monthly interest for June 2025 has been credited.', time: '5 days ago', icon: 'money'},
-  {id: 'an4', title: 'Upcoming Maturity', isNew: false, message: 'Bond BND-2024-087 matures in 30 days. Plan your renewal.', time: '1 week ago', icon: 'bell'},
-  {id: 'an5', title: 'Email Confirmation', isNew: false, message: 'Email confirmation sent to arjun@email.com for investment.', time: '2 weeks ago', icon: 'mail'},
-];
+const initialPayouts: Payout[] = [];
+
+const initialAdminNotifications: SANotification[] = [];
 
 const defaultAdminSettings: AdminSettings = {
   emailNotifications: true,
@@ -361,6 +410,7 @@ const initialKycRequests: KycRequest[] = [
     avatarUri: 'https://i.pravatar.cc/200?img=13',
     overallFlag: 'verified',
     aadhaar: 'Verified',
+    aadhaarNumber: 'XXXX XXXX 4521',
     pan: 'Verified',
     bankStmt: 'Pending',
     avgWait: '02:10',
@@ -373,6 +423,7 @@ const initialKycRequests: KycRequest[] = [
     avatarUri: 'https://i.pravatar.cc/200?img=32',
     overallFlag: 'flagged',
     aadhaar: 'Verified',
+    aadhaarNumber: 'XXXX XXXX 7788',
     pan: 'Flagged',
     bankStmt: 'Verified',
     avgWait: '00:40',
@@ -386,6 +437,7 @@ const initialKycRequests: KycRequest[] = [
     avatarUri: 'https://i.pravatar.cc/200?img=14',
     overallFlag: 'uploading',
     aadhaar: 'Uploading',
+    aadhaarNumber: 'XXXX XXXX 3092',
     pan: 'Verified',
     bankStmt: 'Pending',
     avgWait: '--:--',
@@ -411,7 +463,7 @@ const defaultAdminProfile: AdminProfile = {
   avatarUri: 'https://i.pravatar.cc/200?img=12',
 };
 
-
+const initialInvestmentRequests: InvestmentRequest[] = [];
 
 const initialBranches: Branch[] = [
   {id: 'br1', name: 'Mumbai HQ', city: 'Mumbai', adminName: 'Ravi Mehta', investors: 342, aum: '₹18.2Cr', status: 'Active'},
@@ -545,6 +597,7 @@ const AppNavigator = () => {
   const [adminProfile, setAdminProfileState] = useState<AdminProfile>(defaultAdminProfile);
   const [kycRequests, setKycRequests] = useState<KycRequest[]>(initialKycRequests);
   const [kycStats] = useState<KycStats>(initialKycStats);
+  const [investmentRequests, setInvestmentRequests] = useState<InvestmentRequest[]>(initialInvestmentRequests);
 
   const [adminNotifications, setAdminNotifications] = useState<SANotification[]>(initialAdminNotifications);
   const [adminSettings, setAdminSettingsState] = useState<AdminSettings>(defaultAdminSettings);
@@ -559,19 +612,101 @@ const AppNavigator = () => {
   const [systemSettings, setSystemSettingsState] = useState<SystemSettings>(initialSystemSettings);
 
   const approveKyc = (id: string) => {
+    const req = kycRequests.find(k => k.id === id);
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
+    if (req?.investorId) {
+      setInvestors(prev =>
+        prev.map(inv => (inv.id === req.investorId ? {...inv, kycStatus: 'Approved'} : inv)),
+      );
+    }
   };
 
   const rejectKyc = (id: string) => {
+    const req = kycRequests.find(k => k.id === id);
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
+    if (req?.investorId) {
+      setInvestors(prev =>
+        prev.map(inv => (inv.id === req.investorId ? {...inv, kycStatus: 'Rejected'} : inv)),
+      );
+    }
   };
 
   const escalateKyc = (id: string) => {
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'flagged'} : k)));
   };
 
+  // Fallback for investors who don't have a matching KycRequest record —
+  // updates their kycStatus on the Investor record directly, so the
+  // focused KYC review (Investor Management -> View Profile) always has
+  // a working Approve/Reject action, not just investors seeded through
+  // the investment-request flow.
+  const approveInvestorKyc = (investorId: string) => {
+    setInvestors(prev =>
+      prev.map(inv => (inv.id === investorId ? {...inv, kycStatus: 'Approved'} : inv)),
+    );
+  };
+
+  const rejectInvestorKyc = (investorId: string) => {
+    setInvestors(prev =>
+      prev.map(inv => (inv.id === investorId ? {...inv, kycStatus: 'Rejected'} : inv)),
+    );
+  };
+
   const setAdminProfile = (partial: Partial<AdminProfile>) => {
     setAdminProfileState(prev => ({...prev, ...partial}));
+  };
+
+  // ---- Monthly interest payout generation ----
+  // Called whenever a Bond is created (either via approveInvestmentRequest
+  // or addBond) so that new investments are immediately reflected in
+  // Interest Payouts instead of requiring a separate manual step.
+  const createPayoutForBond = (params: {
+    bondId: string;
+    investorName: string;
+    investorType: 'individual' | 'institution';
+    amount: number;
+    interestRate: number;
+    investedDateStr: string; // DD-MM-YYYY
+  }) => {
+    const {bondId, investorName, investorType, amount, interestRate, investedDateStr} = params;
+    // interestRate is annual (p.a.), so divide by 12 to get the monthly payout amount
+    const monthlyInterest = Math.round((amount * (interestRate / 100)) / 12);
+
+    const investedDate = parseDDMMYYYY(investedDateStr);
+    const dueDate = new Date(investedDate);
+    dueDate.setMonth(dueDate.getMonth() + 1);
+
+    const newPayout: Payout = {
+      id: `pay-${Date.now().toString().slice(-6)}-${bondId}`,
+      investorName,
+      investorType,
+      bondId,
+      amount: monthlyInterest,
+      dueDate: formatDDMMYYYY(dueDate),
+      reference: '–',
+      status: 'upcoming',
+    };
+
+    setPayouts(prev => [newPayout, ...prev]);
+  };
+
+  // Once a payout is marked "Paid", automatically schedule the following
+  // month's payout for the same bond so the monthly cycle keeps going
+  // without any manual re-creation step.
+  const scheduleNextMonthlyPayout = (paidPayout: Payout) => {
+    const nextDue = new Date();
+    nextDue.setMonth(nextDue.getMonth() + 1);
+    const nextPayout: Payout = {
+      id: `pay-${Date.now().toString().slice(-6)}-${paidPayout.bondId}`,
+      investorName: paidPayout.investorName,
+      investorType: paidPayout.investorType,
+      bondId: paidPayout.bondId,
+      amount: paidPayout.amount,
+      dueDate: formatDDMMYYYY(nextDue),
+      reference: '–',
+      status: 'upcoming',
+    };
+    setPayouts(prev => [nextPayout, ...prev]);
   };
 
   const addInvestment = ({investorId, investorName, amount, bondSeriesId, investorType}: AddInvestmentParams) => {
@@ -630,6 +765,16 @@ const AppNavigator = () => {
 
     setBonds(prev => [newBond, ...prev]);
 
+    // New investment -> immediately reflected in Interest Payouts.
+    createPayoutForBond({
+      bondId: newBond.seriesId,
+      investorName,
+      investorType: 'individual',
+      amount,
+      interestRate,
+      investedDateStr,
+    });
+
     setInvestors(prev =>
       prev.map(inv =>
         inv.name === investorName ? {...inv, totalInvested: inv.totalInvested + amount} : inv,
@@ -648,7 +793,229 @@ const AppNavigator = () => {
     ]);
   };
 
+  // ---- Investment approval workflow ----
+  // Investor side: submitInvestmentRequest(). No bond is created here, but
+  // a Pending Investor record IS created (if one doesn't already exist) so
+  // that Investor Registry reflects the investor right away instead of
+  // only after admin approval.
+  const submitInvestmentRequest = ({
+    investorId,
+    investorName,
+    amount,
+    tenureMonths,
+    interestRate,
+    transactionRef,
+    screenshotUri,
+  }: SubmitInvestmentRequestParams) => {
+    const newRequest: InvestmentRequest = {
+      id: `REQ-${Date.now().toString().slice(-6)}`,
+      investorId,
+      investorName,
+      amount,
+      tenureMonths,
+      interestRate,
+      transactionRef,
+      screenshotUri,
+      status: 'Pending',
+      requestedOn: nowTimestamp(),
+    };
+
+    setInvestmentRequests(prev => [newRequest, ...prev]);
+
+    // Make the investor visible in Investor Registry immediately, with
+    // status 'Pending' and 0 totalInvested until the request is approved.
+    let isNewInvestor = false;
+    setInvestors(prev => {
+      const existing = prev.find(inv => inv.id === investorId);
+      if (existing) return prev;
+      isNewInvestor = true;
+      return [
+        {
+          id: investorId,
+          name: investorName,
+          email: `${investorName.toLowerCase().replace(/\s+/g, '.')}@email.com`,
+          mobile: '—',
+          branch: '—',
+          tier: 'SILVER',
+          kycStatus: 'Pending',
+          totalInvested: 0,
+          status: 'Pending',
+          type: 'individual',
+        },
+        ...prev,
+      ];
+    });
+
+    // Create the matching KYC queue record (linked via investorId) so
+    // "View Profile" in Investor Management has something real to route
+    // to right from submission, not just after approval.
+    setKycRequests(prev => {
+      const alreadyLinked = prev.some(k => k.investorId === investorId);
+      if (alreadyLinked) return prev;
+      return [
+        {
+          id: `kyc-${investorId}`,
+          name: investorName,
+          location: '—',
+          avatarUri: 'https://i.pravatar.cc/200',
+          overallFlag: 'uploading',
+          aadhaar: 'Pending',
+          aadhaarNumber: '—',
+          pan: 'Pending',
+          bankStmt: 'Pending',
+          avgWait: '--:--',
+          category: 'pending',
+          investorId,
+        },
+        ...prev,
+      ];
+    });
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'New Investment Request',
+        isNew: true,
+        message: `${investorName} submitted an investment request of ${formatINRShort(amount)} for ${tenureMonths} months. Awaiting your approval.`,
+        time: 'Just now',
+        icon: 'money',
+      },
+      ...prev,
+    ]);
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'New Investment Request',
+        subtitle: `${investorName} • ${formatINRShort(amount)} • ${tenureMonths} months`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'transaction',
+      },
+      ...prev,
+    ]);
+  };
+
+  // Admin side: edit the rate before approving, if needed.
+  const updateInvestmentRequestRate = (id: string, rate: number) => {
+    setInvestmentRequests(prev => prev.map(r => (r.id === id ? {...r, interestRate: rate} : r)));
+  };
+
+  // Admin side: approve — this is the ONLY place a bond gets generated for
+  // an investor-submitted request. The investor record already exists
+  // (created Pending at submission time), so this flips it to Active and
+  // adds the invested amount.
+  const approveInvestmentRequest = (id: string) => {
+    const req = investmentRequests.find(r => r.id === id);
+    if (!req || req.status !== 'Pending') return;
+
+    const investedDateStr = formatDDMMYYYY(new Date());
+    const maturityDate = new Date();
+    maturityDate.setMonth(maturityDate.getMonth() + req.tenureMonths);
+    const seriesId = `DB-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+
+    const newBond: Bond = {
+      seriesId,
+      investorName: req.investorName,
+      amount: req.amount,
+      interestRate: req.interestRate,
+      investedDate: investedDateStr,
+      maturityDate: formatDDMMYYYY(maturityDate),
+      subscriptionPercent: 100,
+      monthsActive: 0,
+      status: 'Active',
+    };
+
+    setBonds(prev => [newBond, ...prev]);
+
+    // New investment -> immediately reflected in Interest Payouts.
+    createPayoutForBond({
+      bondId: seriesId,
+      investorName: req.investorName,
+      investorType: 'individual',
+      amount: req.amount,
+      interestRate: req.interestRate,
+      investedDateStr,
+    });
+
+    setInvestors(prev => {
+      const existing = prev.find(inv => inv.id === req.investorId);
+      if (existing) {
+        return prev.map(inv =>
+          inv.id === req.investorId
+            ? {...inv, totalInvested: inv.totalInvested + req.amount, status: 'Active'}
+            : inv,
+        );
+      }
+      // Fallback: in case the investor record somehow doesn't exist yet
+      // (e.g. requests created before this flow existed), create it now.
+      return [
+        {
+          id: req.investorId,
+          name: req.investorName,
+          email: `${req.investorName.toLowerCase().replace(/\s+/g, '.')}@email.com`,
+          mobile: '—',
+          branch: '—',
+          tier: 'SILVER',
+          kycStatus: 'Pending',
+          totalInvested: req.amount,
+          status: 'Active',
+          type: 'individual',
+        },
+        ...prev,
+      ];
+    });
+
+    // Ensure a linked KYC queue record exists even for the fallback case
+    // above (normally already created at submission time).
+    setKycRequests(prev => {
+      const alreadyLinked = prev.some(k => k.investorId === req.investorId);
+      if (alreadyLinked) return prev;
+      return [
+        {
+          id: `kyc-${req.investorId}`,
+          name: req.investorName,
+          location: '—',
+          avatarUri: 'https://i.pravatar.cc/200',
+          overallFlag: 'uploading',
+          aadhaar: 'Pending',
+          aadhaarNumber: '—',
+          pan: 'Pending',
+          bankStmt: 'Pending',
+          avgWait: '--:--',
+          category: 'pending',
+          investorId: req.investorId,
+        },
+        ...prev,
+      ];
+    });
+
+    setInvestmentRequests(prev =>
+      prev.map(r => (r.id === id ? {...r, status: 'Approved', bondSeriesId: seriesId} : r)),
+    );
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'Bond Generated',
+        subtitle: `${req.investorName} • ${seriesId} • ${formatINRShort(req.amount)}`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'bond',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Investment Approved — ${req.investorName} (${seriesId})`);
+  };
+
+  const rejectInvestmentRequest = (id: string) => {
+    const req = investmentRequests.find(r => r.id === id);
+    if (!req || req.status !== 'Pending') return;
+    setInvestmentRequests(prev => prev.map(r => (r.id === id ? {...r, status: 'Rejected'} : r)));
+    pushAuditLog('Admin', 'Admin', `Investment Rejected — ${req.investorName}`);
+  };
+
   const markPayoutPaid = (payoutId: string) => {
+    const payout = payouts.find(p => p.id === payoutId);
     setPayouts(prev =>
       prev.map(p =>
         p.id === payoutId && p.status === 'approved'
@@ -656,9 +1023,14 @@ const AppNavigator = () => {
           : p,
       ),
     );
+    // Roll the same bond into next month's payout cycle automatically.
+    if (payout && payout.status === 'approved') {
+      scheduleNextMonthlyPayout(payout);
+    }
   };
 
   const markAllPayoutsPaid = () => {
+    const toRollover = payouts.filter(p => p.status === 'approved');
     setPayouts(prev =>
       prev.map(p =>
         p.status === 'approved'
@@ -666,6 +1038,8 @@ const AppNavigator = () => {
           : p,
       ),
     );
+    // Roll every settled bond into next month's payout cycle automatically.
+    toRollover.forEach(scheduleNextMonthlyPayout);
   };
 
   const requestPayoutApproval = (payoutId: string) => {
@@ -890,6 +1264,14 @@ const AppNavigator = () => {
           approveKyc,
           rejectKyc,
           escalateKyc,
+          approveInvestorKyc,
+          rejectInvestorKyc,
+
+          investmentRequests,
+          submitInvestmentRequest,
+          updateInvestmentRequestRate,
+          approveInvestmentRequest,
+          rejectInvestmentRequest,
 
           adminNotifications,
           adminSettings,
@@ -941,6 +1323,7 @@ const AppNavigator = () => {
             <Stack.Screen name="AdminReports" component={ReportsScreen} />
             <Stack.Screen name="AdminNotifications" component={AdminNotificationsScreen} />
             <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} />
+            {/* <Stack.Screen name="AdminInvestments" component={AdminInvestmentsScreen} /> */}
             
             <Stack.Screen name="SuperAdminDashboard" component={SuperAdminDashboardScreen} />
             <Stack.Screen name="BranchManagement" component={BranchManagementScreen} />
