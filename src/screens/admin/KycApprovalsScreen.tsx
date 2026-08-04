@@ -1,36 +1,43 @@
 import React, {useState} from 'react';
 import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-native';
-import {useAppData, KycRequest, DocStatus} from '../../navigation/AppNavigator';
+import {useAppData, KycRequest, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/KycApprovalsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
-const docBadgeStyle = (status: DocStatus) => {
-  if (status === 'Verified') return {bg: '#DCFCE7', text: '#16A34A'};
-  if (status === 'Flagged') return {bg: '#FEE2E2', text: '#DC2626'};
-  if (status === 'Uploading') return {bg: '#DBEAFE', text: '#2563EB'};
-  return {bg: '#FEF3C7', text: '#B45309'};
+const kycStatusColors = (status: Investor['kycStatus']) => {
+  if (status === 'Approved') return {bg: '#DCFCE7', text: '#16A34A'};
+  if (status === 'Pending') return {bg: '#FEF3C7', text: '#B45309'};
+  return {bg: '#FEE2E2', text: '#DC2626'};
 };
 
-const DocBadge = ({label, status}: {label: string; status: DocStatus}) => {
-  const s = docBadgeStyle(status);
-  return (
-    <View style={styles.docCol}>
-      <Text style={styles.docLabel}>{label}</Text>
-      <View style={[styles.docBadge, {backgroundColor: s.bg}]}>
-        <Text style={[styles.docBadgeText, {color: s.text}]}>{status}</Text>
-      </View>
-    </View>
-  );
-};
-
-const KycApprovalsScreen = ({navigation}: any) => {
-  const {kycRequests, kycStats, approveKyc, rejectKyc, escalateKyc} = useAppData();
+const KycApprovalsScreen = ({navigation, route}: any) => {
+  const {investors, kycRequests, kycStats, approveKyc, rejectKyc, escalateKyc, approveInvestorKyc, rejectInvestorKyc} =
+    useAppData();
   const [visibleCount, setVisibleCount] = useState(3);
+
+  // If we arrived here from Investor Management -> View Profile, we're
+  // given that investor's id. When present, show THAT investor's KYC
+  // review instead of the generic queue.
+  const focusedInvestorId: string | undefined = route?.params?.investorId;
+
+  // Focused lookup reads from `investors` directly — the source of truth
+  // for KYC status — instead of filtering kycRequests by category==='pending'.
+  // Previously, once a request was approved/rejected it moved to
+  // category:'archive' and the focused view showed "No KYC request found"
+  // even though the investor's record existed and had a real status.
+  const focusedInvestor = focusedInvestorId
+    ? investors.find(inv => inv.id === focusedInvestorId)
+    : undefined;
+  // Still look up a linked KycRequest (any category) so we can show the
+  // Aadhaar number if one was submitted.
+  const focusedKycRequest = focusedInvestorId
+    ? kycRequests.find(k => k.investorId === focusedInvestorId)
+    : undefined;
 
   const pendingCount = kycRequests.filter(k => k.category === 'pending').length;
 
-  // Applications list — pending requests only.
-  const filtered = kycRequests.filter(k => k.category === 'pending');
+  // Generic queue — unaffected, still pending-only.
+  const filtered = kycRequests.filter(k => k.category === 'pending' && !focusedInvestorId);
   const visible = filtered.slice(0, visibleCount);
 
   const confirmAction = (action: 'approve' | 'reject' | 'escalate', req: KycRequest) => {
@@ -49,6 +56,32 @@ const KycApprovalsScreen = ({navigation}: any) => {
     ]);
   };
 
+  // Focused single-investor Approve/Reject. Uses the linked KycRequest if
+  // one exists (so it stays consistent with the queue's own approve/reject
+  // logic), otherwise falls back to updating the investor record directly.
+  // Either way, once handled we move on to Investments.
+  const confirmFocusedAction = (action: 'approve' | 'reject') => {
+    if (!focusedInvestor) return;
+    const actionLabel = action === 'approve' ? 'Approve' : 'Reject';
+    Alert.alert(`${actionLabel} KYC`, `${actionLabel} KYC for ${focusedInvestor.name}?`, [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: actionLabel,
+        style: action === 'reject' ? 'destructive' : 'default',
+        onPress: () => {
+          if (focusedKycRequest) {
+            if (action === 'approve') approveKyc(focusedKycRequest.id);
+            else rejectKyc(focusedKycRequest.id);
+          } else {
+            if (action === 'approve') approveInvestorKyc(focusedInvestor.id);
+            else rejectInvestorKyc(focusedInvestor.id);
+          }
+          navigation.navigate('AdminInvestments');
+        },
+      },
+    ]);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -60,38 +93,175 @@ const KycApprovalsScreen = ({navigation}: any) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Verification Queue</Text>
-        <Text style={styles.subtitle}>Reviewing {pendingCount} pending high-priority investor applications.</Text>
+        <Text style={styles.title}>{focusedInvestorId ? 'Investor KYC' : 'Verification Queue'}</Text>
+        <Text style={styles.subtitle}>
+          {focusedInvestorId
+            ? focusedInvestor
+              ? `Reviewing KYC for ${focusedInvestor.name}.`
+              : 'Investor not found.'
+            : `Reviewing ${pendingCount} pending high-priority investor applications.`}
+        </Text>
 
-        <View style={styles.statCard}>
-          <Text style={styles.statIcon}>⏱</Text>
-          <View style={styles.statTextWrap}>
-            <Text style={styles.statLabel}>Avg. Review Time</Text>
-            <Text style={styles.statValue}>
-              {kycStats.avgReviewTime}{' '}
-              <Text style={styles.statChangeGood}>({kycStats.avgReviewChangePct}%)</Text>
-            </Text>
+        {!focusedInvestorId && (
+          <>
+            <View style={styles.statCard}>
+              <Text style={styles.statIcon}>⏱</Text>
+              <View style={styles.statTextWrap}>
+                <Text style={styles.statLabel}>Avg. Review Time</Text>
+                <Text style={styles.statValue}>
+                  {kycStats.avgReviewTime}{' '}
+                  <Text style={styles.statChangeGood}>({kycStats.avgReviewChangePct}%)</Text>
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.statCard}>
+              <Text style={styles.statIcon}>📋</Text>
+              <View style={styles.statTextWrap}>
+                <Text style={styles.statLabel}>Today's Target</Text>
+                <Text style={styles.statValue}>
+                  {kycStats.todaysCompleted} / {kycStats.todaysTarget}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.statCard}>
+              <Text style={styles.statIcon}>⚠️</Text>
+              <View style={styles.statTextWrap}>
+                <Text style={styles.statLabel}>AML Alerts</Text>
+                <Text style={styles.statValueWarn}>{kycStats.amlHighRiskCount} High Risk</Text>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* ---- Focused single-investor review (from Investor Management -> View Profile) ---- */}
+        {focusedInvestorId && focusedInvestor && (
+          <View style={styles.card}>
+            <View style={styles.cardTopRow}>
+              <View style={styles.nameWrap}>
+                <Text style={styles.name}>{focusedInvestor.name}</Text>
+                <Text style={styles.location}>{focusedInvestor.id}</Text>
+              </View>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: kycStatusColors(focusedInvestor.kycStatus).bg,
+                  borderRadius: 999,
+                  paddingHorizontal: 12,
+                  paddingVertical: 5,
+                }}>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: '700',
+                    color: kycStatusColors(focusedInvestor.kycStatus).text,
+                  }}>
+                  {focusedInvestor.kycStatus}
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.docCol}>
+              <Text style={styles.docLabel}>FULL NAME</Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                }}>
+                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.name}</Text>
+              </View>
+            </View>
+
+            <View style={styles.docCol}>
+              <Text style={styles.docLabel}>MOBILE</Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                }}>
+                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.mobile}</Text>
+              </View>
+            </View>
+
+            <View style={styles.docCol}>
+              <Text style={styles.docLabel}>EMAIL</Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                }}>
+                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.email}</Text>
+              </View>
+            </View>
+
+            <View style={styles.docCol}>
+              <Text style={styles.docLabel}>BRANCH</Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                }}>
+                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.branch}</Text>
+              </View>
+            </View>
+
+            <View style={styles.docCol}>
+              <Text style={styles.docLabel}>AADHAAR NUMBER</Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                }}>
+                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>
+                  {focusedKycRequest?.aadhaarNumber ?? 'Not submitted'}
+                </Text>
+              </View>
+            </View>
+
+            {focusedInvestor.kycStatus === 'Pending' && (
+              <View style={styles.cardBottomRow}>
+                <View />
+                <View style={styles.actionBtnsRow}>
+                  <TouchableOpacity style={styles.approveBtn} onPress={() => confirmFocusedAction('approve')}>
+                    <Text style={styles.approveBtnText}>Approve</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.rejectBtn} onPress={() => confirmFocusedAction('reject')}>
+                    <Text style={styles.rejectBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
-        </View>
+        )}
 
-        <View style={styles.statCard}>
-          <Text style={styles.statIcon}>📋</Text>
-          <View style={styles.statTextWrap}>
-            <Text style={styles.statLabel}>Today's Target</Text>
-            <Text style={styles.statValue}>
-              {kycStats.todaysCompleted} / {kycStats.todaysTarget}
-            </Text>
+        {focusedInvestorId && !focusedInvestor && (
+          <View style={styles.emptyWrap}>
+            <Text style={styles.emptyText}>Investor not found.</Text>
           </View>
-        </View>
+        )}
 
-        <View style={styles.statCard}>
-          <Text style={styles.statIcon}>⚠️</Text>
-          <View style={styles.statTextWrap}>
-            <Text style={styles.statLabel}>AML Alerts</Text>
-            <Text style={styles.statValueWarn}>{kycStats.amlHighRiskCount} High Risk</Text>
-          </View>
-        </View>
-
+        {/* ---- Generic pending queue (unchanged) ---- */}
         {visible.map(req => (
           <View key={req.id} style={styles.card}>
             <View style={styles.cardTopRow}>
@@ -116,10 +286,24 @@ const KycApprovalsScreen = ({navigation}: any) => {
               </View>
             </View>
 
-            <View style={styles.docsRow}>
-              <DocBadge label="AADHAAR" status={req.aadhaar} />
+            {/* Verification shows only the Aadhaar Number for review — no
+                Aadhaar image or Bank Statement uploads are displayed. */}
+            <View style={styles.docCol}>
+              <Text style={styles.docLabel}>AADHAAR NUMBER</Text>
+              <View
+                style={{
+                  alignSelf: 'flex-start',
+                  backgroundColor: '#F3F4F6',
+                  borderRadius: 8,
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  marginTop: 2,
+                }}>
+                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>
+                  {req.aadhaarNumber}
+                </Text>
+              </View>
             </View>
-            <DocBadge label="BANK STMT." status={req.bankStmt} />
 
             {req.amlNote && (
               <View style={styles.amlBox}>
@@ -145,41 +329,37 @@ const KycApprovalsScreen = ({navigation}: any) => {
               ) : (
                 <View style={styles.actionBtnsRow}>
                   <TouchableOpacity
-                    style={[styles.approveBtn, req.overallFlag === 'uploading' && styles.btnDisabled]}
-                    disabled={req.overallFlag === 'uploading'}
+                    style={styles.approveBtn}
                     onPress={() => confirmAction('approve', req)}>
                     <Text style={styles.approveBtnText}>Approve</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.rejectBtn, req.overallFlag === 'uploading' && styles.btnDisabled]}
-                    disabled={req.overallFlag === 'uploading'}
+                    style={styles.rejectBtn}
                     onPress={() => confirmAction('reject', req)}>
                     <Text style={styles.rejectBtnText}>Reject</Text>
                   </TouchableOpacity>
-                  {req.overallFlag !== 'uploading' && (
-                    <TouchableOpacity style={styles.moreBtn}>
-                      <Text>⋮</Text>
-                    </TouchableOpacity>
-                  )}
+                  <TouchableOpacity style={styles.moreBtn}>
+                    <Text>⋮</Text>
+                  </TouchableOpacity>
                 </View>
               )}
             </View>
           </View>
         ))}
 
-        {filtered.length === 0 && (
+        {!focusedInvestorId && filtered.length === 0 && (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>Nothing here right now.</Text>
           </View>
         )}
 
-        {visibleCount < filtered.length && (
+        {!focusedInvestorId && visibleCount < filtered.length && (
           <TouchableOpacity style={styles.loadMoreBtn} onPress={() => setVisibleCount(v => v + 10)}>
             <Text style={styles.loadMoreBtnText}>Load Next 10 Requests</Text>
           </TouchableOpacity>
         )}
 
-        {filtered.length > 0 && (
+        {!focusedInvestorId && filtered.length > 0 && (
           <Text style={styles.showingText}>
             Showing {visible.length} of {filtered.length} pending requests
           </Text>
@@ -198,6 +378,10 @@ const KycApprovalsScreen = ({navigation}: any) => {
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('BondTracking')}>
           <Text style={styles.tabIcon}>📁</Text>
           <Text style={styles.tabLabel}>Portfolio</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminInvestments')}>
+          <Text style={styles.tabIcon}>💵</Text>
+          <Text style={styles.tabLabel}>Investments</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
           <Text style={styles.tabIcon}>💰</Text>
