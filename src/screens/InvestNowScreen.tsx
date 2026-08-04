@@ -18,6 +18,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 type Step = 'details' | 'payment' | 'confirmation';
 
 const TENURE_OPTIONS = [
+  {months: 3, rate: 10},
   {months: 6, rate: 11},
   {months: 12, rate: 12},
   {months: 24, rate: 12.5},
@@ -45,7 +46,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
 
   const [step, setStep] = useState<Step>('details');
   const [amountText, setAmountText] = useState('500000');
-  const [tenureIndex, setTenureIndex] = useState(1); // default: 12 months
+  const [tenureIndex, setTenureIndex] = useState(2); // default: 12 months
   const [transactionRef, setTransactionRef] = useState('');
   const [screenshotUri, setScreenshotUri] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -158,10 +159,6 @@ const InvestNowScreen = ({navigation, route}: any) => {
         <Text style={styles.summaryValue}>{formatINR(amount)}</Text>
       </View>
       <View style={styles.summaryRow}>
-        <Text style={styles.summaryLabel}>Annual Interest Rate</Text>
-        <Text style={styles.summaryValue}>{tenure.rate}% per annum</Text>
-      </View>
-      <View style={styles.summaryRow}>
         <Text style={styles.summaryLabel}>Tenure</Text>
         <Text style={styles.summaryValue}>{tenure.months} months</Text>
       </View>
@@ -235,7 +232,6 @@ const InvestNowScreen = ({navigation, route}: any) => {
                 {t.months}
               </Text>
               <Text style={styles.tenureMonthsLabel}>Months</Text>
-              <Text style={styles.tenureRate}>{t.rate}% p.a.</Text>
             </TouchableOpacity>
           );
         })}

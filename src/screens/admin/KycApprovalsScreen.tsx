@@ -3,12 +3,6 @@ import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-nat
 import {useAppData, KycRequest, DocStatus} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/KycApprovalsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-type FilterKey = 'pending' | 'flagged' | 'archive';
-const filters: {key: FilterKey; label: string}[] = [
-  {key: 'pending', label: 'Pending'},
-  {key: 'flagged', label: 'Flagged'},
-  {key: 'archive', label: 'Archive'},
-];
 
 const docBadgeStyle = (status: DocStatus) => {
   if (status === 'Verified') return {bg: '#DCFCE7', text: '#16A34A'};
@@ -31,13 +25,12 @@ const DocBadge = ({label, status}: {label: string; status: DocStatus}) => {
 
 const KycApprovalsScreen = ({navigation}: any) => {
   const {kycRequests, kycStats, approveKyc, rejectKyc, escalateKyc} = useAppData();
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('pending');
   const [visibleCount, setVisibleCount] = useState(3);
 
   const pendingCount = kycRequests.filter(k => k.category === 'pending').length;
-  const flaggedCount = kycRequests.filter(k => k.category === 'flagged').length;
 
-  const filtered = kycRequests.filter(k => k.category === activeFilter);
+  // Applications list — pending requests only.
+  const filtered = kycRequests.filter(k => k.category === 'pending');
   const visible = filtered.slice(0, visibleCount);
 
   const confirmAction = (action: 'approve' | 'reject' | 'escalate', req: KycRequest) => {
@@ -69,27 +62,6 @@ const KycApprovalsScreen = ({navigation}: any) => {
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Verification Queue</Text>
         <Text style={styles.subtitle}>Reviewing {pendingCount} pending high-priority investor applications.</Text>
-
-        <View style={styles.filterRow}>
-          {filters.map(f => {
-            const active = f.key === activeFilter;
-            const count = f.key === 'pending' ? pendingCount : f.key === 'flagged' ? flaggedCount : undefined;
-            return (
-              <TouchableOpacity
-                key={f.key}
-                style={[styles.filterPill, active && styles.filterPillActive]}
-                onPress={() => {
-                  setActiveFilter(f.key);
-                  setVisibleCount(3);
-                }}>
-                <Text style={[styles.filterPillText, active && styles.filterPillTextActive]}>
-                  {f.label}
-                  {count !== undefined ? ` (${count})` : ''}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
 
         <View style={styles.statCard}>
           <Text style={styles.statIcon}>⏱</Text>
@@ -146,7 +118,6 @@ const KycApprovalsScreen = ({navigation}: any) => {
 
             <View style={styles.docsRow}>
               <DocBadge label="AADHAAR" status={req.aadhaar} />
-              <DocBadge label="PAN CARD" status={req.pan} />
             </View>
             <DocBadge label="BANK STMT." status={req.bankStmt} />
 
@@ -162,9 +133,7 @@ const KycApprovalsScreen = ({navigation}: any) => {
                 <Text style={styles.avgWaitValue}>{req.avgWait}</Text>
               </View>
 
-              {req.category === 'archive' ? (
-                <Text style={styles.archivedText}>Archived</Text>
-              ) : req.overallFlag === 'flagged' ? (
+              {req.overallFlag === 'flagged' ? (
                 <View style={styles.actionBtnsRow}>
                   <TouchableOpacity style={styles.escalateBtn} onPress={() => confirmAction('escalate', req)}>
                     <Text style={styles.escalateBtnText}>◈ Escalate</Text>
@@ -212,7 +181,7 @@ const KycApprovalsScreen = ({navigation}: any) => {
 
         {filtered.length > 0 && (
           <Text style={styles.showingText}>
-            Showing {visible.length} of {filtered.length} {activeFilter} requests
+            Showing {visible.length} of {filtered.length} pending requests
           </Text>
         )}
       </ScrollView>

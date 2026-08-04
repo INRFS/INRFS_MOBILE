@@ -28,6 +28,7 @@ export const styles = StyleSheet.create({
   pendingValue: {fontSize: 26, fontWeight: '700', color: '#111827', marginBottom: 14},
   markAllBtn: {backgroundColor: BLUE, borderRadius: 12, paddingVertical: 14, alignItems: 'center'},
   markAllBtnText: {color: '#fff', fontWeight: '700', fontSize: 14},
+  markAllBtnDisabled: {backgroundColor: '#9CA3AF'},
 
   searchRow: {flexDirection: 'row', gap: 10, marginBottom: 18},
   searchInput: {
@@ -57,11 +58,23 @@ export const styles = StyleSheet.create({
   refText: {fontSize: 11, color: GRAY, marginTop: 2},
   doneText: {color: '#16A34A', fontSize: 13, fontWeight: '700'},
 
+  pendingApprovalText: {fontSize: 11, color: '#B45309', fontWeight: '700', marginTop: 2},
+  approvedText: {fontSize: 11, color: '#16A34A', fontWeight: '700', marginTop: 2},
+  rejectedText: {fontSize: 11, color: '#DC2626', fontWeight: '700', marginTop: 2},
+
   cardBottomRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTopWidth: 1, borderTopColor: '#F1F2F5'},
   dueText: {fontSize: 12, color: GRAY},
   processPaymentText: {color: BLUE, fontSize: 13, fontWeight: '700'},
   processEarlyBtn: {borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6},
   processEarlyText: {color: '#4B5563', fontSize: 12, fontWeight: '600'},
+
+  waitingText: {fontSize: 12, color: '#B45309', fontWeight: '600', fontStyle: 'italic'},
+
+  markPaidBtn: {backgroundColor: '#16A34A', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6},
+  markPaidBtnText: {color: '#fff', fontSize: 12, fontWeight: '700'},
+
+  resendBtn: {borderWidth: 1, borderColor: '#DC2626', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6},
+  resendBtnText: {color: '#DC2626', fontSize: 12, fontWeight: '700'},
 
   emptyWrap: {alignItems: 'center', paddingVertical: 30},
   emptyText: {fontSize: 14, color: GRAY},

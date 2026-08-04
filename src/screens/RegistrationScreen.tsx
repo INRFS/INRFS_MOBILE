@@ -4,9 +4,10 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-
+  Image,
   ScrollView,
 } from 'react-native';
+import {launchImageLibrary} from 'react-native-image-picker';
 import {styles} from '../styles/RegistrartionScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 // Simple local implementation to register an investor and return an ID.
@@ -19,6 +20,9 @@ const registerInvestor = (fullName: string, mobile: string) => {
 
 const steps = ['Personal info', 'Review & submit'];
 
+// Only these three states are supported for now.
+const STATE_OPTIONS = ['Hyderabad', 'Chennai', 'Vijayawada'];
+
 const RegistrationScreen = ({navigation}: any) => {
   const [step, setStep] = useState(1);
 
@@ -28,18 +32,39 @@ const RegistrationScreen = ({navigation}: any) => {
     email: '',
     dob: '',
     aadhaar: '',
-    pan: '',
     address: '',
     city: '',
     state: '',
     pin: '',
   });
 
+  // Uploaded document photos (Aadhaar photo + passport size photo)
+  // const [aadhaarPhoto, setAadhaarPhoto] = useState<string | null>(null);
+  // const [passportPhoto, setPassportPhoto] = useState<string | null>(null);
+
+  const [stateDropdownOpen, setStateDropdownOpen] = useState(false);
+
   const [agreed, setAgreed] = useState(false);
   const [generatedId, setGeneratedId] = useState('');
 
   const update = (key: keyof typeof form, value: string) =>
     setForm(prev => ({...prev, [key]: value}));
+
+  // Opens the phone's photo/file picker so the user can upload an image
+  const pickPhoto = (setter: (uri: string) => void) => {
+    launchImageLibrary(
+      {mediaType: 'photo', quality: 0.8, selectionLimit: 1},
+      response => {
+        if (response.didCancel || response.errorCode) {
+          return;
+        }
+        const uri = response.assets && response.assets[0]?.uri;
+        if (uri) {
+          setter(uri);
+        }
+      },
+    );
+  };
 
   const handleSubmit = () => {
     if (!agreed) return;
@@ -135,15 +160,9 @@ const RegistrationScreen = ({navigation}: any) => {
               value={form.aadhaar}
               onChangeText={v => update('aadhaar', v)}
             />
-            {/* <Text style={styles.label}>PAN number *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="ABCDE1234F"
-              placeholderTextColor="#9CA3AF"
-              autoCapitalize="characters"
-              value={form.pan}
-              onChangeText={v => update('pan', v)}
-            /> */}
+
+            
+
             <Text style={styles.label}>Address</Text>
             <TextInput
               style={styles.input}
@@ -175,14 +194,42 @@ const RegistrationScreen = ({navigation}: any) => {
                 />
               </View>
             </View>
+
             <Text style={styles.label}>State</Text>
-            <TextInput
+            <TouchableOpacity
               style={styles.input}
-              placeholder="Select state"
-              placeholderTextColor="#9CA3AF"
-              value={form.state}
-              onChangeText={v => update('state', v)}
-            />
+              onPress={() => setStateDropdownOpen(prev => !prev)}>
+              <Text style={{color: form.state ? '#111827' : '#9CA3AF'}}>
+                {form.state || 'Select state'}
+              </Text>
+            </TouchableOpacity>
+            {stateDropdownOpen && (
+              <View
+                style={{
+                  borderWidth: 1,
+                  borderColor: '#E5E7EB',
+                  borderRadius: 8,
+                  marginTop: 4,
+                  overflow: 'hidden',
+                  backgroundColor: '#fff',
+                }}>
+                {STATE_OPTIONS.map(opt => (
+                  <TouchableOpacity
+                    key={opt}
+                    style={{
+                      paddingVertical: 12,
+                      paddingHorizontal: 14,
+                      backgroundColor: form.state === opt ? '#EEF2FF' : '#fff',
+                    }}
+                    onPress={() => {
+                      update('state', opt);
+                      setStateDropdownOpen(false);
+                    }}>
+                    <Text style={{color: '#111827'}}>{opt}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
         )}
 
@@ -196,8 +243,8 @@ const RegistrationScreen = ({navigation}: any) => {
               ['Full name', form.fullName || '—'],
               ['Mobile', form.mobile || '—'],
               ['Email', form.email || '—'],
-              // ['PAN', form.pan || '—'],
               ['Aadhaar', form.aadhaar || '—'],
+             
               [
                 'Address',
                 [form.address, form.city, form.state, form.pin]
