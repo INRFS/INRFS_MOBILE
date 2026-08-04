@@ -10,6 +10,7 @@ export const GREEN = '#16A34A';
 export const GREEN_BG = '#DCFCE7';
 export const SLATE = '#374151';
 export const SLATE_BG = '#F0F1F4';
+export const RED = '#DC2626';
 
 export const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: BG},
@@ -121,6 +122,8 @@ export const styles = StyleSheet.create({
   metaValueGold: {fontSize: 13.5, fontWeight: '700', color: PRIMARY},
   metaValueGreen: {fontSize: 13.5, fontWeight: '700', color: GREEN},
 
+  // Kept for backward compatibility — no longer rendered (replaced by
+  // actionIconRow below), but left in place in case anything else refers to it.
   viewBondBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -147,4 +150,101 @@ export const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   newInvestmentBtnText: {fontSize: 14, fontWeight: '700', color: PRIMARY},
+
+  // ---------------------------------------------------------------------
+  // Action icon row — View / Tenure / Settle (replaces the old single
+  // full-width "View Bond" button on each investment card)
+  // ---------------------------------------------------------------------
+  actionIconRow: {flexDirection: 'row', gap: 8, marginTop: 14},
+  actionIconBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EDEFF4',
+    borderRadius: 10,
+    height: 42,
+  },
+  actionIconBtnText: {fontSize: 12.5, fontWeight: '700', color: '#1A1A18'},
+
+  // ---------------------------------------------------------------------
+  // Tenure extension & settlement modals
+  // ---------------------------------------------------------------------
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    color: '#111827',
+    flexShrink: 1,
+    paddingRight: 10,
+  },
+  modalFieldLabel: {fontSize: 12.5, color: GRAY, marginBottom: 10, fontWeight: '600'},
+  modalChipRow: {flexDirection: 'row', gap: 8, marginBottom: 20},
+  modalChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  modalChipActive: {backgroundColor: PRIMARY, borderColor: PRIMARY},
+  modalChipText: {fontSize: 13, fontWeight: '700', color: '#111827'},
+  modalChipTextActive: {color: '#fff'},
+
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  modalRowLabel: {fontSize: 13, color: GRAY},
+  modalRowValue: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
+  modalRowValueGreen: {fontSize: 13.5, fontWeight: '700', color: GREEN},
+  modalRowValueRed: {fontSize: 13.5, fontWeight: '700', color: RED},
+  modalDivider: {height: 1, backgroundColor: BORDER, marginVertical: 6},
+  modalNetLabel: {fontSize: 14.5, fontWeight: '800', color: '#111827'},
+  modalNetValue: {fontSize: 15.5, fontWeight: '800', color: NAVY},
+
+  modalActionRow: {flexDirection: 'row', gap: 10, marginTop: 18},
+  modalCancelBtn: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalCancelBtnText: {color: '#111827', fontWeight: '700', fontSize: 14},
+  modalConfirmBtn: {
+    flex: 1.4,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: NAVY_DARK,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalConfirmBtnText: {color: '#fff', fontWeight: '700', fontSize: 14},
 });

@@ -19,7 +19,7 @@ export const styles = StyleSheet.create({
   title: {fontSize: 24, fontWeight: '700', color: '#111827', marginBottom: 4},
   subtitle: {fontSize: 13, color: GRAY, marginBottom: 16},
 
-  searchRow: {flexDirection: 'row', gap: 10, marginBottom: 18},
+  searchRow: {flexDirection: 'row', gap: 10, marginBottom: 14},
   searchInput: {
     flex: 1, backgroundColor: '#fff', borderRadius: 12, borderWidth: 1, borderColor: '#E5E7EB',
     paddingHorizontal: 14, paddingVertical: 12, fontSize: 14,
@@ -83,4 +83,38 @@ export const styles = StyleSheet.create({
   tabIconActive: {fontSize: 18, marginBottom: 2},
   tabLabel: {fontSize: 11, color: GRAY},
   tabLabelActive: {fontSize: 11, color: NAVY, fontWeight: '700'},
+
+  // ---------------------------------------------------------------------
+  // Export button (searchRow) — appended, doesn't affect existing keys
+  // ---------------------------------------------------------------------
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 46,
+  },
+  exportBtnText: {fontSize: 13, fontWeight: '700', color: '#111827'},
+
+  // ---------------------------------------------------------------------
+  // Active / Pending status filter chips — appended
+  // ---------------------------------------------------------------------
+  statusFilterRow: {flexDirection: 'row', gap: 8, marginBottom: 18},
+  statusFilterChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+  },
+  statusFilterChipActive: {backgroundColor: NAVY, borderColor: NAVY},
+  statusFilterChipText: {fontSize: 12.5, fontWeight: '700', color: '#111827'},
+  statusFilterChipTextActive: {color: '#fff'},
 });

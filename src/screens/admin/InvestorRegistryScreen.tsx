@@ -1,20 +1,87 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView,  TouchableOpacity, TextInput} from 'react-native';
+import {View, Text, ScrollView,  TouchableOpacity, TextInput, Platform, Alert} from 'react-native';
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+
+// ---------------------------------------------------------------------------
+// Excel export requires these packages (same as My Investments):
+//   npm install xlsx react-native-fs react-native-share
+// (iOS: cd ios && pod install)
+// ---------------------------------------------------------------------------
+import XLSX from 'xlsx';
+import RNFS from 'react-native-fs';
+import RNShare from 'react-native-share';
+
 const tierIcon = (inv: Investor) => (inv.type === 'institution' ? '🏢' : '👤');
 
-const InvestorRegistryScreen = ({navigation}: any) => {
-  const {investors} = useAppData();
-  const [query, setQuery] = useState('');
+type StatusFilter = 'All' | 'Active' | 'Pending';
+const STATUS_FILTERS: StatusFilter[] = ['All', 'Active', 'Pending'];
 
-  const filtered = investors.filter(
-    inv =>
+const InvestorRegistryScreen = ({navigation}: any) => {
+  const {investors, bonds} = useAppData();
+  const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+
+  const filtered = investors.filter(inv => {
+    const matchesQuery =
       inv.name.toLowerCase().includes(query.toLowerCase()) ||
       inv.id.toLowerCase().includes(query.toLowerCase()) ||
-      inv.tier.toLowerCase().includes(query.toLowerCase()),
-  );
+      inv.tier.toLowerCase().includes(query.toLowerCase());
+    const matchesStatus = statusFilter === 'All' || inv.status === statusFilter;
+    return matchesQuery && matchesStatus;
+  });
+
+  // ---------- Export to Excel ----------
+  const handleExport = async () => {
+    try {
+      const rows = investors.map(inv => ({
+        'Investor ID': inv.id,
+        Name: inv.name,
+        Email: inv.email,
+        Mobile: inv.mobile,
+        Branch: inv.branch,
+        'KYC Status': inv.kycStatus,
+        Status: inv.status,
+        'Total Invested ($)': inv.totalInvested,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Investors');
+      const base64 = XLSX.write(workbook, {type: 'base64', bookType: 'xlsx'});
+
+      const fileName = `INRFS_Investor_Management_${Date.now()}.xlsx`;
+      const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+      await RNFS.writeFile(filePath, base64, 'base64');
+
+      await RNShare.open({
+        url: Platform.OS === 'android' ? `file://${filePath}` : filePath,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename: fileName,
+      });
+    } catch (err: any) {
+      if (err?.message && !/user did not share/i.test(err.message)) {
+        Alert.alert('Export failed', 'Could not generate the Excel file. Please try again.');
+      }
+    }
+  };
+
+  // ---------- View Profile routing ----------
+  // Approved + Active investors go straight to their bond (with bank details).
+  // Everyone else (pending KYC, etc.) still routes through KYC Approvals.
+  const handleViewProfile = (inv: Investor) => {
+    if (inv.kycStatus === 'Approved' && inv.status === 'Active') {
+      const bond = bonds.find(b => b.investorName === inv.name);
+      if (bond) {
+        navigation.navigate('BondDetails', {investorId: inv.id, bondId: bond.seriesId});
+      } else {
+        Alert.alert('No bond found', `${inv.name} doesn't have an active bond record yet.`);
+      }
+    } else {
+      navigation.navigate('KycApprovals');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -38,6 +105,29 @@ const InvestorRegistryScreen = ({navigation}: any) => {
           <View style={styles.filterBtn}>
             <Text>⇅</Text>
           </View>
+          <TouchableOpacity style={styles.exportBtn} onPress={handleExport}>
+            <Text style={styles.exportBtnText}>Export</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.statusFilterRow}>
+          {STATUS_FILTERS.map(f => {
+            const active = f === statusFilter;
+            return (
+              <TouchableOpacity
+                key={f}
+                style={[styles.statusFilterChip, active && styles.statusFilterChipActive]}
+                onPress={() => setStatusFilter(f)}>
+                <Text
+                  style={[
+                    styles.statusFilterChipText,
+                    active && styles.statusFilterChipTextActive,
+                  ]}>
+                  {f}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </View>
 
         {filtered.map(inv => (
@@ -96,7 +186,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
             </View>
 
             <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.viewProfileBtn} onPress={() => navigation.navigate('KycApprovals')}>
+              <TouchableOpacity style={styles.viewProfileBtn} onPress={() => handleViewProfile(inv)}>
                 <Text style={styles.viewProfileText}>View Profile</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.editBtn}>

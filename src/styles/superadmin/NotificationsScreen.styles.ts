@@ -93,4 +93,45 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9CA3AF',
   },
+  approvalActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 8,
+  },
+  approveBtn: {
+    backgroundColor: '#16A34A',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  approveBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  rejectBtn: {
+    borderWidth: 1,
+    borderColor: '#DC2626',
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  rejectBtnText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  resolvedApprovedText: {
+    fontSize: 11,
+    color: '#16A34A',
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  resolvedRejectedText: {
+    fontSize: 11,
+    color: '#DC2626',
+    fontWeight: '700',
+    marginTop: 6,
+  },
 });

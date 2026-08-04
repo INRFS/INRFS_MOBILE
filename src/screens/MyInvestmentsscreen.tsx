@@ -4,15 +4,26 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
- 
   ScrollView,
   Image,
-  Share,
+  Modal,
+  Platform,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/MyInvestmentsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+
+// ---------------------------------------------------------------------------
+// Excel export requires these packages:
+//   npm install xlsx react-native-fs react-native-share
+// (iOS: cd ios && pod install)
+// ---------------------------------------------------------------------------
+import XLSX from 'xlsx';
+import RNFS from 'react-native-fs';
+import RNShare from 'react-native-share';
+
 // ---------------------------------------------------------------------------
 // Shared investments data — lives here so both MyInvestmentsScreen and
 // InvestNowScreen can use it, without a separate store file/screen.
@@ -131,11 +142,25 @@ export function useInvestments(): Investment[] {
 
 const formatINR = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
+// Tenure extension options offered to the investor.
+const EXTENSION_OPTIONS = [12, 24, 36];
+
+// Flat early-exit penalty applied on principal for a pre-settlement request.
+// TODO: replace with your real penalty schedule (e.g. tiered by months held).
+const EARLY_EXIT_PENALTY_RATE = 0.02; // 2%
+
 const MyInvestmentsScreen = ({navigation, route}: any) => {
   const {investorId} = route?.params || {};
   const [query, setQuery] = useState('');
 
   const items = useInvestments();
+
+  // ---- Tenure extension modal state ----
+  const [tenureModalBond, setTenureModalBond] = useState<Investment | null>(null);
+  const [selectedExtension, setSelectedExtension] = useState<number>(EXTENSION_OPTIONS[0]);
+
+  // ---- Settlement (pre-settlement) modal state ----
+  const [settlementModalBond, setSettlementModalBond] = useState<Investment | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -150,14 +175,86 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     [items],
   );
 
-  const handleExport = () => {
-    Share.share({
-      message: `My INRFS Investments\n\n${items.map(
-        inv =>
-          `${inv.id} — ${inv.name}\nAmount: ${formatINR(inv.amount)} at ${inv.rate}% p.a.\nStatus: ${inv.status}`,
-      ).join('\n\n')}`,
-    });
+  // ---------- Export to Excel ----------
+  const handleExport = async () => {
+    try {
+      const rows = items.map(inv => ({
+        'Bond Number': inv.id,
+        'Bond Name': inv.name,
+        Status: inv.status,
+        'Amount (₹)': inv.amount,
+        'Rate (% p.a.)': inv.rate,
+        'Tenure (Months)': inv.tenureMonths,
+        'Invested On': inv.investedOn,
+        'Matures On': inv.maturesOn,
+        'Monthly Interest (₹)': inv.monthlyInterest,
+        'Earned (₹)': inv.earned,
+      }));
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'My Investments');
+      const base64 = XLSX.write(workbook, {type: 'base64', bookType: 'xlsx'});
+
+      const fileName = `INRFS_My_Investments_${Date.now()}.xlsx`;
+      const filePath = `${RNFS.CachesDirectoryPath}/${fileName}`;
+      await RNFS.writeFile(filePath, base64, 'base64');
+
+      await RNShare.open({
+        url: Platform.OS === 'android' ? `file://${filePath}` : filePath,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename: fileName,
+      });
+    } catch (err: any) {
+      // RNShare throws when the user simply dismisses the share sheet — don't
+      // show an error alert for that case.
+      if (err?.message && !/user did not share/i.test(err.message)) {
+        Alert.alert('Export failed', 'Could not generate the Excel file. Please try again.');
+      }
+    }
   };
+
+  // ---------- Tenure extension ----------
+  const openTenureModal = (inv: Investment) => {
+    setSelectedExtension(EXTENSION_OPTIONS[0]);
+    setTenureModalBond(inv);
+  };
+
+  const handleConfirmExtension = () => {
+    if (!tenureModalBond) return;
+    // TODO: replace with your real "request tenure extension" API call.
+    // This should notify the admin so they can approve/reject it from the
+    // Admin Portal's "Extend Tenure" screen.
+    Alert.alert(
+      'Request submitted',
+      `Your request to extend ${tenureModalBond.id} by ${selectedExtension} months has been sent to the admin for approval.`,
+    );
+    setTenureModalBond(null);
+  };
+
+  // ---------- Pre-settlement ----------
+  const openSettlementModal = (inv: Investment) => {
+    setSettlementModalBond(inv);
+  };
+
+  const handleRequestSettlement = () => {
+    if (!settlementModalBond) return;
+    // TODO: replace with your real "request pre-settlement" API call.
+    // This should notify the admin so they can review/approve it from the
+    // Admin Portal's Settlement screen.
+    Alert.alert(
+      'Settlement requested',
+      `Your pre-settlement request for ${settlementModalBond.id} has been sent to the admin for approval.`,
+    );
+    setSettlementModalBond(null);
+  };
+
+  const settlementPenalty = settlementModalBond
+    ? settlementModalBond.amount * EARLY_EXIT_PENALTY_RATE
+    : 0;
+  const settlementNet = settlementModalBond
+    ? settlementModalBond.amount + settlementModalBond.earned - settlementPenalty
+    : 0;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -256,12 +353,24 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.viewBondBtn}
-              onPress={() => navigation.navigate('BondDetails', {investorId, bondId: inv.id})}>
-              <Icon name="eye-outline" size={16} color="#1A1A18" />
-              <Text style={styles.viewBondBtnText}>View Bond</Text>
-            </TouchableOpacity>
+            <View style={styles.actionIconRow}>
+              <TouchableOpacity
+                style={styles.actionIconBtn}
+                onPress={() => navigation.navigate('BondDetails', {investorId, bondId: inv.id})}>
+                <Icon name="eye-outline" size={18} color="#1A1A18" />
+                <Text style={styles.actionIconBtnText}>View</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.actionIconBtn} onPress={() => openTenureModal(inv)}>
+                <Icon name="calendar-clock" size={18} color="#1A1A18" />
+                <Text style={styles.actionIconBtnText}>Tenure</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.actionIconBtn}
+                onPress={() => openSettlementModal(inv)}>
+                <Icon name="cash-refund" size={18} color="#1A1A18" />
+                <Text style={styles.actionIconBtnText}>Settle</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         ))}
 
@@ -272,6 +381,109 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
           <Text style={styles.newInvestmentBtnText}>New Investment</Text>
         </TouchableOpacity>
       </ScrollView>
+
+      {/* ---------- Tenure Extension modal ---------- */}
+      <Modal
+        visible={!!tenureModalBond}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTenureModalBond(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Extend Tenure — {tenureModalBond?.id}</Text>
+              <TouchableOpacity onPress={() => setTenureModalBond(null)}>
+                <Icon name="close" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalFieldLabel}>Extension Period</Text>
+            <View style={styles.modalChipRow}>
+              {EXTENSION_OPTIONS.map(months => {
+                const active = selectedExtension === months;
+                return (
+                  <TouchableOpacity
+                    key={months}
+                    style={[styles.modalChip, active && styles.modalChipActive]}
+                    onPress={() => setSelectedExtension(months)}>
+                    <Text style={[styles.modalChipText, active && styles.modalChipTextActive]}>
+                      {months} Months
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setTenureModalBond(null)}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalConfirmBtn} onPress={handleConfirmExtension}>
+                <Text style={styles.modalConfirmBtnText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ---------- Settlement (pre-settlement) modal ---------- */}
+      <Modal
+        visible={!!settlementModalBond}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSettlementModalBond(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Settlement — {settlementModalBond?.id}</Text>
+              <TouchableOpacity onPress={() => setSettlementModalBond(null)}>
+                <Icon name="close" size={20} color="#6B7280" />
+              </TouchableOpacity>
+            </View>
+
+            {settlementModalBond && (
+              <>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalRowLabel}>Principal</Text>
+                  <Text style={styles.modalRowValue}>
+                    {formatINR(settlementModalBond.amount)}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalRowLabel}>Interest Earned</Text>
+                  <Text style={styles.modalRowValueGreen}>
+                    {formatINR(settlementModalBond.earned)}
+                  </Text>
+                </View>
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalRowLabel}>Early Exit Penalty (2%)</Text>
+                  <Text style={styles.modalRowValueRed}>-{formatINR(settlementPenalty)}</Text>
+                </View>
+
+                <View style={styles.modalDivider} />
+
+                <View style={styles.modalRow}>
+                  <Text style={styles.modalNetLabel}>Net Settlement</Text>
+                  <Text style={styles.modalNetValue}>{formatINR(settlementNet)}</Text>
+                </View>
+              </>
+            )}
+
+            <View style={styles.modalActionRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                onPress={() => setSettlementModalBond(null)}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalConfirmBtn} onPress={handleRequestSettlement}>
+                <Text style={styles.modalConfirmBtnText}>Request Settlement</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <BottomTabBar active="Portfolio" navigation={navigation} />
     </SafeAreaView>

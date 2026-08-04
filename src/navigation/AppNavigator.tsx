@@ -122,7 +122,7 @@ export type Payout = {
   amount: number;
   dueDate: string;
   reference: string;
-  status: 'overdue' | 'upcoming' | 'paid';
+  status: 'overdue' | 'upcoming' | 'paid' | 'pending_approval' | 'approved' | 'rejected';
   overdueDays?: number;
 };
 
@@ -197,6 +197,9 @@ export type SANotification = {
   message: string;
   time: string;
   icon: 'check' | 'bond' | 'money' | 'bell' | 'mail';
+  relatedPayoutId?: string;
+  relatedPayoutIds?: string[];
+  payoutActionTaken?: 'approved' | 'rejected';
 };
 
 export type SystemSettings = {
@@ -262,6 +265,10 @@ type AppDataContextType = {
   addBond: (params: AddBondParams) => void;
   markPayoutPaid: (payoutId: string) => void;
   markAllPayoutsPaid: () => void;
+  requestPayoutApproval: (payoutId: string) => void;
+  requestAllPayoutsApproval: () => void;
+  approvePayoutRequest: (notificationId: string) => void;
+  rejectPayoutRequest: (notificationId: string) => void;
   setAdminProfile: (partial: Partial<AdminProfile>) => void;
   approveKyc: (id: string) => void;
   rejectKyc: (id: string) => void;
@@ -528,6 +535,8 @@ const nowTimestamp = () => {
   return `${day} ${months[d.getMonth()]} ${d.getFullYear()}, ${time}`;
 };
 
+const formatINRShort = (n: number) => '₹' + n.toLocaleString('en-IN');
+
 const AppNavigator = () => {
   const [investors, setInvestors] = useState<Investor[]>(initialInvestors);
   const [bonds, setBonds] = useState<Bond[]>(initialBonds);
@@ -642,7 +651,7 @@ const AppNavigator = () => {
   const markPayoutPaid = (payoutId: string) => {
     setPayouts(prev =>
       prev.map(p =>
-        p.id === payoutId
+        p.id === payoutId && p.status === 'approved'
           ? {...p, status: 'paid', reference: `UTR${Date.now().toString().slice(-6)}`, overdueDays: undefined}
           : p,
       ),
@@ -652,11 +661,124 @@ const AppNavigator = () => {
   const markAllPayoutsPaid = () => {
     setPayouts(prev =>
       prev.map(p =>
-        p.status === 'paid'
-          ? p
-          : {...p, status: 'paid', reference: `UTR${Date.now().toString().slice(-6)}${p.id}`, overdueDays: undefined},
+        p.status === 'approved'
+          ? {...p, status: 'paid', reference: `UTR${Date.now().toString().slice(-6)}${p.id}`, overdueDays: undefined}
+          : p,
       ),
     );
+  };
+
+  const requestPayoutApproval = (payoutId: string) => {
+    const payout = payouts.find(p => p.id === payoutId);
+    if (!payout || (payout.status !== 'overdue' && payout.status !== 'upcoming' && payout.status !== 'rejected')) return;
+
+    setPayouts(prev =>
+      prev.map(p => (p.id === payoutId ? {...p, status: 'pending_approval'} : p)),
+    );
+
+    setSaNotifications(prev => [
+      {
+        id: `sn-${Date.now()}`,
+        title: 'Payout Approval Requested',
+        isNew: true,
+        message: `Monthly interest payment of ${formatINRShort(payout.amount)} for ${payout.investorName} (${payout.bondId}) is due. Please approve to release payment.`,
+        time: 'Just now',
+        icon: 'money',
+        relatedPayoutId: payoutId,
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Payout Approval Requested — ${payout.investorName} (${payout.bondId})`);
+  };
+
+  const requestAllPayoutsApproval = () => {
+    const eligible = payouts.filter(p => p.status === 'overdue' || p.status === 'upcoming');
+    if (eligible.length === 0) return;
+    const ids = eligible.map(p => p.id);
+
+    setPayouts(prev =>
+      prev.map(p => (ids.includes(p.id) ? {...p, status: 'pending_approval'} : p)),
+    );
+
+    setSaNotifications(prev => [
+      {
+        id: `sn-${Date.now()}`,
+        title: 'Bulk Payout Approval Requested',
+        isNew: true,
+        message: `Admin requested approval to process ${ids.length} pending interest payouts.`,
+        time: 'Just now',
+        icon: 'money',
+        relatedPayoutIds: ids,
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Bulk Payout Approval Requested — ${ids.length} record(s)`);
+  };
+
+  const approvePayoutRequest = (notificationId: string) => {
+    const note = saNotifications.find(n => n.id === notificationId);
+    if (!note) return;
+    const ids = note.relatedPayoutIds ?? (note.relatedPayoutId ? [note.relatedPayoutId] : []);
+    if (ids.length === 0) return;
+
+    setPayouts(prev => prev.map(p => (ids.includes(p.id) ? {...p, status: 'approved'} : p)));
+
+    setSaNotifications(prev =>
+      prev.map(n => (n.id === notificationId ? {...n, isNew: false, payoutActionTaken: 'approved'} : n)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: ids.length > 1 ? 'Bulk Payout Approved' : 'Payout Approved',
+        isNew: true,
+        message:
+          ids.length > 1
+            ? `Super Admin approved ${ids.length} pending interest payouts. You can now mark them as paid.`
+            : `Super Admin approved the interest payout. You can now mark it as paid.`,
+        time: 'Just now',
+        icon: 'check',
+        relatedPayoutId: note.relatedPayoutId,
+        relatedPayoutIds: note.relatedPayoutIds,
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Super Admin', 'Super Admin', `Payout Approval Granted — ${ids.length} record(s)`);
+  };
+
+  const rejectPayoutRequest = (notificationId: string) => {
+    const note = saNotifications.find(n => n.id === notificationId);
+    if (!note) return;
+    const ids = note.relatedPayoutIds ?? (note.relatedPayoutId ? [note.relatedPayoutId] : []);
+    if (ids.length === 0) return;
+
+    setPayouts(prev => prev.map(p => (ids.includes(p.id) ? {...p, status: 'rejected'} : p)));
+
+    setSaNotifications(prev =>
+      prev.map(n => (n.id === notificationId ? {...n, isNew: false, payoutActionTaken: 'rejected'} : n)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: ids.length > 1 ? 'Bulk Payout Rejected' : 'Payout Rejected',
+        isNew: true,
+        message:
+          ids.length > 1
+            ? `Super Admin rejected ${ids.length} pending interest payouts. Please review and resend for approval.`
+            : `Super Admin rejected the interest payout. Please review and resend for approval.`,
+        time: 'Just now',
+        icon: 'bell',
+        relatedPayoutId: note.relatedPayoutId,
+        relatedPayoutIds: note.relatedPayoutIds,
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Super Admin', 'Super Admin', `Payout Approval Rejected — ${ids.length} record(s)`);
   };
 
   const kycPendingCount = investors.filter(inv => inv.status === 'Pending').length;
@@ -760,6 +882,10 @@ const AppNavigator = () => {
           addBond,
           markPayoutPaid,
           markAllPayoutsPaid,
+          requestPayoutApproval,
+          requestAllPayoutsApproval,
+          approvePayoutRequest,
+          rejectPayoutRequest,
           setAdminProfile,
           approveKyc,
           rejectKyc,

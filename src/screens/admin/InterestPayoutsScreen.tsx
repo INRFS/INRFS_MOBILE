@@ -6,7 +6,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 const formatINR = (n: number) => '₹' + n.toLocaleString('en-IN', {minimumFractionDigits: 2});
 
 const InterestPayoutsScreen = ({navigation}: any) => {
-  const {payouts, markPayoutPaid, markAllPayoutsPaid} = useAppData();
+  const {payouts, markPayoutPaid, markAllPayoutsPaid, requestPayoutApproval, requestAllPayoutsApproval} = useAppData();
   const [query, setQuery] = useState('');
 
   const filtered = payouts.filter(
@@ -17,14 +17,31 @@ const InterestPayoutsScreen = ({navigation}: any) => {
 
   const overdue = filtered.filter(p => p.status === 'overdue');
   const upcoming = filtered.filter(p => p.status === 'upcoming');
+  const inApproval = filtered.filter(
+    p => p.status === 'pending_approval' || p.status === 'approved' || p.status === 'rejected',
+  );
   const paid = filtered.filter(p => p.status === 'paid');
   const totalPending = payouts
     .filter(p => p.status !== 'paid')
     .reduce((sum, p) => sum + p.amount, 0);
 
-  const confirmProcess = (p: Payout) => {
+  const needsApprovalCount = payouts.filter(p => p.status === 'overdue' || p.status === 'upcoming').length;
+  const approvedCount = payouts.filter(p => p.status === 'approved').length;
+
+  const confirmSendForApproval = (p: Payout) => {
     Alert.alert(
-      p.status === 'overdue' ? 'Process payment' : 'Process early',
+      'Send for approval',
+      `Send ${formatINR(p.amount)} payout for ${p.investorName} (${p.bondId}) to Super Admin for approval?`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Send', onPress: () => requestPayoutApproval(p.id)},
+      ],
+    );
+  };
+
+  const confirmMarkPaid = (p: Payout) => {
+    Alert.alert(
+      'Mark as paid',
       `Mark ${formatINR(p.amount)} for ${p.investorName} (${p.bondId}) as paid?`,
       [
         {text: 'Cancel', style: 'cancel'},
@@ -33,13 +50,40 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     );
   };
 
-  const handleMarkAllPaid = () => {
-    if (payouts.length === 0) return;
-    Alert.alert('Mark all paid', `Mark all ${payouts.length} pending payouts as paid?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {text: 'Confirm', onPress: markAllPayoutsPaid},
-    ]);
+  const confirmResendApproval = (p: Payout) => {
+    Alert.alert(
+      'Resend for approval',
+      `Resend ${formatINR(p.amount)} payout for ${p.investorName} (${p.bondId}) to Super Admin?`,
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Resend', onPress: () => requestPayoutApproval(p.id)},
+      ],
+    );
   };
+
+  const handleBulkAction = () => {
+    if (needsApprovalCount > 0) {
+      Alert.alert(
+        'Send all for approval',
+        `Send ${needsApprovalCount} pending payout${needsApprovalCount === 1 ? '' : 's'} to Super Admin for approval?`,
+        [
+          {text: 'Cancel', style: 'cancel'},
+          {text: 'Send', onPress: requestAllPayoutsApproval},
+        ],
+      );
+      return;
+    }
+    if (approvedCount > 0) {
+      Alert.alert('Mark all paid', `Mark all ${approvedCount} approved payouts as paid?`, [
+        {text: 'Cancel', style: 'cancel'},
+        {text: 'Confirm', onPress: markAllPayoutsPaid},
+      ]);
+    }
+  };
+
+  const bulkBtnLabel =
+    needsApprovalCount > 0 ? 'Send All for Approval' : approvedCount > 0 ? 'Mark All Paid' : 'All Settled';
+  const bulkBtnDisabled = needsApprovalCount === 0 && approvedCount === 0;
 
   const renderRow = (p: Payout) => (
     <View key={p.id} style={styles.card}>
@@ -59,6 +103,9 @@ const InterestPayoutsScreen = ({navigation}: any) => {
             <Text style={styles.overdueText}>Overdue {p.overdueDays} Day{p.overdueDays === 1 ? '' : 's'}</Text>
           )}
           {p.status === 'paid' && <Text style={styles.paidText}>Paid</Text>}
+          {p.status === 'pending_approval' && <Text style={styles.pendingApprovalText}>Pending Approval</Text>}
+          {p.status === 'approved' && <Text style={styles.approvedText}>Approved</Text>}
+          {p.status === 'rejected' && <Text style={styles.rejectedText}>Rejected</Text>}
         </View>
       </View>
       <View style={styles.cardBottomRow}>
@@ -66,15 +113,30 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           <Text style={styles.dueText}>Due {p.dueDate}</Text>
           {p.reference !== '–' && <Text style={styles.refText}>Ref: {p.reference}</Text>}
         </View>
-        {p.status === 'paid' ? (
-          <Text style={styles.doneText}>✓ Done</Text>
-        ) : (
+
+        {p.status === 'paid' && <Text style={styles.doneText}>✓ Done</Text>}
+
+        {(p.status === 'overdue' || p.status === 'upcoming') && (
           <TouchableOpacity
             style={p.status === 'overdue' ? undefined : styles.processEarlyBtn}
-            onPress={() => confirmProcess(p)}>
+            onPress={() => confirmSendForApproval(p)}>
             <Text style={p.status === 'overdue' ? styles.processPaymentText : styles.processEarlyText}>
-              {p.status === 'overdue' ? 'Process Payment' : 'Process Early'}
+              Send for Approval
             </Text>
+          </TouchableOpacity>
+        )}
+
+        {p.status === 'pending_approval' && <Text style={styles.waitingText}>Waiting for Super Admin</Text>}
+
+        {p.status === 'approved' && (
+          <TouchableOpacity style={styles.markPaidBtn} onPress={() => confirmMarkPaid(p)}>
+            <Text style={styles.markPaidBtnText}>Mark as Paid</Text>
+          </TouchableOpacity>
+        )}
+
+        {p.status === 'rejected' && (
+          <TouchableOpacity style={styles.resendBtn} onPress={() => confirmResendApproval(p)}>
+            <Text style={styles.resendBtnText}>Resend for Approval</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -102,8 +164,11 @@ const InterestPayoutsScreen = ({navigation}: any) => {
             </View>
           </View>
           <Text style={styles.pendingValue}>{formatINR(totalPending)}</Text>
-          <TouchableOpacity style={styles.markAllBtn} onPress={handleMarkAllPaid}>
-            <Text style={styles.markAllBtnText}>Mark All Paid</Text>
+          <TouchableOpacity
+            style={[styles.markAllBtn, bulkBtnDisabled && styles.markAllBtnDisabled]}
+            disabled={bulkBtnDisabled}
+            onPress={handleBulkAction}>
+            <Text style={styles.markAllBtnText}>{bulkBtnLabel}</Text>
           </TouchableOpacity>
         </View>
 
@@ -134,6 +199,13 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           </>
         )}
 
+        {inApproval.length > 0 && (
+          <>
+            <Text style={styles.sectionLabel}>⏳ Awaiting Approval ({inApproval.length})</Text>
+            {inApproval.map(renderRow)}
+          </>
+        )}
+
         {paid.length > 0 && (
           <>
             <Text style={styles.sectionLabel}>✓ Paid ({paid.length})</Text>
@@ -141,7 +213,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           </>
         )}
 
-        {overdue.length === 0 && upcoming.length === 0 && paid.length === 0 && (
+        {overdue.length === 0 && upcoming.length === 0 && inApproval.length === 0 && paid.length === 0 && (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>No payouts found</Text>
           </View>

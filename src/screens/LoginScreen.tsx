@@ -3,13 +3,12 @@ import {View, Text, TextInput, TouchableOpacity,  ScrollView} from 'react-native
 import {styles} from '../styles/LoginScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
 import {SafeAreaView} from 'react-native-safe-area-context';
-type Role = 'investor' | 'admin' | 'superadmin' | 'branchmanager';
+type Role = 'investor' | 'admin' | 'superadmin';
 
 const roles: {key: Role; label: string; sub: string; icon: string}[] = [
   {key: 'investor', label: 'Investor', sub: 'Access your portfolio', icon: '👤'},
   {key: 'admin', label: 'Admin', sub: 'Manage investors', icon: '🛡'},
   {key: 'superadmin', label: 'Super admin', sub: 'Full system access', icon: '🔒'},
-  {key: 'branchmanager', label: 'Branch manager', sub: 'Branch operations', icon: '🏢'},
 ];
 
 const LoginScreen = ({navigation}: any) => {
@@ -76,9 +75,6 @@ const LoginScreen = ({navigation}: any) => {
         navigation.navigate('SuperAdminDashboard');
         return;
       }
-
-      // branchmanager not wired to a screen yet
-      console.log('Login as', selectedRole, username, password);
     }
   };
 
