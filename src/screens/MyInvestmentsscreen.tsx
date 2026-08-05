@@ -566,8 +566,8 @@ export function useInvestments(investorId?: string): Investment[] {
     ? investors.find(inv => inv.id === investorId)?.name
     : undefined;
 
-  const bondItems: Investment[] = bonds
-    .filter(b => !investorId || b.investorName === investorName)
+ const bondItems: Investment[] = bonds
+  .filter(b => !investorId || b.investorId === investorId)
     .map(b => {
       const investedDate = parseDisplayDate(b.investedDate);
       const maturityDate = parseDisplayDate(b.maturityDate);
