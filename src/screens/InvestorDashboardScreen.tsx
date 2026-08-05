@@ -331,7 +331,7 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
         </View> */}
       </ScrollView>
 
-      <BottomTabBar active="Home" navigation={navigation} />
+      <BottomTabBar active="Home" navigation={navigation} investorId={investorId} />
     </SafeAreaView>
   );
 };

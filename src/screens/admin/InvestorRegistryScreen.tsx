@@ -4,11 +4,6 @@ import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
-// ---------------------------------------------------------------------------
-// Excel export requires these packages (same as My Investments):
-//   npm install xlsx react-native-fs react-native-share
-// (iOS: cd ios && pod install)
-// ---------------------------------------------------------------------------
 import XLSX from 'xlsx';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
@@ -18,10 +13,20 @@ const tierIcon = (inv: Investor) => (inv.type === 'institution' ? '🏢' : '👤
 type StatusFilter = 'All' | 'Active' | 'Pending';
 const STATUS_FILTERS: StatusFilter[] = ['All', 'Active', 'Pending'];
 
+// Investor ID must never be shown to the admin until the investor's
+// investment/KYC has actually been approved (inv.status flips from
+// 'Pending' to 'Active' inside approveInvestmentRequest / approveInvestorKyc
+// in AppNavigator.tsx). Until then, every place an ID would render shows
+// "Pending" instead — consistent with the Investment Management screen.
+const displayInvestorId = (inv: Investor) => (inv.status === 'Pending' ? 'Pending' : inv.id);
+
 const InvestorRegistryScreen = ({navigation}: any) => {
   const {investors, bonds} = useAppData();
   const [query, setQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('All');
+  // Default to "Pending" instead of "All" so a new/unverified investor is
+  // immediately visible to the admin the moment this screen opens, instead
+  // of being buried in the full list.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('Pending');
 
   const filtered = investors.filter(inv => {
     const matchesQuery =
@@ -32,11 +37,10 @@ const InvestorRegistryScreen = ({navigation}: any) => {
     return matchesQuery && matchesStatus;
   });
 
-  // ---------- Export to Excel ----------
   const handleExport = async () => {
     try {
       const rows = investors.map(inv => ({
-        'Investor ID': inv.id,
+        'Investor ID': displayInvestorId(inv),
         Name: inv.name,
         Email: inv.email,
         Mobile: inv.mobile,
@@ -67,11 +71,6 @@ const InvestorRegistryScreen = ({navigation}: any) => {
     }
   };
 
-  // ---------- View Profile routing ----------
-  // Approved + Active investors go straight to their bond (with bank details).
-  // Everyone else (pending KYC, etc.) routes through KYC Approvals — and now
-  // we pass THIS investor's id along, so KycApprovalsScreen can show their
-  // specific pending request instead of the whole generic queue.
   const handleViewProfile = (inv: Investor) => {
     if (inv.kycStatus === 'Approved' && inv.status === 'Active') {
       const bond = bonds.find(b => b.investorName === inv.name);
@@ -140,7 +139,9 @@ const InvestorRegistryScreen = ({navigation}: any) => {
               </View>
               <View style={styles.nameWrap}>
                 <Text style={styles.name}>{inv.name}</Text>
-                <Text style={styles.invId}>{inv.id}</Text>
+                {/* Real Investor ID is withheld until admin approval —
+                    shows "Pending" instead while inv.status === 'Pending'. */}
+                <Text style={styles.invId}>{displayInvestorId(inv)}</Text>
                 <Text style={styles.email}>{inv.email}</Text>
               </View>
             </View>
@@ -216,10 +217,6 @@ const InvestorRegistryScreen = ({navigation}: any) => {
           <Text style={styles.tabIcon}>📁</Text>
           <Text style={styles.tabLabel}>Portfolio</Text>
         </TouchableOpacity>
-        {/* <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminInvestments')}>
-          <Text style={styles.tabIcon}>💵</Text>
-          <Text style={styles.tabLabel}>Investments</Text>
-        </TouchableOpacity> */}
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
           <Text style={styles.tabIcon}>💰</Text>
           <Text style={styles.tabLabel}>Payouts</Text>

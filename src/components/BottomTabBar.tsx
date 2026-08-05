@@ -16,7 +16,19 @@ const tabs: {key: TabKey; label: string; icon: string; route: string | null}[] =
   {key: 'Profile', label: 'Profile', icon: 'account-outline', route: 'Profile'},
 ];
 
-const BottomTabBar = ({active, navigation}: {active: TabKey; navigation: any}) => {
+const BottomTabBar = ({
+  active,
+  navigation,
+  investorId,
+}: {
+  active: TabKey;
+  navigation: any;
+  // Must be forwarded on every tab press — otherwise the destination screen's
+  // route.params.investorId comes back undefined and screens that filter by
+  // investorId (e.g. My Investments) fall back to showing every investor's
+  // data instead of just the signed-in investor's own records.
+  investorId?: string;
+}) => {
   return (
     <View style={styles.container}>
       {tabs.map(tab => {
@@ -27,7 +39,7 @@ const BottomTabBar = ({active, navigation}: {active: TabKey; navigation: any}) =
             style={styles.tabItem}
             activeOpacity={0.7}
             onPress={() => {
-              if (tab.route) navigation.navigate(tab.route);
+              if (tab.route) navigation.navigate(tab.route, {investorId});
             }}>
             <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
               <Icon name={tab.icon} size={20} color={isActive ? '#1955F0' : '#9CA3AF'} />

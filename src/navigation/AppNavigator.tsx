@@ -55,6 +55,15 @@ export type Investor = {
   totalInvested: number;
   status: 'Active' | 'Pending';
   type: 'individual' | 'institution';
+  // Profile/KYC fields to match the web KYC review screen. Optional
+  // because investors created implicitly (e.g. via an investment request
+  // before full KYC is collected) won't have these yet — RegistrationScreen
+  // should pass them through once it collects them.
+  dob?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
 };
 
 export type AdminSettings = {
@@ -241,6 +250,11 @@ type AddInvestmentParams = {
   amount: number;
   bondSeriesId?: string;
   investorType?: 'individual' | 'institution';
+  dob?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
 };
 
 type AddBondParams = {
@@ -260,6 +274,11 @@ type SubmitInvestmentRequestParams = {
   interestRate: number;
   transactionRef: string;
   screenshotUri: string | null;
+  dob?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
 };
 
 type AddBranchParams = {
@@ -533,29 +552,6 @@ const initialSystemSettings: SystemSettings = {
 // ---------------------------------------------------------------------------
 // PERSISTENCE
 // ---------------------------------------------------------------------------
-// One JSON blob saved to AsyncStorage (RN's on-device local storage). This
-// is what actually fixes "investments disappear after I rerun the app".
-//
-// This is deliberately isolated to these two functions so that when a real
-// backend is ready, THIS is the only place that needs to change — every
-// screen keeps talking to useAppData() exactly as it does today.
-//
-//   loadAppData()  -> now:    AsyncStorage.getItem(STORAGE_KEY)
-//                  -> later:  GET /api/investor/:id/data (per logged-in user)
-//   saveAppData()  -> now:    AsyncStorage.setItem(STORAGE_KEY, ...)
-//                  -> later:  PATCH/PUT to your backend, or move individual
-//                              API calls inside each action (addInvestment,
-//                              approveKyc, submitInvestmentRequest, etc.)
-//                              instead of saving one big blob.
-//
-// IMPORTANT CAVEAT: right now this is ONE blob shared by every role
-// (investor/admin/superadmin) on the SAME device — fine for a local demo,
-// but not real per-user data isolation. Once a real backend exists, data
-// must be scoped server-side by investor ID so investor A can never read
-// investor B's investments — that requires backend auth, not just this
-// storage swap.
-// ---------------------------------------------------------------------------
-
 const STORAGE_KEY = '@inrfs_app_data_v1';
 
 type PersistedState = {
@@ -645,12 +641,8 @@ const AppNavigator = () => {
   const [saNotifications, setSaNotifications] = useState<SANotification[]>(initialSANotifications);
   const [systemSettings, setSystemSettingsState] = useState<SystemSettings>(initialSystemSettings);
 
-  // ---- Persistence: load once on app start, then save on every change ----
   const [isDataHydrated, setIsDataHydrated] = useState(false);
 
-  // 1) On first mount, restore whatever was saved last time. Runs once,
-  // before the save-effect below is allowed to fire, so the empty initial
-  // arrays can never clobber what was just loaded.
   useEffect(() => {
     (async () => {
       const saved = await loadAppData();
@@ -677,7 +669,6 @@ const AppNavigator = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2) After hydration, persist on every change.
   useEffect(() => {
     if (!isDataHydrated) return;
     saveAppData({
@@ -803,7 +794,18 @@ const AppNavigator = () => {
     setPayouts(prev => [nextPayout, ...prev]);
   };
 
-  const addInvestment = ({investorId, investorName, amount, bondSeriesId, investorType}: AddInvestmentParams) => {
+  const addInvestment = ({
+    investorId,
+    investorName,
+    amount,
+    bondSeriesId,
+    investorType,
+    dob,
+    address,
+    city,
+    state,
+    pincode,
+  }: AddInvestmentParams) => {
     setInvestors(prev => {
       const existing = prev.find(inv => inv.id === investorId);
       if (existing) {
@@ -823,6 +825,11 @@ const AppNavigator = () => {
           totalInvested: amount,
           status: 'Active',
           type: investorType ?? 'individual',
+          dob,
+          address,
+          city,
+          state,
+          pincode,
         },
         ...prev,
       ];
@@ -897,6 +904,11 @@ const AppNavigator = () => {
     interestRate,
     transactionRef,
     screenshotUri,
+    dob,
+    address,
+    city,
+    state,
+    pincode,
   }: SubmitInvestmentRequestParams) => {
     const newRequest: InvestmentRequest = {
       id: `REQ-${Date.now().toString().slice(-6)}`,
@@ -930,6 +942,11 @@ const AppNavigator = () => {
           totalInvested: 0,
           status: 'Pending',
           type: 'individual',
+          dob,
+          address,
+          city,
+          state,
+          pincode,
         },
         ...prev,
       ];

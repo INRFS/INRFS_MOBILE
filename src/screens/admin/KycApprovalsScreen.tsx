@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-native';
+import {View, Text, ScrollView, TouchableOpacity, Image, TextInput, Alert, StyleSheet} from 'react-native';
 import {useAppData, KycRequest, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/KycApprovalsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -10,33 +10,34 @@ const kycStatusColors = (status: Investor['kycStatus']) => {
   return {bg: '#FEE2E2', text: '#DC2626'};
 };
 
+// Small helper so missing profile fields render consistently instead of
+// showing "undefined" or a blank box.
+const orNotProvided = (v?: string) => (v && v.trim() ? v : 'Not provided');
+
 const KycApprovalsScreen = ({navigation, route}: any) => {
   const {investors, kycRequests, kycStats, approveKyc, rejectKyc, escalateKyc, approveInvestorKyc, rejectInvestorKyc} =
     useAppData();
   const [visibleCount, setVisibleCount] = useState(3);
+
+  // Local-only remarks draft for the focused review. There's no backend
+  // field to persist this to yet, so it's UI-only for now — let me know if
+  // you want remarks stored against the investor/KYC record.
+  const [remarks, setRemarks] = useState('');
 
   // If we arrived here from Investor Management -> View Profile, we're
   // given that investor's id. When present, show THAT investor's KYC
   // review instead of the generic queue.
   const focusedInvestorId: string | undefined = route?.params?.investorId;
 
-  // Focused lookup reads from `investors` directly — the source of truth
-  // for KYC status — instead of filtering kycRequests by category==='pending'.
-  // Previously, once a request was approved/rejected it moved to
-  // category:'archive' and the focused view showed "No KYC request found"
-  // even though the investor's record existed and had a real status.
   const focusedInvestor = focusedInvestorId
     ? investors.find(inv => inv.id === focusedInvestorId)
     : undefined;
-  // Still look up a linked KycRequest (any category) so we can show the
-  // Aadhaar number if one was submitted.
   const focusedKycRequest = focusedInvestorId
     ? kycRequests.find(k => k.investorId === focusedInvestorId)
     : undefined;
 
   const pendingCount = kycRequests.filter(k => k.category === 'pending').length;
 
-  // Generic queue — unaffected, still pending-only.
   const filtered = kycRequests.filter(k => k.category === 'pending' && !focusedInvestorId);
   const visible = filtered.slice(0, visibleCount);
 
@@ -56,10 +57,6 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
     ]);
   };
 
-  // Focused single-investor Approve/Reject. Uses the linked KycRequest if
-  // one exists (so it stays consistent with the queue's own approve/reject
-  // logic), otherwise falls back to updating the investor record directly.
-  // Either way, once handled we move on to Investments.
   const confirmFocusedAction = (action: 'approve' | 'reject') => {
     if (!focusedInvestor) return;
     const actionLabel = action === 'approve' ? 'Approve' : 'Reject';
@@ -143,100 +140,104 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
                 <Text style={styles.name}>{focusedInvestor.name}</Text>
                 <Text style={styles.location}>{focusedInvestor.id}</Text>
               </View>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: kycStatusColors(focusedInvestor.kycStatus).bg,
-                  borderRadius: 999,
-                  paddingHorizontal: 12,
-                  paddingVertical: 5,
-                }}>
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: '700',
-                    color: kycStatusColors(focusedInvestor.kycStatus).text,
-                  }}>
+              <View style={[local.statusPill, {backgroundColor: kycStatusColors(focusedInvestor.kycStatus).bg}]}>
+                <Text style={[local.statusPillText, {color: kycStatusColors(focusedInvestor.kycStatus).text}]}>
                   {focusedInvestor.kycStatus}
                 </Text>
               </View>
             </View>
 
-            <View style={styles.docCol}>
-              <Text style={styles.docLabel}>FULL NAME</Text>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#F3F4F6',
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginTop: 2,
-                }}>
-                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.name}</Text>
+            {/* Row 1: Full Name / Mobile */}
+            <View style={local.fieldRow}>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>FULL NAME</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{focusedInvestor.name}</Text>
+                </View>
+              </View>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>MOBILE</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{focusedInvestor.mobile}</Text>
+                </View>
               </View>
             </View>
 
-            <View style={styles.docCol}>
-              <Text style={styles.docLabel}>MOBILE</Text>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#F3F4F6',
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginTop: 2,
-                }}>
-                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.mobile}</Text>
+            {/* Row 2: Email / Date of Birth */}
+            <View style={local.fieldRow}>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>EMAIL</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{focusedInvestor.email}</Text>
+                </View>
+              </View>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>DATE OF BIRTH</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{orNotProvided(focusedInvestor.dob)}</Text>
+                </View>
               </View>
             </View>
 
-            <View style={styles.docCol}>
-              <Text style={styles.docLabel}>EMAIL</Text>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#F3F4F6',
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginTop: 2,
-                }}>
-                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.email}</Text>
+            {/* Row 3: Aadhaar Number / Branch */}
+            <View style={local.fieldRow}>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>AADHAAR NUMBER</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{focusedKycRequest?.aadhaarNumber ?? 'Not submitted'}</Text>
+                </View>
+              </View>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>BRANCH</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{focusedInvestor.branch}</Text>
+                </View>
               </View>
             </View>
 
-            <View style={styles.docCol}>
-              <Text style={styles.docLabel}>BRANCH</Text>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#F3F4F6',
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginTop: 2,
-                }}>
-                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>{focusedInvestor.branch}</Text>
+            {/* Row 4: Address / City */}
+            <View style={local.fieldRow}>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>ADDRESS</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{orNotProvided(focusedInvestor.address)}</Text>
+                </View>
+              </View>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>CITY</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{orNotProvided(focusedInvestor.city)}</Text>
+                </View>
               </View>
             </View>
 
-            <View style={styles.docCol}>
-              <Text style={styles.docLabel}>AADHAAR NUMBER</Text>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#F3F4F6',
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginTop: 2,
-                }}>
-                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>
-                  {focusedKycRequest?.aadhaarNumber ?? 'Not submitted'}
-                </Text>
+            {/* Row 5: State / Pin Code */}
+            <View style={local.fieldRow}>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>STATE</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{orNotProvided(focusedInvestor.state)}</Text>
+                </View>
               </View>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>PIN CODE</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>{orNotProvided(focusedInvestor.pincode)}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Remarks box, matching the web layout */}
+            <View style={[styles.docCol, local.remarksWrap]}>
+              <Text style={styles.docLabel}>REMARKS</Text>
+              <TextInput
+                value={remarks}
+                onChangeText={setRemarks}
+                placeholder="Add remarks..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                style={local.remarksInput}
+              />
             </View>
 
             {focusedInvestor.kycStatus === 'Pending' && (
@@ -286,22 +287,10 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
               </View>
             </View>
 
-            {/* Verification shows only the Aadhaar Number for review — no
-                Aadhaar image or Bank Statement uploads are displayed. */}
             <View style={styles.docCol}>
               <Text style={styles.docLabel}>AADHAAR NUMBER</Text>
-              <View
-                style={{
-                  alignSelf: 'flex-start',
-                  backgroundColor: '#F3F4F6',
-                  borderRadius: 8,
-                  paddingHorizontal: 10,
-                  paddingVertical: 6,
-                  marginTop: 2,
-                }}>
-                <Text style={{fontSize: 13, fontWeight: '700', color: '#111827'}}>
-                  {req.aadhaarNumber}
-                </Text>
+              <View style={local.pillBox}>
+                <Text style={local.pillText}>{req.aadhaarNumber}</Text>
               </View>
             </View>
 
@@ -379,10 +368,6 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
           <Text style={styles.tabIcon}>📁</Text>
           <Text style={styles.tabLabel}>Portfolio</Text>
         </TouchableOpacity>
-        {/* <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminInvestments')}>
-          <Text style={styles.tabIcon}>💵</Text>
-          <Text style={styles.tabLabel}>Investments</Text>
-        </TouchableOpacity> */}
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
           <Text style={styles.tabIcon}>💰</Text>
           <Text style={styles.tabLabel}>Payouts</Text>
@@ -395,5 +380,60 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
     </SafeAreaView>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Local styles for the pieces added to match the web reference design.
+// Kept local to this screen (rather than editing the unseen
+// KycApprovalsScreen.styles.ts) so nothing in the shared style file is
+// touched. Merge these into that file later if you'd rather centralize them.
+// ---------------------------------------------------------------------------
+const local = StyleSheet.create({
+  fieldRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  fieldCol: {
+    flex: 1,
+  },
+  pillBox: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 2,
+  },
+  pillText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  remarksWrap: {
+    marginTop: 8,
+  },
+  remarksInput: {
+    marginTop: 4,
+    minHeight: 70,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#111827',
+    textAlignVertical: 'top',
+  },
+});
 
 export default KycApprovalsScreen;
