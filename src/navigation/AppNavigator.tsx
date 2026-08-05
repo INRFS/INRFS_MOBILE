@@ -1,4 +1,5 @@
-import React, {createContext, useContext, useState} from 'react';
+import React, {createContext, useContext, useState, useEffect} from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {NavigationContainer} from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
@@ -66,6 +67,7 @@ export type Bond = {
   seriesId: string;
   investorName: string;
   amount: number;
+   investorId: string; 
   interestRate: number;
   investedDate: string;
   maturityDate: string;
@@ -101,17 +103,12 @@ export type KycRequest = {
   avatarUri: string;
   overallFlag: 'verified' | 'flagged' | 'uploading';
   aadhaar: DocStatus;
-  // The investor's actual Aadhaar number, shown to the admin during review
-  // instead of document image / bank statement uploads.
   aadhaarNumber: string;
   pan: DocStatus;
   bankStmt: DocStatus;
   avgWait: string;
   amlNote?: string;
   category: 'pending' | 'flagged' | 'archive';
-  // Links this KYC record back to the investor it belongs to, so screens
-  // like Investor Management -> View Profile can jump straight to THIS
-  // investor's request instead of showing the whole generic queue.
   investorId?: string;
 };
 
@@ -135,11 +132,6 @@ export type Payout = {
   overdueDays?: number;
 };
 
-// ---------------- Investment approval workflow ----------------
-// An investor submitting from InvestNowScreen creates one of these instead
-// of an immediate Bond. It only becomes a Bond once an admin approves it
-// from AdminInvestmentsScreen (Admin > Investments).
-
 export type InvestmentRequestStatus = 'Pending' | 'Approved' | 'Rejected';
 
 export type InvestmentRequest = {
@@ -148,17 +140,13 @@ export type InvestmentRequest = {
   investorName: string;
   amount: number;
   tenureMonths: number;
-  // Defaults to the flat rate shown on the Invest Now form (3%); the admin
-  // can edit this before approving.
   interestRate: number;
   transactionRef: string;
   screenshotUri: string | null;
   status: InvestmentRequestStatus;
   requestedOn: string;
-  bondSeriesId?: string; // set once approved and a Bond is generated
+  bondSeriesId?: string;
 };
-
-// ---------------- Super Admin types ----------------
 
 export type Branch = {
   id: string;
@@ -166,7 +154,7 @@ export type Branch = {
   city: string;
   adminName: string;
   investors: number;
-  aum: string; // e.g. "₹18.2Cr" — kept as a display string to match the web portal
+  aum: string;
   status: 'Active' | 'Suspended';
 };
 
@@ -260,7 +248,7 @@ type AddBondParams = {
   amount: number;
   interestRate: number;
   tenureMonths: number;
-  investedDateStr: string; // expected format: DD-MM-YYYY
+  investedDateStr: string;
   reference?: string;
 };
 
@@ -318,20 +306,17 @@ type AppDataContextType = {
   approveInvestorKyc: (investorId: string) => void;
   rejectInvestorKyc: (investorId: string) => void;
 
-  // ---- Investment approval workflow (Admin > Investments) ----
   investmentRequests: InvestmentRequest[];
   submitInvestmentRequest: (params: SubmitInvestmentRequestParams) => void;
   updateInvestmentRequestRate: (id: string, rate: number) => void;
   approveInvestmentRequest: (id: string) => void;
   rejectInvestmentRequest: (id: string) => void;
 
-  // ---- Admin Notifications / Settings ----
   adminNotifications: SANotification[];
   adminSettings: AdminSettings;
   markAllAdminNotificationsRead: () => void;
   updateAdminSettings: (partial: Partial<AdminSettings>) => void;
 
-  // ---- Super Admin ----
   branches: Branch[];
   saAdmins: SAAdmin[];
   systemUsers: SystemUser[];
@@ -350,6 +335,10 @@ type AppDataContextType = {
   updateSystemSettings: (partial: Partial<SystemSettings>) => void;
   markAllNotificationsRead: () => void;
   runBackupNow: () => void;
+
+  // Screens can check this to avoid a "No investments yet" flash before the
+  // persisted data has finished loading from disk right after app launch.
+  isDataHydrated: boolean;
 };
 
 const AppDataContext = createContext<AppDataContextType | undefined>(undefined);
@@ -364,36 +353,16 @@ export const useAppData = () => {
 
 // ---------------------------------------------------------------------------
 // MOCK / SEED DATA
-// ---------------------------------------------------------------------------
-// Investors, Bonds, Activities, and Payouts are now seeded EMPTY. The app
-// starts with zero data across investor, admin, and super admin screens.
-// The only way a Bond (and, in turn, an Investor + Activity entry) gets
-// created is through the real flow:
-//   1. Investor submits from InvestNowScreen -> submitInvestmentRequest()
-//      (shows up as "Pending Approval" in My Investments, AND creates a
-//      Pending Investor record immediately so they show up in Investor
-//      Registry right away instead of only after approval)
-//   2. Admin reviews it in Admin > Investments (AdminInvestmentsScreen)
-//   3. Admin approves it -> approveInvestmentRequest() generates the real
-//      Bond record and flips the Investor's status to Active, which then
-//      flows through to Admin's Investor Registry / Bond Tracking and
-//      Super Admin Reports.
-//   4. Approving (or manually adding) a Bond now ALSO generates the first
-//      monthly interest Payout record for that bond (see
-//      createPayoutForBond), and marking a payout "Paid" automatically
-//      schedules the following month's payout (see
-//      scheduleNextMonthlyPayout) so ongoing investments keep flowing
-//      through Interest Payouts every cycle.
+// These "initial*" arrays are only used the very FIRST time the app runs on
+// a device, before anything has been saved to AsyncStorage. On every later
+// launch, saved data loaded from AsyncStorage overwrites these (see the
+// PERSISTENCE section below and the load effect inside AppNavigator).
 // ---------------------------------------------------------------------------
 
 const initialInvestors: Investor[] = [];
-
 const initialBonds: Bond[] = [];
-
 const initialActivities: Activity[] = [];
-
 const initialPayouts: Payout[] = [];
-
 const initialAdminNotifications: SANotification[] = [];
 
 const defaultAdminSettings: AdminSettings = {
@@ -561,6 +530,71 @@ const initialSystemSettings: SystemSettings = {
   lastBackupTime: '22 Jul 2025, 12:30',
 };
 
+// ---------------------------------------------------------------------------
+// PERSISTENCE
+// ---------------------------------------------------------------------------
+// One JSON blob saved to AsyncStorage (RN's on-device local storage). This
+// is what actually fixes "investments disappear after I rerun the app".
+//
+// This is deliberately isolated to these two functions so that when a real
+// backend is ready, THIS is the only place that needs to change — every
+// screen keeps talking to useAppData() exactly as it does today.
+//
+//   loadAppData()  -> now:    AsyncStorage.getItem(STORAGE_KEY)
+//                  -> later:  GET /api/investor/:id/data (per logged-in user)
+//   saveAppData()  -> now:    AsyncStorage.setItem(STORAGE_KEY, ...)
+//                  -> later:  PATCH/PUT to your backend, or move individual
+//                              API calls inside each action (addInvestment,
+//                              approveKyc, submitInvestmentRequest, etc.)
+//                              instead of saving one big blob.
+//
+// IMPORTANT CAVEAT: right now this is ONE blob shared by every role
+// (investor/admin/superadmin) on the SAME device — fine for a local demo,
+// but not real per-user data isolation. Once a real backend exists, data
+// must be scoped server-side by investor ID so investor A can never read
+// investor B's investments — that requires backend auth, not just this
+// storage swap.
+// ---------------------------------------------------------------------------
+
+const STORAGE_KEY = '@inrfs_app_data_v1';
+
+type PersistedState = {
+  investors: Investor[];
+  bonds: Bond[];
+  activities: Activity[];
+  payouts: Payout[];
+  investmentRequests: InvestmentRequest[];
+  kycRequests: KycRequest[];
+  adminNotifications: SANotification[];
+  adminSettings: AdminSettings;
+  adminProfile: AdminProfile;
+  branches: Branch[];
+  saAdmins: SAAdmin[];
+  systemUsers: SystemUser[];
+  systemRoles: SystemRole[];
+  auditLogs: AuditLogEntry[];
+  saNotifications: SANotification[];
+  systemSettings: SystemSettings;
+};
+
+const loadAppData = async (): Promise<Partial<PersistedState> | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    return raw ? (JSON.parse(raw) as Partial<PersistedState>) : null;
+  } catch (e) {
+    console.warn('[AppNavigator] Failed to load persisted app data:', e);
+    return null;
+  }
+};
+
+const saveAppData = async (data: PersistedState) => {
+  try {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.warn('[AppNavigator] Failed to persist app data:', e);
+  }
+};
+
 
 const parseDDMMYYYY = (s: string): Date => {
   const parts = s.split('-').map(Number);
@@ -611,6 +645,79 @@ const AppNavigator = () => {
   const [saNotifications, setSaNotifications] = useState<SANotification[]>(initialSANotifications);
   const [systemSettings, setSystemSettingsState] = useState<SystemSettings>(initialSystemSettings);
 
+  // ---- Persistence: load once on app start, then save on every change ----
+  const [isDataHydrated, setIsDataHydrated] = useState(false);
+
+  // 1) On first mount, restore whatever was saved last time. Runs once,
+  // before the save-effect below is allowed to fire, so the empty initial
+  // arrays can never clobber what was just loaded.
+  useEffect(() => {
+    (async () => {
+      const saved = await loadAppData();
+      if (saved) {
+        if (saved.investors) setInvestors(saved.investors);
+        if (saved.bonds) setBonds(saved.bonds);
+        if (saved.activities) setActivities(saved.activities);
+        if (saved.payouts) setPayouts(saved.payouts);
+        if (saved.investmentRequests) setInvestmentRequests(saved.investmentRequests);
+        if (saved.kycRequests) setKycRequests(saved.kycRequests);
+        if (saved.adminNotifications) setAdminNotifications(saved.adminNotifications);
+        if (saved.adminSettings) setAdminSettingsState(saved.adminSettings);
+        if (saved.adminProfile) setAdminProfileState(saved.adminProfile);
+        if (saved.branches) setBranches(saved.branches);
+        if (saved.saAdmins) setSaAdmins(saved.saAdmins);
+        if (saved.systemUsers) setSystemUsers(saved.systemUsers);
+        if (saved.systemRoles) setSystemRoles(saved.systemRoles);
+        if (saved.auditLogs) setAuditLogs(saved.auditLogs);
+        if (saved.saNotifications) setSaNotifications(saved.saNotifications);
+        if (saved.systemSettings) setSystemSettingsState(saved.systemSettings);
+      }
+      setIsDataHydrated(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 2) After hydration, persist on every change.
+  useEffect(() => {
+    if (!isDataHydrated) return;
+    saveAppData({
+      investors,
+      bonds,
+      activities,
+      payouts,
+      investmentRequests,
+      kycRequests,
+      adminNotifications,
+      adminSettings,
+      adminProfile,
+      branches,
+      saAdmins,
+      systemUsers,
+      systemRoles,
+      auditLogs,
+      saNotifications,
+      systemSettings,
+    });
+  }, [
+    isDataHydrated,
+    investors,
+    bonds,
+    activities,
+    payouts,
+    investmentRequests,
+    kycRequests,
+    adminNotifications,
+    adminSettings,
+    adminProfile,
+    branches,
+    saAdmins,
+    systemUsers,
+    systemRoles,
+    auditLogs,
+    saNotifications,
+    systemSettings,
+  ]);
+
   const approveKyc = (id: string) => {
     const req = kycRequests.find(k => k.id === id);
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
@@ -635,11 +742,6 @@ const AppNavigator = () => {
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'flagged'} : k)));
   };
 
-  // Fallback for investors who don't have a matching KycRequest record —
-  // updates their kycStatus on the Investor record directly, so the
-  // focused KYC review (Investor Management -> View Profile) always has
-  // a working Approve/Reject action, not just investors seeded through
-  // the investment-request flow.
   const approveInvestorKyc = (investorId: string) => {
     setInvestors(prev =>
       prev.map(inv => (inv.id === investorId ? {...inv, kycStatus: 'Approved'} : inv)),
@@ -656,20 +758,15 @@ const AppNavigator = () => {
     setAdminProfileState(prev => ({...prev, ...partial}));
   };
 
-  // ---- Monthly interest payout generation ----
-  // Called whenever a Bond is created (either via approveInvestmentRequest
-  // or addBond) so that new investments are immediately reflected in
-  // Interest Payouts instead of requiring a separate manual step.
   const createPayoutForBond = (params: {
     bondId: string;
     investorName: string;
     investorType: 'individual' | 'institution';
     amount: number;
     interestRate: number;
-    investedDateStr: string; // DD-MM-YYYY
+    investedDateStr: string;
   }) => {
     const {bondId, investorName, investorType, amount, interestRate, investedDateStr} = params;
-    // interestRate is annual (p.a.), so divide by 12 to get the monthly payout amount
     const monthlyInterest = Math.round((amount * (interestRate / 100)) / 12);
 
     const investedDate = parseDDMMYYYY(investedDateStr);
@@ -690,9 +787,6 @@ const AppNavigator = () => {
     setPayouts(prev => [newPayout, ...prev]);
   };
 
-  // Once a payout is marked "Paid", automatically schedule the following
-  // month's payout for the same bond so the monthly cycle keeps going
-  // without any manual re-creation step.
   const scheduleNextMonthlyPayout = (paidPayout: Payout) => {
     const nextDue = new Date();
     nextDue.setMonth(nextDue.getMonth() + 1);
@@ -749,13 +843,16 @@ const AppNavigator = () => {
   const addBond = ({investorName, amount, interestRate, tenureMonths, investedDateStr, reference}: AddBondParams) => {
     const investedDate = parseDDMMYYYY(investedDateStr);
     const maturityDate = new Date(investedDate);
+    
     maturityDate.setMonth(maturityDate.getMonth() + tenureMonths);
 
-    const newBond: Bond = {
-      seriesId: `DB-${investedDate.getFullYear()}-${Date.now().toString().slice(-4)}`,
-      investorName,
-      amount,
+   const newBond: Bond = {
+    seriesId: `DB-${investedDate.getFullYear()}-${Date.now().toString().slice(-4)}`,
+    investorId: investors.find(inv => inv.name === investorName)?.id || '',
+    investorName,
+    amount,
       interestRate,
+      
       investedDate: investedDateStr,
       maturityDate: formatDDMMYYYY(maturityDate),
       subscriptionPercent: 100,
@@ -765,7 +862,6 @@ const AppNavigator = () => {
 
     setBonds(prev => [newBond, ...prev]);
 
-    // New investment -> immediately reflected in Interest Payouts.
     createPayoutForBond({
       bondId: newBond.seriesId,
       investorName,
@@ -793,11 +889,6 @@ const AppNavigator = () => {
     ]);
   };
 
-  // ---- Investment approval workflow ----
-  // Investor side: submitInvestmentRequest(). No bond is created here, but
-  // a Pending Investor record IS created (if one doesn't already exist) so
-  // that Investor Registry reflects the investor right away instead of
-  // only after admin approval.
   const submitInvestmentRequest = ({
     investorId,
     investorName,
@@ -822,8 +913,6 @@ const AppNavigator = () => {
 
     setInvestmentRequests(prev => [newRequest, ...prev]);
 
-    // Make the investor visible in Investor Registry immediately, with
-    // status 'Pending' and 0 totalInvested until the request is approved.
     let isNewInvestor = false;
     setInvestors(prev => {
       const existing = prev.find(inv => inv.id === investorId);
@@ -846,9 +935,6 @@ const AppNavigator = () => {
       ];
     });
 
-    // Create the matching KYC queue record (linked via investorId) so
-    // "View Profile" in Investor Management has something real to route
-    // to right from submission, not just after approval.
     setKycRequests(prev => {
       const alreadyLinked = prev.some(k => k.investorId === investorId);
       if (alreadyLinked) return prev;
@@ -895,15 +981,10 @@ const AppNavigator = () => {
     ]);
   };
 
-  // Admin side: edit the rate before approving, if needed.
   const updateInvestmentRequestRate = (id: string, rate: number) => {
     setInvestmentRequests(prev => prev.map(r => (r.id === id ? {...r, interestRate: rate} : r)));
   };
 
-  // Admin side: approve — this is the ONLY place a bond gets generated for
-  // an investor-submitted request. The investor record already exists
-  // (created Pending at submission time), so this flips it to Active and
-  // adds the invested amount.
   const approveInvestmentRequest = (id: string) => {
     const req = investmentRequests.find(r => r.id === id);
     if (!req || req.status !== 'Pending') return;
@@ -917,6 +998,7 @@ const AppNavigator = () => {
       seriesId,
       investorName: req.investorName,
       amount: req.amount,
+      investorId: req.investorId,  
       interestRate: req.interestRate,
       investedDate: investedDateStr,
       maturityDate: formatDDMMYYYY(maturityDate),
@@ -927,7 +1009,6 @@ const AppNavigator = () => {
 
     setBonds(prev => [newBond, ...prev]);
 
-    // New investment -> immediately reflected in Interest Payouts.
     createPayoutForBond({
       bondId: seriesId,
       investorName: req.investorName,
@@ -946,8 +1027,6 @@ const AppNavigator = () => {
             : inv,
         );
       }
-      // Fallback: in case the investor record somehow doesn't exist yet
-      // (e.g. requests created before this flow existed), create it now.
       return [
         {
           id: req.investorId,
@@ -965,8 +1044,6 @@ const AppNavigator = () => {
       ];
     });
 
-    // Ensure a linked KYC queue record exists even for the fallback case
-    // above (normally already created at submission time).
     setKycRequests(prev => {
       const alreadyLinked = prev.some(k => k.investorId === req.investorId);
       if (alreadyLinked) return prev;
@@ -1023,7 +1100,6 @@ const AppNavigator = () => {
           : p,
       ),
     );
-    // Roll the same bond into next month's payout cycle automatically.
     if (payout && payout.status === 'approved') {
       scheduleNextMonthlyPayout(payout);
     }
@@ -1038,7 +1114,6 @@ const AppNavigator = () => {
           : p,
       ),
     );
-    // Roll every settled bond into next month's payout cycle automatically.
     toRollover.forEach(scheduleNextMonthlyPayout);
   };
 
@@ -1157,8 +1232,6 @@ const AppNavigator = () => {
 
   const kycPendingCount = investors.filter(inv => inv.status === 'Pending').length;
 
- 
-
   const markAllAdminNotificationsRead = () => {
     setAdminNotifications(prev => prev.map(n => ({...n, isNew: false})));
   };
@@ -1166,8 +1239,6 @@ const AppNavigator = () => {
   const updateAdminSettings = (partial: Partial<AdminSettings>) => {
     setAdminSettingsState(prev => ({...prev, ...partial}));
   };
-
-  // ---- Super Admin actions ----
 
   const pushAuditLog = (user: string, role: AuditLogEntry['role'], action: string, status: AuditLogEntry['status'] = 'Success') => {
     setAuditLogs(prev => [{id: `al-${Date.now()}`, timestamp: nowTimestamp(), user, role, action, status}, ...prev]);
@@ -1296,6 +1367,8 @@ const AppNavigator = () => {
           updateSystemSettings,
           markAllNotificationsRead,
           runBackupNow,
+
+          isDataHydrated,
         }}>
         <NavigationContainer>
           <Stack.Navigator screenOptions={{headerShown: false}}>

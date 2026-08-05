@@ -379,10 +379,10 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
           <Text style={styles.tabIcon}>📁</Text>
           <Text style={styles.tabLabel}>Portfolio</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminInvestments')}>
+        {/* <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminInvestments')}>
           <Text style={styles.tabIcon}>💵</Text>
           <Text style={styles.tabLabel}>Investments</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
         <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
           <Text style={styles.tabIcon}>💰</Text>
           <Text style={styles.tabLabel}>Payouts</Text>
