@@ -11,6 +11,8 @@ export const GREEN_BG = '#DCFCE7';
 export const SLATE = '#374151';
 export const SLATE_BG = '#F0F1F4';
 export const RED = '#DC2626';
+export const AMBER = '#B45309';
+export const AMBER_BG = '#FEF3C7';
 
 export const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: BG},
@@ -103,9 +105,15 @@ export const styles = StyleSheet.create({
   statusBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20},
   statusBadgeActive: {backgroundColor: GREEN_BG},
   statusBadgeMatured: {backgroundColor: SLATE_BG},
+  statusBadgePending: {backgroundColor: AMBER_BG},
   statusBadgeText: {fontSize: 11, fontWeight: '700', letterSpacing: 0.2},
   statusBadgeTextActive: {color: GREEN},
   statusBadgeTextMatured: {color: SLATE},
+  statusBadgeTextPending: {color: AMBER},
+
+  // ---------- Investment ID label (small caption above the id/"Pending") ----------
+  idLabel: {fontSize: 10, color: GRAY, fontWeight: '700', letterSpacing: 0.4, marginBottom: 2},
+  bondIdPending: {fontStyle: 'italic', color: GRAY},
 
   bondName: {fontSize: 14.5, fontWeight: '700', color: '#111827', marginBottom: 14},
 

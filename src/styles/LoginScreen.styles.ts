@@ -15,18 +15,19 @@ export const styles = StyleSheet.create({
 
   roleGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
+    gap: 10,
     marginBottom: 16,
   },
   roleCard: {
-    width: '48%',
+    flex: 1,
+    minHeight: 76,
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 4,
     alignItems: 'center',
-    marginBottom: 10,
+    justifyContent: 'center',
   },
   roleCardActive: {
     borderColor: NAVY,
@@ -34,7 +35,7 @@ export const styles = StyleSheet.create({
     backgroundColor: '#EEF2FA',
   },
   roleIcon: {fontSize: 18, marginBottom: 4},
-  roleLabel: {fontSize: 12, fontWeight: '600', color: GRAY},
+  roleLabel: {fontSize: 11.5, fontWeight: '600', color: GRAY, textAlign: 'center'},
   roleLabelActive: {color: NAVY},
 
   input: {

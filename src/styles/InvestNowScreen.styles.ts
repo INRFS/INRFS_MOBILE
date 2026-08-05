@@ -217,6 +217,50 @@ export const styles = StyleSheet.create({
   uploadText: {fontSize: 12.5, color: GRAY, marginTop: 8, textAlign: 'center'},
   uploadPreview: {width: '100%', height: 160, borderRadius: 8, resizeMode: 'cover'},
 
+  // ---------- Info / warning banner ----------
+  infoBanner: {
+    flexDirection: 'row',
+    gap: 10,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+  },
+  infoBannerIcon: {fontSize: 16, marginTop: 1},
+  infoBannerText: {flex: 1, fontSize: 12.5, color: '#78350F', lineHeight: 18},
+  infoBannerBold: {fontWeight: '700'},
+
+  // ---------- Review Your Investment (sub-step) ----------
+  reviewCard: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 18,
+  },
+  reviewCardTitle: {fontSize: 15, fontWeight: '800', color: '#111827', marginBottom: 14},
+  reviewRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F2F5',
+  },
+  reviewLabel: {fontSize: 13, color: GRAY},
+  reviewValue: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
+  reviewNote: {
+    backgroundColor: '#FEF3C7',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 18,
+  },
+  reviewNoteText: {fontSize: 12.5, color: '#78350F', lineHeight: 18},
+
   // ---------- Confirmation step ----------
   confirmationBox: {
     backgroundColor: '#fff',

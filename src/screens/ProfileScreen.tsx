@@ -21,7 +21,9 @@ const investor = {
   },
 };
 
-const ProfileScreen = ({navigation}: {navigation: any}) => {
+const ProfileScreen = ({navigation, route}: {navigation: any; route?: any}) => {
+  const {investorId} = route?.params || {};
+
   const handleLogout = () => {
     // Resets the stack so the user can't press back into the authenticated app
     navigation.reset({
@@ -152,7 +154,7 @@ const ProfileScreen = ({navigation}: {navigation: any}) => {
         </TouchableOpacity>
       </ScrollView>
 
-      <BottomTabBar active="Profile" navigation={navigation} />
+      <BottomTabBar active="Profile" navigation={navigation} investorId={investorId} />
     </View>
   );
 };
