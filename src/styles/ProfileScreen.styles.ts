@@ -102,6 +102,32 @@ headerActions: {
 settingsBtn: {
   marginLeft: 14,
 },
+// NEW: "Cancel" / "Save" buttons shown in the header while editing.
+headerActionBtn: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 4,
+  marginLeft: 14,
+},
+// NEW: editable TextInput styling for Personal Information / Bank Details
+// fields, styled to sit inside the existing infoCol layout.
+input: {
+  borderWidth: 1,
+  borderColor: BORDER,
+  borderRadius: 8,
+  paddingVertical: 8,
+  paddingHorizontal: 10,
+  fontSize: 14,
+  fontWeight: '600',
+  color: '#111827',
+  backgroundColor: '#fff',
+},
+// NEW: lets the Address field span the full row width instead of sharing
+// it with a second column.
+fullWidthCol: {
+  flex: 1,
+  width: '100%',
+},
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',

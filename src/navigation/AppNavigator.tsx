@@ -63,6 +63,7 @@ export type Investor = {
   bankAccountNumber?: string;   // <-- new, for the View details modal
   ifscCode?: string;            // <-- new
   bankName?: string;            // <-- new
+  bankAccountType?: string;     // <-- new, e.g. 'Savings' / 'Current'
 };
 
 export type AdminSettings = {
@@ -327,6 +328,30 @@ type AddSystemUserParams = {
   branch: string;
 };
 
+// ---------------------------------------------------------------------------
+// NEW: Params for updating an investor's own profile fields (name, mobile,
+// email, address, etc.) and, separately, their bank details. Kept as two
+// distinct calls because they're edited from different sections of the
+// Profile screen and map cleanly onto how ProfileScreen's `draft` state is
+// already split into top-level fields vs `draft.bank`.
+// ---------------------------------------------------------------------------
+type UpdateInvestorProfileParams = {
+  name?: string;
+  email?: string;
+  mobile?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+};
+
+type UpdateInvestorBankDetailsParams = {
+  bankName?: string;
+  bankAccountNumber?: string;
+  ifscCode?: string;
+  bankAccountType?: string;
+};
+
 type AppDataContextType = {
   investors: Investor[];
   bonds: Bond[];
@@ -351,6 +376,13 @@ type AppDataContextType = {
   escalateKyc: (id: string) => void;
   approveInvestorKyc: (investorId: string) => void;
   rejectInvestorKyc: (investorId: string) => void;
+
+  // NEW: called from ProfileScreen so investor-entered data (both personal
+  // info and bank details) lives in shared context/AsyncStorage instead of
+  // that screen's own local state, and is therefore visible everywhere else
+  // (e.g. the Invest Now bank-details modal) immediately after Save.
+  updateInvestorProfile: (investorId: string, params: UpdateInvestorProfileParams) => void;
+  updateInvestorBankDetails: (investorId: string, params: UpdateInvestorBankDetailsParams) => void;
 
   investmentRequests: InvestmentRequest[];
   submitInvestmentRequest: (params: SubmitInvestmentRequestParams) => void;
@@ -829,6 +861,30 @@ const AppNavigator = () => {
     pushAuditLog('System', 'System', `Investor Registered — ${params.name} (${investorId})`);
 
     return investorId;
+  };
+
+  // ---------------------------------------------------------------------
+  // NEW: updateInvestorProfile / updateInvestorBankDetails
+  // Both are called from ProfileScreen on Save. Writing through context
+  // (instead of ProfileScreen's own local useState) means:
+  //  - the change is picked up by the AsyncStorage persistence effect above
+  //    and survives app restarts, and
+  //  - every other screen reading `investors` from useAppData() (e.g. the
+  //    Invest Now bank-details modal) sees the updated value on its very
+  //    next render — no manual refetch/refresh needed.
+  // ---------------------------------------------------------------------
+  const updateInvestorProfile = (investorId: string, params: UpdateInvestorProfileParams) => {
+    setInvestors(prev =>
+      prev.map(inv => (inv.id === investorId ? {...inv, ...params} : inv)),
+    );
+  };
+
+  const updateInvestorBankDetails = (investorId: string, params: UpdateInvestorBankDetailsParams) => {
+    setInvestors(prev =>
+      prev.map(inv => (inv.id === investorId ? {...inv, ...params} : inv)),
+    );
+    const inv = investors.find(i => i.id === investorId);
+    pushAuditLog(inv?.name || 'Investor', 'Investor', 'Bank Details Updated');
   };
 
   const approveKyc = (id: string) => {
@@ -1507,6 +1563,9 @@ const rejectKyc = (id: string) => {
           escalateKyc,
           approveInvestorKyc,
           rejectInvestorKyc,
+
+          updateInvestorProfile,
+          updateInvestorBankDetails,
 
           investmentRequests,
           submitInvestmentRequest,
