@@ -53,17 +53,16 @@ export type Investor = {
   tier: 'PLATINUM' | 'GOLD' | 'SILVER';
   kycStatus: 'Approved' | 'Pending' | 'Rejected';
   totalInvested: number;
-  status: 'Active' | 'Pending';
+  status: 'Active' | 'Pending' | 'Suspended';   // <-- added 'Suspended'
   type: 'individual' | 'institution';
-  // Profile/KYC fields to match the web KYC review screen. Optional
-  // because investors created implicitly (e.g. via an investment request
-  // before full KYC is collected) won't have these yet — RegistrationScreen
-  // should pass them through once it collects them.
   dob?: string;
   address?: string;
   city?: string;
   state?: string;
   pincode?: string;
+  bankAccountNumber?: string;   // <-- new, for the View details modal
+  ifscCode?: string;            // <-- new
+  bankName?: string;            // <-- new
 };
 
 export type AdminSettings = {
@@ -83,6 +82,9 @@ export type Bond = {
   subscriptionPercent: number;
   monthsActive: number;
   status: 'Active' | 'Upcoming' | 'Settled';
+  // Optional so bonds already persisted to AsyncStorage before this field
+  // existed don't break on load.
+  tenureMonths?: number;
 };
 
 export type Activity = {
@@ -244,6 +246,28 @@ export type SystemSettings = {
   lastBackupTime: string;
 };
 
+// ---------------------------------------------------------------------------
+// Params for registering a brand-new investor straight from
+// RegistrationScreen — BEFORE any investment or KYC approval has happened.
+// This is what was missing: RegistrationScreen used to just console.log the
+// form and never call into shared app state, so nothing the person typed
+// (name, mobile, branch, address, aadhaar, etc.) ever reached the admin
+// screens. This closes that gap.
+// ---------------------------------------------------------------------------
+type RegisterInvestorParams = {
+  name: string;
+  mobile: string;
+  email?: string;
+  dob?: string;
+  aadhaar?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  branch?: string;
+  type?: 'individual' | 'institution';
+};
+
 type AddInvestmentParams = {
   investorId: string;
   investorName: string;
@@ -255,6 +279,7 @@ type AddInvestmentParams = {
   city?: string;
   state?: string;
   pincode?: string;
+  branch?: string;
 };
 
 type AddBondParams = {
@@ -279,6 +304,7 @@ type SubmitInvestmentRequestParams = {
   city?: string;
   state?: string;
   pincode?: string;
+  branch?: string;
 };
 
 type AddBranchParams = {
@@ -310,6 +336,7 @@ type AppDataContextType = {
   adminProfile: AdminProfile;
   kycRequests: KycRequest[];
   kycStats: KycStats;
+  registerInvestor: (params: RegisterInvestorParams) => string;
   addInvestment: (params: AddInvestmentParams) => void;
   addBond: (params: AddBondParams) => void;
   markPayoutPaid: (payoutId: string) => void;
@@ -328,7 +355,10 @@ type AppDataContextType = {
   investmentRequests: InvestmentRequest[];
   submitInvestmentRequest: (params: SubmitInvestmentRequestParams) => void;
   updateInvestmentRequestRate: (id: string, rate: number) => void;
-  approveInvestmentRequest: (id: string) => void;
+  // Accepts an optional rate override so an admin's edited rate is applied
+  // atomically with approval instead of relying on two separate state
+  // updates racing each other (see BondTrackingScreen for the call site).
+  approveInvestmentRequest: (id: string, rateOverride?: number) => void;
   rejectInvestmentRequest: (id: string) => void;
 
   adminNotifications: SANotification[];
@@ -619,6 +649,15 @@ const nowTimestamp = () => {
 
 const formatINRShort = (n: number) => '₹' + n.toLocaleString('en-IN');
 
+// Bond numbers now match the web reference format (BND-2025-001) instead of
+// the old DB-YYYY-#### format.
+const nextBondNumber = (existingCount: number, year: number) =>
+  `BND-${year}-${String(existingCount + 1).padStart(3, '0')}`;
+
+// Investor IDs generated at registration time, before any admin approval.
+const nextInvestorId = (existingCount: number) =>
+  `INV-${String(existingCount + 1).padStart(3, '0')}`;
+
 const AppNavigator = () => {
   const [investors, setInvestors] = useState<Investor[]>(initialInvestors);
   const [bonds, setBonds] = useState<Bond[]>(initialBonds);
@@ -709,25 +748,114 @@ const AppNavigator = () => {
     systemSettings,
   ]);
 
+  // ---------------------------------------------------------------------
+  // NEW: registerInvestor
+  // Called by RegistrationScreen the moment someone submits their signup
+  // form. This is the fix for the whole "branch/mobile missing" and
+  // "shows INV-XXX instead of name" family of bugs — previously nothing
+  // called into shared state at registration time, so the Investor record
+  // that later screens read from either didn't exist yet or got created
+  // downstream with only an ID standing in for the name.
+  // ---------------------------------------------------------------------
+  const registerInvestor = (params: RegisterInvestorParams): string => {
+    const investorId = nextInvestorId(investors.length);
+
+    const newInvestor: Investor = {
+      id: investorId,
+      name: params.name,
+      email: params.email || `${investorId.toLowerCase()}@email.com`,
+      mobile: params.mobile || '—',
+      branch: params.branch || '—',
+      tier: 'SILVER',
+      kycStatus: 'Pending',
+      totalInvested: 0,
+      status: 'Pending',
+      type: params.type ?? 'individual',
+      dob: params.dob,
+      address: params.address,
+      city: params.city,
+      state: params.state,
+      pincode: params.pincode,
+    };
+
+    setInvestors(prev => [newInvestor, ...prev]);
+
+    // Create the matching KYC request so the Aadhaar number and other
+    // registration details actually show up on the KYC Approvals screen
+    // instead of "Not submitted" / "—".
+    setKycRequests(prev => [
+      {
+        id: `kyc-${investorId}`,
+        name: params.name,
+        location: params.city && params.state ? `${params.city}, ${params.state}` : '—',
+        avatarUri: 'https://i.pravatar.cc/200',
+        overallFlag: 'uploading',
+        aadhaar: 'Pending',
+        aadhaarNumber: params.aadhaar || '—',
+        pan: 'Pending',
+        bankStmt: 'Pending',
+        avgWait: '--:--',
+        category: 'pending',
+        investorId,
+      },
+      ...prev,
+    ]);
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'New Investor Registration',
+        isNew: true,
+        message: `${params.name} submitted a registration request${
+          params.branch ? ` for ${params.branch}` : ''
+        }. Awaiting KYC review.`,
+        time: 'Just now',
+        icon: 'bell',
+      },
+      ...prev,
+    ]);
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'New Investor Registration',
+        subtitle: `${params.name}${params.branch ? ` • ${params.branch}` : ''}`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'investor',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('System', 'System', `Investor Registered — ${params.name} (${investorId})`);
+
+    return investorId;
+  };
+
   const approveKyc = (id: string) => {
     const req = kycRequests.find(k => k.id === id);
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
     if (req?.investorId) {
       setInvestors(prev =>
-        prev.map(inv => (inv.id === req.investorId ? {...inv, kycStatus: 'Approved'} : inv)),
+        prev.map(inv =>
+          inv.id === req.investorId ? {...inv, kycStatus: 'Approved', status: 'Active'} : inv,
+        ),
       );
     }
   };
 
-  const rejectKyc = (id: string) => {
-    const req = kycRequests.find(k => k.id === id);
-    setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
-    if (req?.investorId) {
-      setInvestors(prev =>
-        prev.map(inv => (inv.id === req.investorId ? {...inv, kycStatus: 'Rejected'} : inv)),
-      );
-    }
-  };
+const rejectKyc = (id: string) => {
+  const req = kycRequests.find(k => k.id === id);
+  setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
+  if (req?.investorId) {
+    setInvestors(prev =>
+      prev.map(inv =>
+        inv.id === req.investorId ? {...inv, kycStatus: 'Rejected', status: 'Suspended'} : inv,
+      ),
+    );
+    pushAuditLog('Admin', 'Admin', `KYC Rejected — ${req.name}`);
+  }
+};
+
 
   const escalateKyc = (id: string) => {
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'flagged'} : k)));
@@ -735,15 +863,19 @@ const AppNavigator = () => {
 
   const approveInvestorKyc = (investorId: string) => {
     setInvestors(prev =>
-      prev.map(inv => (inv.id === investorId ? {...inv, kycStatus: 'Approved'} : inv)),
+      prev.map(inv => (inv.id === investorId ? {...inv, kycStatus: 'Approved', status: 'Active'} : inv)),
     );
   };
 
-  const rejectInvestorKyc = (investorId: string) => {
-    setInvestors(prev =>
-      prev.map(inv => (inv.id === investorId ? {...inv, kycStatus: 'Rejected'} : inv)),
-    );
-  };
+ const rejectInvestorKyc = (investorId: string) => {
+  const inv = investors.find(i => i.id === investorId);
+  setInvestors(prev =>
+    prev.map(i => (i.id === investorId ? {...i, kycStatus: 'Rejected', status: 'Suspended'} : i)),
+  );
+  if (inv) {
+    pushAuditLog('Admin', 'Admin', `KYC Rejected — ${inv.name}`);
+  }
+};
 
   const setAdminProfile = (partial: Partial<AdminProfile>) => {
     setAdminProfileState(prev => ({...prev, ...partial}));
@@ -805,12 +937,19 @@ const AppNavigator = () => {
     city,
     state,
     pincode,
+    branch,
   }: AddInvestmentParams) => {
     setInvestors(prev => {
       const existing = prev.find(inv => inv.id === investorId);
       if (existing) {
         return prev.map(inv =>
-          inv.id === investorId ? {...inv, totalInvested: inv.totalInvested + amount} : inv,
+          inv.id === investorId
+            ? {
+                ...inv,
+                totalInvested: inv.totalInvested + amount,
+                branch: inv.branch && inv.branch !== '—' ? inv.branch : branch ?? inv.branch,
+              }
+            : inv,
         );
       }
       return [
@@ -819,7 +958,7 @@ const AppNavigator = () => {
           name: investorName,
           email: `${investorName.toLowerCase().replace(/\s+/g, '.')}@email.com`,
           mobile: '—',
-          branch: '—',
+          branch: branch ?? '—',
           tier: 'SILVER',
           kycStatus: 'Pending',
           totalInvested: amount,
@@ -854,12 +993,12 @@ const AppNavigator = () => {
     maturityDate.setMonth(maturityDate.getMonth() + tenureMonths);
 
    const newBond: Bond = {
-    seriesId: `DB-${investedDate.getFullYear()}-${Date.now().toString().slice(-4)}`,
+    seriesId: nextBondNumber(bonds.length, investedDate.getFullYear()),
     investorId: investors.find(inv => inv.name === investorName)?.id || '',
     investorName,
     amount,
       interestRate,
-      
+      tenureMonths,
       investedDate: investedDateStr,
       maturityDate: formatDDMMYYYY(maturityDate),
       subscriptionPercent: 100,
@@ -896,6 +1035,19 @@ const AppNavigator = () => {
     ]);
   };
 
+  // ---------------------------------------------------------------------
+  // submitInvestmentRequest
+  // FIX: previously this ALWAYS fabricated a new Investor record when no
+  // existing investor matched investorId — including when the ID came from
+  // a manually-typed demo login. That fabricated record's `name` field
+  // ended up being the ID itself (e.g. "INV-567"), which is what created
+  // duplicate "ghost" cards on the Investor Registry screen alongside the
+  // real, properly-registered investor. Now it doesn't fabricate a record
+  // — the investment request itself still carries investorId/investorName
+  // and shows up correctly under Admin > Investments either way. A real
+  // registered investor's flow is completely unaffected, since `existing`
+  // is found and this whole branch is skipped for them.
+  // ---------------------------------------------------------------------
   const submitInvestmentRequest = ({
     investorId,
     investorName,
@@ -909,6 +1061,7 @@ const AppNavigator = () => {
     city,
     state,
     pincode,
+    branch,
   }: SubmitInvestmentRequestParams) => {
     const newRequest: InvestmentRequest = {
       id: `REQ-${Date.now().toString().slice(-6)}`,
@@ -925,36 +1078,19 @@ const AppNavigator = () => {
 
     setInvestmentRequests(prev => [newRequest, ...prev]);
 
-    let isNewInvestor = false;
     setInvestors(prev => {
       const existing = prev.find(inv => inv.id === investorId);
       if (existing) return prev;
-      isNewInvestor = true;
-      return [
-        {
-          id: investorId,
-          name: investorName,
-          email: `${investorName.toLowerCase().replace(/\s+/g, '.')}@email.com`,
-          mobile: '—',
-          branch: '—',
-          tier: 'SILVER',
-          kycStatus: 'Pending',
-          totalInvested: 0,
-          status: 'Pending',
-          type: 'individual',
-          dob,
-          address,
-          city,
-          state,
-          pincode,
-        },
-        ...prev,
-      ];
+      // Demo mode: don't fabricate a Registry entry for an ID that was
+      // never actually registered.
+      return prev;
     });
 
     setKycRequests(prev => {
       const alreadyLinked = prev.some(k => k.investorId === investorId);
       if (alreadyLinked) return prev;
+      const investorExists = investors.some(inv => inv.id === investorId);
+      if (!investorExists) return prev;
       return [
         {
           id: `kyc-${investorId}`,
@@ -1002,21 +1138,45 @@ const AppNavigator = () => {
     setInvestmentRequests(prev => prev.map(r => (r.id === id ? {...r, interestRate: rate} : r)));
   };
 
-  const approveInvestmentRequest = (id: string) => {
+  // FIX — RATE-ON-APPROVAL BUG:
+  // Previously the screen called updateInvestmentRequestRate(id, rate) and
+  // then immediately called approveInvestmentRequest(id) on the next line.
+  // Because setState is async, approveInvestmentRequest was still reading
+  // the OLD investmentRequests array, so the generated bond (and therefore
+  // "All Investments") kept the stale rate. Accepting an explicit
+  // rateOverride here lets the rate be applied in one atomic step.
+  //
+  // FIX — GHOST INVESTOR ON APPROVAL:
+  // Same guard as submitInvestmentRequest — don't fabricate a Registry
+  // entry when approving a request whose investorId was never actually
+  // registered (e.g. a demo login). A real, registered investor's flow
+  // (existing found → totalInvested updated, status set Active) is
+  // completely unaffected.
+  const approveInvestmentRequest = (id: string, rateOverride?: number) => {
     const req = investmentRequests.find(r => r.id === id);
     if (!req || req.status !== 'Pending') return;
+
+    const finalRate =
+      rateOverride !== undefined && !Number.isNaN(rateOverride) && rateOverride >= 0
+        ? rateOverride
+        : req.interestRate;
 
     const investedDateStr = formatDDMMYYYY(new Date());
     const maturityDate = new Date();
     maturityDate.setMonth(maturityDate.getMonth() + req.tenureMonths);
-    const seriesId = `DB-${new Date().getFullYear()}-${Date.now().toString().slice(-4)}`;
+    const seriesId = nextBondNumber(bonds.length, new Date().getFullYear());
+
+    // Prefer the name already on file in the investor registry (set at
+    // registration) over whatever is stored on the request itself.
+    const registeredName = investors.find(inv => inv.id === req.investorId)?.name;
 
     const newBond: Bond = {
       seriesId,
-      investorName: req.investorName,
+      investorName: registeredName || req.investorName,
       amount: req.amount,
-      investorId: req.investorId,  
-      interestRate: req.interestRate,
+      investorId: req.investorId,
+      interestRate: finalRate,
+      tenureMonths: req.tenureMonths,
       investedDate: investedDateStr,
       maturityDate: formatDDMMYYYY(maturityDate),
       subscriptionPercent: 100,
@@ -1028,10 +1188,10 @@ const AppNavigator = () => {
 
     createPayoutForBond({
       bondId: seriesId,
-      investorName: req.investorName,
+      investorName: newBond.investorName,
       investorType: 'individual',
       amount: req.amount,
-      interestRate: req.interestRate,
+      interestRate: finalRate,
       investedDateStr,
     });
 
@@ -1044,26 +1204,16 @@ const AppNavigator = () => {
             : inv,
         );
       }
-      return [
-        {
-          id: req.investorId,
-          name: req.investorName,
-          email: `${req.investorName.toLowerCase().replace(/\s+/g, '.')}@email.com`,
-          mobile: '—',
-          branch: '—',
-          tier: 'SILVER',
-          kycStatus: 'Pending',
-          totalInvested: req.amount,
-          status: 'Active',
-          type: 'individual',
-        },
-        ...prev,
-      ];
+      // Demo mode: don't fabricate a Registry entry for an approval tied
+      // to an ID that was never actually registered.
+      return prev;
     });
 
     setKycRequests(prev => {
       const alreadyLinked = prev.some(k => k.investorId === req.investorId);
       if (alreadyLinked) return prev;
+      const investorExists = investors.some(inv => inv.id === req.investorId);
+      if (!investorExists) return prev;
       return [
         {
           id: `kyc-${req.investorId}`,
@@ -1084,21 +1234,23 @@ const AppNavigator = () => {
     });
 
     setInvestmentRequests(prev =>
-      prev.map(r => (r.id === id ? {...r, status: 'Approved', bondSeriesId: seriesId} : r)),
+      prev.map(r =>
+        r.id === id ? {...r, status: 'Approved', bondSeriesId: seriesId, interestRate: finalRate} : r,
+      ),
     );
 
     setActivities(prev => [
       {
         id: `a-${Date.now()}`,
         title: 'Bond Generated',
-        subtitle: `${req.investorName} • ${seriesId} • ${formatINRShort(req.amount)}`,
+        subtitle: `${newBond.investorName} • ${seriesId} • ${formatINRShort(req.amount)}`,
         time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
         icon: 'bond',
       },
       ...prev,
     ]);
 
-    pushAuditLog('Admin', 'Admin', `Investment Approved — ${req.investorName} (${seriesId})`);
+    pushAuditLog('Admin', 'Admin', `Investment Approved — ${newBond.investorName} (${seriesId})`);
   };
 
   const rejectInvestmentRequest = (id: string) => {
@@ -1340,6 +1492,7 @@ const AppNavigator = () => {
           adminProfile,
           kycRequests,
           kycStats,
+          registerInvestor,
           addInvestment,
           addBond,
           markPayoutPaid,

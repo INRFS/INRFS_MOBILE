@@ -1,5 +1,14 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, Image, TextInput, Alert, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Image,
+  TextInput,
+  Alert,
+  StyleSheet,
+} from 'react-native';
 import {useAppData, KycRequest, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/KycApprovalsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -15,8 +24,17 @@ const kycStatusColors = (status: Investor['kycStatus']) => {
 const orNotProvided = (v?: string) => (v && v.trim() ? v : 'Not provided');
 
 const KycApprovalsScreen = ({navigation, route}: any) => {
-  const {investors, kycRequests, kycStats, approveKyc, rejectKyc, escalateKyc, approveInvestorKyc, rejectInvestorKyc} =
-    useAppData();
+  const {
+    investors,
+    kycRequests,
+    kycStats,
+    approveKyc,
+    rejectKyc,
+    escalateKyc,
+    approveInvestorKyc,
+    rejectInvestorKyc,
+    branches,
+  } = useAppData();
   const [visibleCount, setVisibleCount] = useState(3);
 
   // Local-only remarks draft for the focused review. There's no backend
@@ -35,6 +53,14 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
   const focusedKycRequest = focusedInvestorId
     ? kycRequests.find(k => k.investorId === focusedInvestorId)
     : undefined;
+
+  // Branch (assign / change) — matches the web KYC Review dropdown.
+  // Local-only for now: there's no updateInvestorBranch action on
+  // AppNavigator yet, so picking a different branch here changes what's
+  // displayed/submitted on this screen but won't persist to the investor
+  // record until that action exists. Say the word and I'll wire it up.
+  const [selectedBranch, setSelectedBranch] = useState<string>(focusedInvestor?.branch ?? '');
+  const [branchPickerVisible, setBranchPickerVisible] = useState(false);
 
   const pendingCount = kycRequests.filter(k => k.category === 'pending').length;
 
@@ -195,41 +221,98 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
               </View>
             </View>
 
-            {/* Row 4: Address / City */}
-            <View style={local.fieldRow}>
-              <View style={[styles.docCol, local.fieldCol]}>
-                <Text style={styles.docLabel}>ADDRESS</Text>
-                <View style={local.pillBox}>
-                  <Text style={local.pillText}>{orNotProvided(focusedInvestor.address)}</Text>
-                </View>
+            {/* Row 4: Address — full width on web, not paired */}
+            <View style={[styles.docCol, local.fullWidthField]}>
+              <Text style={styles.docLabel}>ADDRESS</Text>
+              <View style={local.pillBox}>
+                <Text style={local.pillText}>{orNotProvided(focusedInvestor.address)}</Text>
               </View>
+            </View>
+
+            {/* Row 5: City / State */}
+            <View style={local.fieldRow}>
               <View style={[styles.docCol, local.fieldCol]}>
                 <Text style={styles.docLabel}>CITY</Text>
                 <View style={local.pillBox}>
                   <Text style={local.pillText}>{orNotProvided(focusedInvestor.city)}</Text>
                 </View>
               </View>
-            </View>
-
-            {/* Row 5: State / Pin Code */}
-            <View style={local.fieldRow}>
               <View style={[styles.docCol, local.fieldCol]}>
                 <Text style={styles.docLabel}>STATE</Text>
                 <View style={local.pillBox}>
                   <Text style={local.pillText}>{orNotProvided(focusedInvestor.state)}</Text>
                 </View>
               </View>
+            </View>
+
+            {/* Row 6: Pin Code / Investment Amount */}
+            <View style={local.fieldRow}>
               <View style={[styles.docCol, local.fieldCol]}>
                 <Text style={styles.docLabel}>PIN CODE</Text>
                 <View style={local.pillBox}>
                   <Text style={local.pillText}>{orNotProvided(focusedInvestor.pincode)}</Text>
                 </View>
               </View>
+              <View style={[styles.docCol, local.fieldCol]}>
+                <Text style={styles.docLabel}>INVESTMENT AMOUNT</Text>
+                <View style={local.pillBox}>
+                  <Text style={local.pillText}>₹{focusedInvestor.totalInvested.toLocaleString('en-IN')}</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Current KYC status — its own labeled field, matching the web modal */}
+            <View style={[styles.docCol, local.fullWidthField]}>
+              <Text style={styles.docLabel}>CURRENT KYC STATUS</Text>
+              <View
+                style={[
+                  local.statusFieldPill,
+                  {backgroundColor: kycStatusColors(focusedInvestor.kycStatus).bg},
+                ]}>
+                <Text style={[local.statusPillText, {color: kycStatusColors(focusedInvestor.kycStatus).text}]}>
+                  {focusedInvestor.kycStatus}
+                </Text>
+              </View>
+            </View>
+
+            {/* Branch (assign / change) dropdown — expands inline right under the
+                box, like the native <select> on web, instead of a centered popup. */}
+            <View style={[local.fullWidthField, local.dropdownWrap]}>
+              <Text style={local.dropdownLabel}>Branch (assign / change)</Text>
+              <TouchableOpacity
+                style={local.dropdownBox}
+                onPress={() => setBranchPickerVisible(v => !v)}>
+                <Text style={local.dropdownText}>{selectedBranch || focusedInvestor.branch}</Text>
+                <Text style={local.dropdownChevron}>{branchPickerVisible ? '▴' : '▾'}</Text>
+              </TouchableOpacity>
+
+              {branchPickerVisible && (
+                <View style={local.dropdownOptionsList}>
+                  <ScrollView style={{maxHeight: 220}} nestedScrollEnabled>
+                    {branches.map(b => {
+                      const active = (selectedBranch || focusedInvestor.branch) === b.name;
+                      return (
+                        <TouchableOpacity
+                          key={b.id}
+                          style={[local.dropdownOption, active && local.dropdownOptionActive]}
+                          onPress={() => {
+                            setSelectedBranch(b.name);
+                            setBranchPickerVisible(false);
+                          }}>
+                          <Text style={[local.dropdownOptionText, active && local.dropdownOptionTextActive]}>
+                            {b.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </View>
+              )}
             </View>
 
             {/* Remarks box, matching the web layout */}
             <View style={[styles.docCol, local.remarksWrap]}>
-              <Text style={styles.docLabel}>REMARKS</Text>
+              <Text style={styles.docLabel}>REMARKS (OPTIONAL)</Text>
               <TextInput
                 value={remarks}
                 onChangeText={setRemarks}
@@ -241,16 +324,16 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
             </View>
 
             {focusedInvestor.kycStatus === 'Pending' && (
-              <View style={styles.cardBottomRow}>
-                <View />
-                <View style={styles.actionBtnsRow}>
-                  <TouchableOpacity style={styles.approveBtn} onPress={() => confirmFocusedAction('approve')}>
-                    <Text style={styles.approveBtnText}>Approve</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.rejectBtn} onPress={() => confirmFocusedAction('reject')}>
-                    <Text style={styles.rejectBtnText}>Reject</Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={local.footerBtnsRow}>
+                <TouchableOpacity style={local.cancelBtn} onPress={() => navigation.goBack()}>
+                  <Text style={local.cancelBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={local.rejectFilledBtn} onPress={() => confirmFocusedAction('reject')}>
+                  <Text style={local.rejectFilledBtnText}>⊘ Reject</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={local.approveFilledBtn} onPress={() => confirmFocusedAction('approve')}>
+                  <Text style={local.approveFilledBtnText}>✓ Approve KYC & Activate</Text>
+                </TouchableOpacity>
               </View>
             )}
           </View>
@@ -395,6 +478,9 @@ const local = StyleSheet.create({
   fieldCol: {
     flex: 1,
   },
+  fullWidthField: {
+    marginTop: 8,
+  },
   pillBox: {
     alignSelf: 'flex-start',
     backgroundColor: '#F3F4F6',
@@ -414,8 +500,81 @@ const local = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 5,
   },
+  statusFieldPill: {
+    alignSelf: 'flex-start',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    marginTop: 4,
+  },
   statusPillText: {
     fontSize: 12,
+    fontWeight: '700',
+  },
+  dropdownLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  dropdownWrap: {
+    position: 'relative',
+    zIndex: 20,
+  },
+  dropdownBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dropdownText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  dropdownChevron: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  // Expands directly under the box and overlays whatever is below it —
+  // matches the native <select> look in the web reference.
+  dropdownOptionsList: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 4,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    zIndex: 30,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: {width: 0, height: 2},
+    overflow: 'hidden',
+  },
+  dropdownOption: {
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  dropdownOptionActive: {
+    backgroundColor: '#F3F4F6',
+  },
+  dropdownOptionText: {
+    fontSize: 13,
+    color: '#111827',
+  },
+  dropdownOptionTextActive: {
     fontWeight: '700',
   },
   remarksWrap: {
@@ -433,6 +592,48 @@ const local = StyleSheet.create({
     fontSize: 13,
     color: '#111827',
     textAlignVertical: 'top',
+  },
+  footerBtnsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  cancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  cancelBtnText: {
+    color: '#374151',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  rejectFilledBtn: {
+    flex: 1,
+    backgroundColor: '#DC2626',
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  rejectFilledBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  approveFilledBtn: {
+    flex: 1.6,
+    backgroundColor: '#16A34A',
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  approveFilledBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13,
   },
 });
 
