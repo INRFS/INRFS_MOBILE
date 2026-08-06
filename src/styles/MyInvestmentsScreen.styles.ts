@@ -49,7 +49,7 @@ export const styles = StyleSheet.create({
   },
   heroValue: {fontSize: 26, fontWeight: '800', color: '#fff'},
 
-  searchRow: {flexDirection: 'row', gap: 10, marginBottom: 20},
+  searchRow: {flexDirection: 'row', gap: 10, marginBottom: 14},
   searchBox: {
     flex: 1,
     flexDirection: 'row',
@@ -75,6 +75,33 @@ export const styles = StyleSheet.create({
     height: 46,
   },
   exportBtnText: {fontSize: 13, fontWeight: '700', color: '#111827'},
+
+  // ---------- Filter chips ----------
+  filterRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 18,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#fff',
+  },
+  filterChipActive: {
+    backgroundColor: NAVY,
+    borderColor: NAVY,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  filterChipTextActive: {
+    color: '#fff',
+  },
 
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -111,7 +138,6 @@ export const styles = StyleSheet.create({
   statusBadgeTextMatured: {color: SLATE},
   statusBadgeTextPending: {color: AMBER},
 
-  // ---------- Investment ID label (small caption above the id/"Pending") ----------
   idLabel: {fontSize: 10, color: GRAY, fontWeight: '700', letterSpacing: 0.4, marginBottom: 2},
   bondIdPending: {fontStyle: 'italic', color: GRAY},
 
@@ -130,8 +156,14 @@ export const styles = StyleSheet.create({
   metaValueGold: {fontSize: 13.5, fontWeight: '700', color: PRIMARY},
   metaValueGreen: {fontSize: 13.5, fontWeight: '700', color: GREEN},
 
-  // Kept for backward compatibility — no longer rendered (replaced by
-  // actionIconRow below), but left in place in case anything else refers to it.
+  pendingHint: {
+    marginTop: 12,
+    fontSize: 12.5,
+    color: AMBER,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+
   viewBondBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -159,10 +191,6 @@ export const styles = StyleSheet.create({
   },
   newInvestmentBtnText: {fontSize: 14, fontWeight: '700', color: PRIMARY},
 
-  // ---------------------------------------------------------------------
-  // Action icon row — View / Tenure / Settle (replaces the old single
-  // full-width "View Bond" button on each investment card)
-  // ---------------------------------------------------------------------
   actionIconRow: {flexDirection: 'row', gap: 8, marginTop: 14},
   actionIconBtn: {
     flex: 1,
@@ -176,9 +204,27 @@ export const styles = StyleSheet.create({
   },
   actionIconBtnText: {fontSize: 12.5, fontWeight: '700', color: '#1A1A18'},
 
-  // ---------------------------------------------------------------------
-  // Tenure extension & settlement modals
-  // ---------------------------------------------------------------------
+  // empty state
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+  },
+  emptyTitle: {
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  emptySubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    color: GRAY,
+    textAlign: 'center',
+    lineHeight: 19,
+  },
+
+  // modals
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15,23,42,0.5)',

@@ -159,7 +159,29 @@ export type InvestmentRequest = {
   requestedOn: string;
   bondSeriesId?: string;
 };
+export type TenureExtensionRequest = {
+  id: string;
+  bondSeriesId: string;
+  investorId: string;
+  investorName: string;
+  currentTenureMonths: number;
+  extensionMonths: number;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  requestedOn: string;
+};
 
+export type PreSettlementRequest = {
+  id: string;
+  bondSeriesId: string;
+  investorId: string;
+  investorName: string;
+  principal: number;
+  earned: number;
+  penalty: number;
+  netAmount: number;
+  status: 'Pending' | 'Approved' | 'Rejected';
+  requestedOn: string;
+};
 export type Branch = {
   id: string;
   name: string;
@@ -376,7 +398,24 @@ type AppDataContextType = {
   escalateKyc: (id: string) => void;
   approveInvestorKyc: (investorId: string) => void;
   rejectInvestorKyc: (investorId: string) => void;
-
+  tenureExtensionRequests: TenureExtensionRequest[];
+  preSettlementRequests: PreSettlementRequest[];
+  requestTenureExtension: (params: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    currentTenureMonths: number;
+    extensionMonths: number;
+  }) => void;
+  requestPreSettlement: (params: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    principal: number;
+    earned: number;
+    penalty: number;
+    netAmount: number;
+  }) => void;
   // NEW: called from ProfileScreen so investor-entered data (both personal
   // info and bank details) lives in shared context/AsyncStorage instead of
   // that screen's own local state, and is therefore visible everywhere else
@@ -633,6 +672,8 @@ type PersistedState = {
   auditLogs: AuditLogEntry[];
   saNotifications: SANotification[];
   systemSettings: SystemSettings;
+    tenureExtensionRequests: TenureExtensionRequest[];
+  preSettlementRequests: PreSettlementRequest[];
 };
 
 const loadAppData = async (): Promise<Partial<PersistedState> | null> => {
@@ -644,7 +685,7 @@ const loadAppData = async (): Promise<Partial<PersistedState> | null> => {
     return null;
   }
 };
-
+ 
 const saveAppData = async (data: PersistedState) => {
   try {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(data));
@@ -711,7 +752,8 @@ const AppNavigator = () => {
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(initialAuditLogs);
   const [saNotifications, setSaNotifications] = useState<SANotification[]>(initialSANotifications);
   const [systemSettings, setSystemSettingsState] = useState<SystemSettings>(initialSystemSettings);
-
+  const [tenureExtensionRequests, setTenureExtensionRequests] = useState<TenureExtensionRequest[]>([]);
+  const [preSettlementRequests, setPreSettlementRequests] = useState<PreSettlementRequest[]>([]);
   const [isDataHydrated, setIsDataHydrated] = useState(false);
 
   useEffect(() => {
@@ -759,6 +801,8 @@ const AppNavigator = () => {
       auditLogs,
       saNotifications,
       systemSettings,
+            tenureExtensionRequests,
+      preSettlementRequests,
     });
   }, [
     isDataHydrated,
@@ -1131,7 +1175,115 @@ const rejectKyc = (id: string) => {
       status: 'Pending',
       requestedOn: nowTimestamp(),
     };
+  const requestTenureExtension = ({
+    bondSeriesId,
+    investorId,
+    investorName,
+    currentTenureMonths,
+    extensionMonths,
+  }: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    currentTenureMonths: number;
+    extensionMonths: number;
+  }) => {
+    const newReq: TenureExtensionRequest = {
+      id: `TE-${Date.now().toString().slice(-6)}`,
+      bondSeriesId,
+      investorId,
+      investorName,
+      currentTenureMonths,
+      extensionMonths,
+      status: 'Pending',
+      requestedOn: nowTimestamp(),
+    };
 
+    setTenureExtensionRequests(prev => [newReq, ...prev]);
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Tenure Extension Request',
+        isNew: true,
+        message: `${investorName} requested to extend ${bondSeriesId} by ${extensionMonths} months (current tenure ${currentTenureMonths}M).`,
+        time: 'Just now',
+        icon: 'bell',
+      },
+      ...prev,
+    ]);
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'Tenure Extension Requested',
+        subtitle: `${investorName} • ${bondSeriesId} • +${extensionMonths} months`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'bond',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog(investorName || 'Investor', 'Investor', `Tenure Extension Requested — ${bondSeriesId} (+${extensionMonths}M)`);
+  };
+
+  const requestPreSettlement = ({
+    bondSeriesId,
+    investorId,
+    investorName,
+    principal,
+    earned,
+    penalty,
+    netAmount,
+  }: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    principal: number;
+    earned: number;
+    penalty: number;
+    netAmount: number;
+  }) => {
+    const newReq: PreSettlementRequest = {
+      id: `PS-${Date.now().toString().slice(-6)}`,
+      bondSeriesId,
+      investorId,
+      investorName,
+      principal,
+      earned,
+      penalty,
+      netAmount,
+      status: 'Pending',
+      requestedOn: nowTimestamp(),
+    };
+
+    setPreSettlementRequests(prev => [newReq, ...prev]);
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Pre-Settlement Request',
+        isNew: true,
+        message: `${investorName} requested pre-settlement for ${bondSeriesId}. Net amount ${formatINRShort(netAmount)}.`,
+        time: 'Just now',
+        icon: 'money',
+      },
+      ...prev,
+    ]);
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'Pre-Settlement Requested',
+        subtitle: `${investorName} • ${bondSeriesId} • ${formatINRShort(netAmount)}`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'transaction',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog(investorName || 'Investor', 'Investor', `Pre-Settlement Requested — ${bondSeriesId}`);
+  };
     setInvestmentRequests(prev => [newRequest, ...prev]);
 
     setInvestors(prev => {
@@ -1534,71 +1686,121 @@ const rejectKyc = (id: string) => {
   const runBackupNow = () => {
     setSystemSettingsState(prev => ({...prev, lastBackupTime: nowTimestamp()}));
     pushAuditLog('System', 'System', 'Backup Run');
+
   };
+
+const requestTenureExtension = (params: {
+  bondSeriesId: string;
+  investorId: string;
+  investorName: string;
+  currentTenureMonths: number;
+  extensionMonths: number;
+}) => {
+  const request: TenureExtensionRequest = {
+    id: `TEN-${Date.now()}`,
+    ...params,
+    status: 'Pending',
+    requestedOn: nowTimestamp(),
+  };
+
+  setTenureExtensionRequests(prev => [...prev, request]);
+};
+const requestPreSettlement = (params: {
+  bondSeriesId: string;
+  investorId: string;
+  investorName: string;
+  principal: number;
+  penalty: number;
+  netAmount: number;
+}) => {
+  const request: PreSettlementRequest = {
+    id: `PRE-${Date.now()}`,
+    ...params,
+    earned:0,
+    status: 'Pending',
+    requestedOn: nowTimestamp(),
+  };
+
+  setPreSettlementRequests(prev => [...prev, request]);
+};
 
   return (
     <SafeAreaProvider>
-      <AppDataContext.Provider
-        value={{
-          investors,
-          bonds,
-          activities,
-          payouts,
-          kycPendingCount,
-          adminProfile,
-          kycRequests,
-          kycStats,
-          registerInvestor,
-          addInvestment,
-          addBond,
-          markPayoutPaid,
-          markAllPayoutsPaid,
-          requestPayoutApproval,
-          requestAllPayoutsApproval,
-          approvePayoutRequest,
-          rejectPayoutRequest,
-          setAdminProfile,
-          approveKyc,
-          rejectKyc,
-          escalateKyc,
-          approveInvestorKyc,
-          rejectInvestorKyc,
+     <AppDataContext.Provider
+  value={{
+    investors,
+    bonds,
+    activities,
+    payouts,
+    kycPendingCount,
+    adminProfile,
+    kycRequests,
+    kycStats,
 
-          updateInvestorProfile,
-          updateInvestorBankDetails,
+    registerInvestor,
+    addInvestment,
+    addBond,
 
-          investmentRequests,
-          submitInvestmentRequest,
-          updateInvestmentRequestRate,
-          approveInvestmentRequest,
-          rejectInvestmentRequest,
+    markPayoutPaid,
+    markAllPayoutsPaid,
+    requestPayoutApproval,
+    requestAllPayoutsApproval,
+    approvePayoutRequest,
+    rejectPayoutRequest,
 
-          adminNotifications,
-          adminSettings,
-          markAllAdminNotificationsRead,
-          updateAdminSettings,
+    setAdminProfile,
 
-          branches,
-          saAdmins,
-          systemUsers,
-          systemRoles,
-          auditLogs,
-          saNotifications,
-          systemSettings,
-          addBranch,
-          toggleBranchStatus,
-          deleteBranch,
-          addSAAdmin,
-          deleteSAAdmin,
-          addSystemUser,
-          deleteSystemUser,
-          updateRolePermissions,
-          updateSystemSettings,
-          markAllNotificationsRead,
-          runBackupNow,
+    approveKyc,
+    rejectKyc,
+    escalateKyc,
+    approveInvestorKyc,
+    rejectInvestorKyc,
 
-          isDataHydrated,
-        }}>
+    tenureExtensionRequests,
+    preSettlementRequests,
+    requestTenureExtension,
+    requestPreSettlement,
+
+    updateInvestorProfile,
+    updateInvestorBankDetails,
+
+    investmentRequests,
+    submitInvestmentRequest,
+    updateInvestmentRequestRate,
+    approveInvestmentRequest,
+    rejectInvestmentRequest,
+
+    adminNotifications,
+    adminSettings,
+    markAllAdminNotificationsRead,
+    updateAdminSettings,
+
+    branches,
+    saAdmins,
+    systemUsers,
+    systemRoles,
+    auditLogs,
+    saNotifications,
+    systemSettings,
+
+    addBranch,
+    toggleBranchStatus,
+    deleteBranch,
+
+    addSAAdmin,
+    deleteSAAdmin,
+
+    addSystemUser,
+    deleteSystemUser,
+
+    updateRolePermissions,
+    updateSystemSettings,
+    markAllNotificationsRead,
+    runBackupNow,
+
+    isDataHydrated,
+  }}
+>
         <NavigationContainer>
           <Stack.Navigator screenOptions={{headerShown: false}}>
             
