@@ -16,26 +16,16 @@ import {styles} from '../styles/MyInvestmentsScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
-// ---------------------------------------------------------------------------
-// Excel export requires these packages:
-//   npm install xlsx react-native-fs react-native-share
-// (iOS: cd ios && pod install)
-// ---------------------------------------------------------------------------
 import XLSX from 'xlsx';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
 
-// ---------------------------------------------------------------------------
-// Investment data now comes straight from the shared AppDataContext
-// (AppNavigator.tsx) — the same store the Admin side reads/writes. There is
-// no separate local store here anymore, so an investor's investment and what
-// the admin sees are always the same data:
-//   - Bonds already approved by an admin -> shown as Active / Matured.
-//   - Investment requests still awaiting admin approval -> shown as
-//     "Pending Approval" (no bond exists yet for these).
-// ---------------------------------------------------------------------------
-
-export type BondStatus = 'Active' | 'Matured' | 'Pending Approval';
+export type BondStatus =
+  | 'Active'
+  | 'Matured'
+  | 'Pending Approval'
+  | 'Pending Extension'
+  | 'Pending Settlement';
 
 export type Investment = {
   id: string;
@@ -48,43 +38,72 @@ export type Investment = {
   maturesOn: string;
   monthlyInterest: number;
   earned: number;
+  // optional meta for pending action requests
+  requestType?: 'investment' | 'extension' | 'settlement';
+  extensionMonths?: number;
+  penalty?: number;
+  netAmount?: number;
 };
 
 const parseDisplayDate = (s: string): Date => {
+  // support both "DD-MM-YYYY" and ISO-ish strings
+  if (s.includes('-') && s.split('-')[0].length === 2) {
+    const [d, m, y] = s.split('-').map(Number);
+    if (!Number.isNaN(d) && !Number.isNaN(m) && !Number.isNaN(y)) {
+      return new Date(y, m - 1, d);
+    }
+  }
   const d = new Date(s);
   return Number.isNaN(d.getTime()) ? new Date() : d;
 };
 
 const monthsBetween = (start: Date, end: Date): number => {
-  const months = (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+  const months =
+    (end.getFullYear() - start.getFullYear()) * 12 +
+    (end.getMonth() - start.getMonth());
   return Math.max(months, 1);
 };
 
-// Hook: re-renders automatically whenever bonds / investment requests change,
-// since it reads straight from context. Pass an investorId to scope the list
-// to one investor (used by MyInvestmentsScreen below); call with no
-// arguments to get every bond in the system (used by BondDetailsScreen,
-// matching its previous behaviour of looking up bonds by id globally).
 export function useInvestments(investorId?: string): Investment[] {
-  const {bonds, investmentRequests, investors} = useAppData();
+  const {
+    bonds,
+    investmentRequests,
+    investors,
+    tenureExtensionRequests,
+    preSettlementRequests,
+  } = useAppData();
 
-  const investorName = investorId
-    ? investors.find(inv => inv.id === investorId)?.name
-    : undefined;
-
- const bondItems: Investment[] = bonds
-  .filter(b => !investorId || b.investorId === investorId)
+  const bondItems: Investment[] = bonds
+    .filter(b => !investorId || b.investorId === investorId)
     .map(b => {
       const investedDate = parseDisplayDate(b.investedDate);
       const maturityDate = parseDisplayDate(b.maturityDate);
-      const tenureMonths = monthsBetween(investedDate, maturityDate);
+      const tenureMonths = b.tenureMonths ?? monthsBetween(investedDate, maturityDate);
       const years = tenureMonths / 12;
       const totalInterest = b.amount * (b.interestRate / 100) * years;
+
+      // Check if this bond already has a pending extension / settlement
+      const hasPendingExtension = tenureExtensionRequests.some(
+        r =>
+          r.bondSeriesId === b.seriesId &&
+          r.status === 'Pending' &&
+          (!investorId || r.investorId === investorId),
+      );
+      const hasPendingSettlement = preSettlementRequests.some(
+        r =>
+          r.bondSeriesId === b.seriesId &&
+          r.status === 'Pending' &&
+          (!investorId || r.investorId === investorId),
+      );
+
+      let status: BondStatus = b.status === 'Settled' ? 'Matured' : 'Active';
+      if (hasPendingExtension) status = 'Pending Extension';
+      if (hasPendingSettlement) status = 'Pending Settlement';
 
       return {
         id: b.seriesId,
         name: `INRFS Bond — ${b.seriesId}`,
-        status: (b.status === 'Settled' ? 'Matured' : 'Active') as BondStatus,
+        status,
         amount: b.amount,
         rate: b.interestRate,
         tenureMonths,
@@ -92,10 +111,15 @@ export function useInvestments(investorId?: string): Investment[] {
         maturesOn: b.maturityDate,
         monthlyInterest: totalInterest / tenureMonths,
         earned: 0,
+        requestType: hasPendingExtension
+          ? 'extension'
+          : hasPendingSettlement
+          ? 'settlement'
+          : undefined,
       };
     });
 
-  const pendingItems: Investment[] = investmentRequests
+  const pendingInvestmentItems: Investment[] = investmentRequests
     .filter(r => r.status === 'Pending' && (!investorId || r.investorId === investorId))
     .map(r => ({
       id: r.id,
@@ -108,29 +132,77 @@ export function useInvestments(investorId?: string): Investment[] {
       maturesOn: '—',
       monthlyInterest: 0,
       earned: 0,
+      requestType: 'investment' as const,
     }));
 
-  return [...pendingItems, ...bondItems];
-}
+  // Stand-alone pending extension cards (in case bond list is filtered differently)
+  const pendingExtensionItems: Investment[] = tenureExtensionRequests
+    .filter(r => r.status === 'Pending' && (!investorId || r.investorId === investorId))
+    .filter(r => !bondItems.some(b => b.id === r.bondSeriesId)) // avoid duplicates
+    .map(r => ({
+      id: r.bondSeriesId,
+      name: `INRFS Bond — ${r.bondSeriesId}`,
+      status: 'Pending Extension' as BondStatus,
+      amount: 0,
+      rate: 0,
+      tenureMonths: r.currentTenureMonths,
+      investedOn: r.requestedOn,
+      maturesOn: '—',
+      monthlyInterest: 0,
+      earned: 0,
+      requestType: 'extension' as const,
+      extensionMonths: r.extensionMonths,
+    }));
 
-// ---------------------------------------------------------------------------
-// Screen
-// ---------------------------------------------------------------------------
+  const pendingSettlementItems: Investment[] = preSettlementRequests
+    .filter(r => r.status === 'Pending' && (!investorId || r.investorId === investorId))
+    .filter(r => !bondItems.some(b => b.id === r.bondSeriesId))
+    .map(r => ({
+      id: r.bondSeriesId,
+      name: `INRFS Bond — ${r.bondSeriesId}`,
+      status: 'Pending Settlement' as BondStatus,
+      amount: r.principal,
+      rate: 0,
+      tenureMonths: 0,
+      investedOn: r.requestedOn,
+      maturesOn: '—',
+      monthlyInterest: 0,
+      earned: r.earned,
+      requestType: 'settlement' as const,
+      penalty: r.penalty,
+      netAmount: r.netAmount,
+    }));
+
+  return [
+    ...pendingInvestmentItems,
+    ...pendingExtensionItems,
+    ...pendingSettlementItems,
+    ...bondItems,
+  ];
+}
 
 const formatINR = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
-// Tenure extension options offered to the investor.
 const EXTENSION_OPTIONS = [12, 24, 36];
-
-// Flat early-exit penalty applied on principal for a pre-settlement request.
-// TODO: replace with your real penalty schedule (e.g. tiered by months held).
 const EARLY_EXIT_PENALTY_RATE = 0.02; // 2%
+
+type FilterKey = 'all' | 'pending';
 
 const MyInvestmentsScreen = ({navigation, route}: any) => {
   const {investorId} = route?.params || {};
   const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState<FilterKey>('all');
+
+  const {
+    requestTenureExtension,
+    requestPreSettlement,
+    investors,
+  } = useAppData();
 
   const items = useInvestments(investorId);
+
+  const investorName =
+    investors.find(inv => inv.id === investorId)?.name || 'Investor';
 
   // ---- Tenure extension modal state ----
   const [tenureModalBond, setTenureModalBond] = useState<Investment | null>(null);
@@ -140,15 +212,41 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   const [settlementModalBond, setSettlementModalBond] = useState<Investment | null>(null);
 
   const filtered = useMemo(() => {
+    let list = items;
+
+    if (filter === 'pending') {
+      list = list.filter(
+        inv =>
+          inv.status === 'Pending Approval' ||
+          inv.status === 'Pending Extension' ||
+          inv.status === 'Pending Settlement',
+      );
+    }
+
     const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter(
-      inv => inv.id.toLowerCase().includes(q) || inv.name.toLowerCase().includes(q),
-    );
-  }, [query, items]);
+    if (q) {
+      list = list.filter(
+        inv =>
+          inv.id.toLowerCase().includes(q) ||
+          inv.name.toLowerCase().includes(q),
+      );
+    }
+    return list;
+  }, [query, items, filter]);
 
   const totalValue = useMemo(
     () => items.reduce((sum, inv) => sum + inv.amount + inv.earned, 0),
+    [items],
+  );
+
+  const pendingCount = useMemo(
+    () =>
+      items.filter(
+        inv =>
+          inv.status === 'Pending Approval' ||
+          inv.status === 'Pending Extension' ||
+          inv.status === 'Pending Settlement',
+      ).length,
     [items],
   );
 
@@ -183,8 +281,6 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         filename: fileName,
       });
     } catch (err: any) {
-      // RNShare throws when the user simply dismisses the share sheet — don't
-      // show an error alert for that case.
       if (err?.message && !/user did not share/i.test(err.message)) {
         Alert.alert('Export failed', 'Could not generate the Excel file. Please try again.');
       }
@@ -193,15 +289,28 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
   // ---------- Tenure extension ----------
   const openTenureModal = (inv: Investment) => {
+    if (
+      inv.status === 'Pending Extension' ||
+      inv.status === 'Pending Settlement' ||
+      inv.status === 'Pending Approval'
+    ) {
+      return;
+    }
     setSelectedExtension(EXTENSION_OPTIONS[0]);
     setTenureModalBond(inv);
   };
 
   const handleConfirmExtension = () => {
-    if (!tenureModalBond) return;
-    // TODO: replace with your real "request tenure extension" API call.
-    // This should notify the admin so they can approve/reject it from the
-    // Admin Portal's "Extend Tenure" screen.
+    if (!tenureModalBond || !investorId) return;
+
+    requestTenureExtension({
+      bondSeriesId: tenureModalBond.id,
+      investorId,
+      investorName,
+      currentTenureMonths: tenureModalBond.tenureMonths,
+      extensionMonths: selectedExtension,
+    });
+
     Alert.alert(
       'Request submitted',
       `Your request to extend ${tenureModalBond.id} by ${selectedExtension} months has been sent to the admin for approval.`,
@@ -211,14 +320,32 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
   // ---------- Pre-settlement ----------
   const openSettlementModal = (inv: Investment) => {
+    if (
+      inv.status === 'Pending Extension' ||
+      inv.status === 'Pending Settlement' ||
+      inv.status === 'Pending Approval'
+    ) {
+      return;
+    }
     setSettlementModalBond(inv);
   };
 
   const handleRequestSettlement = () => {
-    if (!settlementModalBond) return;
-    // TODO: replace with your real "request pre-settlement" API call.
-    // This should notify the admin so they can review/approve it from the
-    // Admin Portal's Settlement screen.
+    if (!settlementModalBond || !investorId) return;
+
+    const penalty = settlementModalBond.amount * EARLY_EXIT_PENALTY_RATE;
+    const net = settlementModalBond.amount + settlementModalBond.earned - penalty;
+
+    requestPreSettlement({
+      bondSeriesId: settlementModalBond.id,
+      investorId,
+      investorName,
+      principal: settlementModalBond.amount,
+      earned: settlementModalBond.earned,
+      penalty,
+      netAmount: net,
+    });
+
     Alert.alert(
       'Settlement requested',
       `Your pre-settlement request for ${settlementModalBond.id} has been sent to the admin for approval.`,
@@ -232,6 +359,39 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   const settlementNet = settlementModalBond
     ? settlementModalBond.amount + settlementModalBond.earned - settlementPenalty
     : 0;
+
+  const statusBadgeStyle = (status: BondStatus) => {
+    switch (status) {
+      case 'Active':
+        return styles.statusBadgeActive;
+      case 'Matured':
+        return styles.statusBadgeMatured;
+      case 'Pending Approval':
+      case 'Pending Extension':
+      case 'Pending Settlement':
+        return styles.statusBadgePending;
+      default:
+        return styles.statusBadgeMatured;
+    }
+  };
+
+  const statusTextStyle = (status: BondStatus) => {
+    switch (status) {
+      case 'Active':
+        return styles.statusBadgeTextActive;
+      case 'Matured':
+        return styles.statusBadgeTextMatured;
+      case 'Pending Approval':
+      case 'Pending Extension':
+      case 'Pending Settlement':
+        return styles.statusBadgeTextPending;
+      default:
+        return styles.statusBadgeTextMatured;
+    }
+  };
+
+  const canShowActions = (status: BondStatus) =>
+    status === 'Active' || status === 'Matured';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -268,6 +428,29 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
           </TouchableOpacity>
         </View>
 
+        {/* ---------- Filter tabs (All / Pending) ---------- */}
+        <View style={styles.filterRow}>
+          <TouchableOpacity
+            style={[styles.filterChip, filter === 'all' && styles.filterChipActive]}
+            onPress={() => setFilter('all')}>
+            <Text style={[styles.filterChipText, filter === 'all' && styles.filterChipTextActive]}>
+              All Investments
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.filterChip, filter === 'pending' && styles.filterChipActive]}
+            onPress={() => setFilter('pending')}>
+            <Text
+              style={[
+                styles.filterChipText,
+                filter === 'pending' && styles.filterChipTextActive,
+              ]}>
+              Pending Investments
+              {pendingCount > 0 ? ` (${pendingCount})` : ''}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Investment details</Text>
           <Text style={styles.recordCount}>
@@ -275,98 +458,115 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
           </Text>
         </View>
 
-        {filtered.map((inv, i) => (
-          <View
-            key={inv.id}
-            style={[styles.investmentCard, i === 0 && styles.investmentCardFirst]}>
-            <View style={styles.cardTopRow}>
-              <View>
-                <Text style={styles.idLabel}>INVESTMENT ID</Text>
-                <Text style={[styles.bondId, inv.status === 'Pending Approval' && styles.bondIdPending]}>
-                  {inv.status === 'Pending Approval' ? 'Pending' : inv.id}
-                </Text>
-              </View>
-              <View
-                style={[
-                  styles.statusBadge,
-                  inv.status === 'Active'
-                    ? styles.statusBadgeActive
-                    : inv.status === 'Pending Approval'
-                    ? styles.statusBadgePending
-                    : styles.statusBadgeMatured,
-                ]}>
-                <Text
-                  style={[
-                    styles.statusBadgeText,
-                    inv.status === 'Active'
-                      ? styles.statusBadgeTextActive
-                      : inv.status === 'Pending Approval'
-                      ? styles.statusBadgeTextPending
-                      : styles.statusBadgeTextMatured,
-                  ]}>
-                  {inv.status.toUpperCase()}
-                </Text>
-              </View>
-            </View>
-            <Text style={styles.bondName}>{inv.name}</Text>
-
-            <View style={styles.metaGrid}>
-              <View style={styles.metaCol}>
-                <Text style={styles.metaLabel}>AMOUNT</Text>
-                <Text style={styles.metaValue}>{formatINR(inv.amount)}</Text>
-              </View>
-              <View style={styles.metaCol}>
-                <Text style={styles.metaLabel}>RATE</Text>
-                <Text style={styles.metaValueGold}>{inv.rate}% p.a.</Text>
-              </View>
-            </View>
-            <View style={styles.metaGrid}>
-              <View style={styles.metaCol}>
-                <Text style={styles.metaLabel}>INVESTED ON</Text>
-                <Text style={styles.metaValue}>{inv.investedOn}</Text>
-              </View>
-              <View style={styles.metaCol}>
-                <Text style={styles.metaLabel}>MATURES ON</Text>
-                <Text style={styles.metaValue}>{inv.maturesOn}</Text>
-              </View>
-            </View>
-            <View style={styles.metaGrid}>
-              <View style={styles.metaCol}>
-                <Text style={styles.metaLabel}>MONTHLY INT.</Text>
-                <Text style={styles.metaValue}>{formatINR(inv.monthlyInterest)}</Text>
-              </View>
-              <View style={styles.metaCol}>
-                <Text style={styles.metaLabel}>EARNED</Text>
-                <Text style={styles.metaValueGreen}>{formatINR(inv.earned)}</Text>
-              </View>
-            </View>
-
-            {inv.status === 'Pending Approval' ? (
-              <Text style={styles.recordCount}>
-                Waiting for Admin Approval — actions unlock once approved.
-              </Text>
-            ) : (
-              <View style={styles.actionIconRow}>
-                <TouchableOpacity
-                  style={styles.actionIconBtn}
-                  onPress={() => navigation.navigate('BondDetails', {investorId, bondId: inv.id})}>
-                  <Icon name="eye-outline" size={18} color="#1A1A18" />
-                  <Text style={styles.actionIconBtnText}>View</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.actionIconBtn} onPress={() => openTenureModal(inv)}>
-                  <Icon name="calendar-clock" size={18} color="#1A1A18" />
-                  <Text style={styles.actionIconBtnText}>Tenure</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionIconBtn}
-                  onPress={() => openSettlementModal(inv)}>
-                  <Icon name="cash-refund" size={18} color="#1A1A18" />
-                  <Text style={styles.actionIconBtnText}>Settle</Text>
-                </TouchableOpacity>
-              </View>
-            )}
+        {filtered.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Icon name="briefcase-outline" size={40} color="#9C9689" />
+            <Text style={styles.emptyTitle}>
+              {filter === 'pending' ? 'No pending requests' : 'No investments yet'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {filter === 'pending'
+                ? 'Tenure extensions and pre-settlements awaiting admin will appear here.'
+                : 'Start by creating a new investment.'}
+            </Text>
           </View>
-        ))}
+        ) : (
+          filtered.map((inv, i) => (
+            <View
+              key={`${inv.id}-${inv.status}-${i}`}
+              style={[styles.investmentCard, i === 0 && styles.investmentCardFirst]}>
+              <View style={styles.cardTopRow}>
+                <View>
+                  <Text style={styles.idLabel}>INVESTMENT ID</Text>
+                  <Text
+                    style={[
+                      styles.bondId,
+                      (inv.status === 'Pending Approval' ||
+                        inv.status === 'Pending Extension' ||
+                        inv.status === 'Pending Settlement') &&
+                        styles.bondIdPending,
+                    ]}>
+                    {inv.status === 'Pending Approval' ? 'Pending' : inv.id}
+                  </Text>
+                </View>
+                <View style={[styles.statusBadge, statusBadgeStyle(inv.status)]}>
+                  <Text style={[styles.statusBadgeText, statusTextStyle(inv.status)]}>
+                    {inv.status.toUpperCase()}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.bondName}>{inv.name}</Text>
+
+              <View style={styles.metaGrid}>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaLabel}>AMOUNT</Text>
+                  <Text style={styles.metaValue}>{formatINR(inv.amount)}</Text>
+                </View>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaLabel}>RATE</Text>
+                  <Text style={styles.metaValueGold}>{inv.rate}% p.a.</Text>
+                </View>
+              </View>
+              <View style={styles.metaGrid}>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaLabel}>INVESTED ON</Text>
+                  <Text style={styles.metaValue}>{inv.investedOn}</Text>
+                </View>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaLabel}>MATURES ON</Text>
+                  <Text style={styles.metaValue}>{inv.maturesOn}</Text>
+                </View>
+              </View>
+              <View style={styles.metaGrid}>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaLabel}>MONTHLY INT.</Text>
+                  <Text style={styles.metaValue}>{formatINR(inv.monthlyInterest)}</Text>
+                </View>
+                <View style={styles.metaCol}>
+                  <Text style={styles.metaLabel}>EARNED</Text>
+                  <Text style={styles.metaValueGreen}>{formatINR(inv.earned)}</Text>
+                </View>
+              </View>
+
+              {inv.status === 'Pending Approval' ||
+              inv.status === 'Pending Extension' ||
+              inv.status === 'Pending Settlement' ? (
+                <Text style={styles.pendingHint}>
+                  {inv.status === 'Pending Extension'
+                    ? `Waiting for Admin Approval — extension of ${
+                        inv.extensionMonths ?? '—'
+                      } months requested.`
+                    : inv.status === 'Pending Settlement'
+                    ? 'Waiting for Admin Approval — pre-settlement request submitted.'
+                    : 'Waiting for Admin Approval — actions unlock once approved.'}
+                </Text>
+              ) : canShowActions(inv.status) ? (
+                <View style={styles.actionIconRow}>
+                  <TouchableOpacity
+                    style={styles.actionIconBtn}
+                    onPress={() =>
+                      navigation.navigate('BondDetails', {investorId, bondId: inv.id})
+                    }>
+                    <Icon name="eye-outline" size={18} color="#1A1A18" />
+                    <Text style={styles.actionIconBtnText}>View</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionIconBtn}
+                    onPress={() => openTenureModal(inv)}>
+                    <Icon name="calendar-clock" size={18} color="#1A1A18" />
+                    <Text style={styles.actionIconBtnText}>Tenure</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.actionIconBtn}
+                    onPress={() => openSettlementModal(inv)}>
+                    <Icon name="cash-refund" size={18} color="#1A1A18" />
+                    <Text style={styles.actionIconBtnText}>Settle</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
+            </View>
+          ))
+        )}
 
         <TouchableOpacity
           style={styles.newInvestmentBtn}
