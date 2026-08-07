@@ -149,9 +149,18 @@ const getInvestorName = (idOrName: string, fallback?: string) => {
   return inv?.name || fallback || '—';
 };
 
-const getInvestorBranch = (investorId: string, fallbackName?: string) => {
+// FIX: now accepts an optional `explicitBranch` — the branch carried on the
+// InvestmentRequest itself (submitted from Invest Now). If the live
+// investor-registry lookup finds a match, that's still preferred (it's the
+// source of truth and reflects any later profile edits). Only when the
+// registry lookup comes up empty does this fall back to the branch that
+// was captured on the request at submission time, instead of just
+// returning '—'.
+const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBranch?: string) => {
   const inv = getInvestor(investorId, fallbackName);
-  return inv?.branch && inv.branch !== '—' ? inv.branch : '—';
+  if (inv?.branch && inv.branch !== '—') return inv.branch;
+  if (explicitBranch && explicitBranch !== '—') return explicitBranch;
+  return '—';
 };
 
   const unifiedRows: UnifiedRow[] = [
@@ -203,7 +212,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
       bondNumber: '—',
       investorName: getInvestorName(r.investorId, r.investorName),
       investorId: 'Pending',
-     branch: getInvestorBranch(r.investorId, r.investorName),
+     branch: getInvestorBranch(r.investorId, r.investorName, r.branch),
       amount: r.amount,
       interestRate: r.interestRate,
       investedDate: r.requestedOn,
@@ -476,7 +485,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                   <View style={styles.pendingMetaCol}>
                     <Text style={styles.pendingMetaLabel}>BRANCH</Text>
                    <Text style={styles.pendingMetaValue}>
-  {getInvestorBranch(req.investorId, req.investorName)}
+  {getInvestorBranch(req.investorId, req.investorName, req.branch)}
 </Text>
                   </View>
                 </View>
@@ -871,7 +880,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                     <View style={local.detailCol}>
                       <Text style={local.detailLabelSmall}>BRANCH</Text>
                      <Text style={local.detailValueSmall}>
-  {getInvestorBranch(reviewReq.investorId, reviewReq.investorName)}
+  {getInvestorBranch(reviewReq.investorId, reviewReq.investorName, reviewReq.branch)}
 </Text>
                     </View>
                     <View style={local.detailCol}>

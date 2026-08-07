@@ -158,6 +158,7 @@ export type InvestmentRequest = {
   status: InvestmentRequestStatus;
   requestedOn: string;
   bondSeriesId?: string;
+  branch?: string;
 };
 export type TenureExtensionRequest = {
   id: string;
@@ -444,7 +445,7 @@ type AppDataContextType = {
   // (e.g. the Invest Now bank-details modal) immediately after Save.
   updateInvestorProfile: (investorId: string, params: UpdateInvestorProfileParams) => void;
   updateInvestorBankDetails: (investorId: string, params: UpdateInvestorBankDetailsParams) => void;
-
+updateInvestorBranch: (investorId: string, branch: string) => void; 
   investmentRequests: InvestmentRequest[];
   submitInvestmentRequest: (params: SubmitInvestmentRequestParams) => void;
   updateInvestmentRequestRate: (id: string, rate: number) => void;
@@ -577,11 +578,10 @@ const defaultAdminProfile: AdminProfile = {
 const initialInvestmentRequests: InvestmentRequest[] = [];
 
 const initialBranches: Branch[] = [
-  {id: 'br1', name: 'Mumbai HQ', city: 'Mumbai', adminName: 'Ravi Mehta', investors: 342, aum: '₹18.2Cr', status: 'Active'},
-  {id: 'br2', name: 'Delhi North', city: 'Delhi', adminName: 'Suresh Kumar', investors: 218, aum: '₹11.4Cr', status: 'Active'},
-  {id: 'br3', name: 'Bangalore', city: 'Bangalore', adminName: 'Anita Rao', investors: 186, aum: '₹9.8Cr', status: 'Active'},
-  {id: 'br4', name: 'Chennai', city: 'Chennai', adminName: 'Mohan Das', investors: 142, aum: '₹7.2Cr', status: 'Active'},
-  {id: 'br5', name: 'Pune', city: 'Pune', adminName: 'Priya Joshi', investors: 98, aum: '₹5.1Cr', status: 'Suspended'},
+  {id: 'br1', name: 'Hyderabad', city: 'Hyderabad', adminName: 'Ravi Mehta', investors: 0, aum: '₹0Cr', status: 'Active'},
+  {id: 'br2', name: 'Vijayawada', city: 'Vijayawada', adminName: 'Suresh Kumar', investors: 0, aum: '₹0Cr', status: 'Active'},
+  {id: 'br3', name: 'Bengaluru', city: 'Bengaluru', adminName: 'Anita Rao', investors: 0, aum: '₹0Cr', status: 'Active'},
+  {id: 'br4', name: 'Chennai', city: 'Chennai', adminName: 'Mohan Das', investors: 0, aum: '₹0Cr', status: 'Active'},
 ];
 
 const initialSAAdmins: SAAdmin[] = [
@@ -956,7 +956,13 @@ const AppNavigator = () => {
     const inv = investors.find(i => i.id === investorId);
     pushAuditLog(inv?.name || 'Investor', 'Investor', 'Bank Details Updated');
   };
-
+const updateInvestorBranch = (investorId: string, branch: string) => {
+  const inv = investors.find(i => i.id === investorId);
+  setInvestors(prev =>
+    prev.map(i => (i.id === investorId ? {...i, branch} : i)),
+  );
+  pushAuditLog('Admin', 'Admin', `Branch Updated — ${inv?.name || investorId} → ${branch}`);
+};
   const approveKyc = (id: string) => {
     const req = kycRequests.find(k => k.id === id);
     setKycRequests(prev => prev.map(k => (k.id === id ? {...k, category: 'archive'} : k)));
@@ -1200,6 +1206,7 @@ const rejectKyc = (id: string) => {
       screenshotUri,
       status: 'Pending',
       requestedOn: nowTimestamp(),
+      branch,
     };
 
     setInvestmentRequests(prev => [newRequest, ...prev]);
@@ -1891,7 +1898,7 @@ const rejectKyc = (id: string) => {
 
     updateInvestorProfile,
     updateInvestorBankDetails,
-
+updateInvestorBranch,
     investmentRequests,
     submitInvestmentRequest,
     updateInvestmentRequestRate,
