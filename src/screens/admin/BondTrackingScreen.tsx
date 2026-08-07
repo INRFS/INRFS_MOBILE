@@ -9,22 +9,67 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
-import {useAppData, Bond, InvestmentRequest} from '../../navigation/AppNavigator';
+import {
+  useAppData,
+  Bond,
+  InvestmentRequest,
+  TenureExtensionRequest,
+} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/BondTrackingScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
 type TopTab = 'Pending Approval' | 'All Investments';
-type RowStatus = 'Active' | 'Upcoming' | 'Settled' | 'Pending';
+// 'Pending Extension' / 'Pending Settlement' so a bond's status badge in
+// "All Investments" can reflect either an investor-submitted request OR a
+// naturally-crossed maturity date that's awaiting admin action, instead of
+// still showing 'Active'.
+type RowStatus =
+  | 'Active'
+  | 'Upcoming'
+  | 'Settled'
+  | 'Pending'
+  | 'Pending Extension'
+  | 'Pending Settlement';
 type FilterKey = 'All Bonds' | 'Active' | 'Upcoming' | 'Settled' | 'Pending';
 const filters: FilterKey[] = ['All Bonds', 'Active', 'Upcoming', 'Settled', 'Pending'];
 const RATE_QUICK_SELECT = [2, 2.5, 3, 3.5, 4];
 
 const formatINR = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
 
+// ---------------------------------------------------------------------------
+// Maturity date handling — mirrors AppNavigator's storage format exactly
+// (dd-mm-yyyy, via formatDDMMYYYY/parseDDMMYYYY there), so "has this bond
+// matured?" means the same thing here as it does on the Settlement screen.
+// ---------------------------------------------------------------------------
+const parseAppDate = (dateStr?: string): Date | null => {
+  if (!dateStr) return null;
+  const parts = dateStr.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
+  const [d, m, y] = parts;
+  const dt = new Date(y, m - 1, d);
+  return isNaN(dt.getTime()) ? null : dt;
+};
+
+const isMaturityCrossed = (maturityDate?: string): boolean => {
+  const dt = parseAppDate(maturityDate);
+  if (!dt) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  dt.setHours(0, 0, 0, 0);
+  return dt.getTime() <= today.getTime();
+};
+
 const statusStyle = (status: RowStatus) => {
   if (status === 'Active') return {bg: '#DCFCE7', text: '#16A34A', dot: '#16A34A'};
   if (status === 'Upcoming') return {bg: '#DBEAFE', text: '#2563EB', dot: '#2563EB'};
-  if (status === 'Pending') return {bg: '#FEF3C7', text: '#D97706', dot: '#D97706'};
+  // Pending Extension / Pending Settlement share the same amber styling as
+  // a plain Pending (new-investment) request.
+  if (
+    status === 'Pending' ||
+    status === 'Pending Extension' ||
+    status === 'Pending Settlement'
+  )
+    return {bg: '#FEF3C7', text: '#D97706', dot: '#D97706'};
   return {bg: '#E5E7EB', text: '#6B7280', dot: '#6B7280'};
 };
 
@@ -51,6 +96,14 @@ const BondTrackingScreen = ({navigation}: any) => {
     updateInvestmentRequestRate,
     approveInvestmentRequest,
     rejectInvestmentRequest,
+    // Investor-submitted tenure extension / pre-close requests, and the
+    // admin actions that resolve them.
+    tenureExtensionRequests,
+    approveTenureExtension,
+    rejectTenureExtension,
+    preSettlementRequests,
+    approvePreSettlement,
+    rejectPreSettlement,
   } = useAppData();
 
   const [topTab, setTopTab] = useState<TopTab>('Pending Approval');
@@ -66,14 +119,21 @@ const BondTrackingScreen = ({navigation}: any) => {
   const [extendMonths, setExtendMonths] = useState('3');
   const [newRate, setNewRate] = useState('');
   const [remarks, setRemarks] = useState('');
+  // The investor's original request behind this tenure modal, if any. When
+  // set, "Review & Approve" also marks that request Approved.
+  const [linkedTenureRequest, setLinkedTenureRequest] = useState<TenureExtensionRequest | null>(null);
 
   const pendingRequests = investmentRequests.filter(r => r.status === 'Pending');
+  // Investor-submitted tenure extension / pre-close requests still awaiting
+  // admin action.
+  const pendingTenureRequests = tenureExtensionRequests.filter(r => r.status === 'Pending');
+  const pendingSettlementRequests = preSettlementRequests.filter(r => r.status === 'Pending');
 
 // Normalizes so minor casing/whitespace differences don't break a match.
 const norm = (s?: string) => (s || '').trim().toLowerCase();
 
-// Now checks BOTH id and name against the registry when both are
-// available, instead of only ever getting one value to match against.
+// Checks BOTH id and name against the registry when both are available,
+// instead of only ever getting one value to match against.
 const getInvestor = (id?: string, name?: string) => {
   return investors.find(
     i => (id && i.id === id) || (name && norm(i.name) === norm(name)),
@@ -99,6 +159,29 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
       const inv =
         investors.find(i => i.id === b.investorId) ||
         investors.find(i => i.name === b.investorName);
+
+      // Reflect a pending investor-submitted request — or a naturally
+      // crossed maturity date — in the status badge itself (not just the
+      // amber banner further down), so "All Investments" matches what the
+      // investor sees on "My Investments" and what the admin sees on the
+      // Settlement screen's "Tenure Timeout" tab. This flips back
+      // automatically: for a request, once the admin approves/rejects it
+      // leaves the Pending list and this check stops matching; for a
+      // matured bond, once the admin approves settlement (or a pre-close
+      // request is approved) the bond's own status becomes 'Settled' and
+      // this check stops matching too — no extra state to manage either
+      // way.
+      const hasPendingTenureReq = tenureExtensionRequests.some(
+        r => r.bondSeriesId === b.seriesId && r.status === 'Pending',
+      );
+      const hasPendingSettlementReq = preSettlementRequests.some(
+        r => r.bondSeriesId === b.seriesId && r.status === 'Pending',
+      );
+      const maturityCrossed = b.status === 'Active' && isMaturityCrossed(b.maturityDate);
+      let displayStatus: RowStatus = b.status as RowStatus;
+      if (hasPendingTenureReq) displayStatus = 'Pending Extension';
+      else if (hasPendingSettlementReq || maturityCrossed) displayStatus = 'Pending Settlement';
+
       return {
         key: b.seriesId,
         bondNumber: b.seriesId,
@@ -111,7 +194,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
         interestRate: b.interestRate,
         investedDate: b.investedDate,
         maturityDate: b.maturityDate,
-        status: b.status as RowStatus,
+        status: displayStatus,
         bond: b,
       };
     }),
@@ -130,14 +213,12 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
     })),
   ];
 
-  // NEW — "Investor ID" reference shown on the cards (INR-XXX), matching
-  // the web Investment Management table. This is a DISPLAY-ONLY reference
-  // for the investment record itself, distinct from the investor's real
-  // KYC/registry ID (that's the new "Investment ID" field below). It's
-  // derived from each row's position in the combined bonds+pending list
-  // (same order the web table uses), so it isn't persisted anywhere — if
-  // you'd rather this live as a real field on InvestmentRequest/Bond so it
-  // can never shift, say the word and I'll wire that into AppNavigator.
+  // "Investor ID" reference shown on the cards (INR-XXX), matching the web
+  // Investment Management table. This is a DISPLAY-ONLY reference for the
+  // investment record itself, distinct from the investor's real KYC/
+  // registry ID (that's the "Investment ID" field below). It's derived
+  // from each row's position in the combined bonds+pending list (same
+  // order the web table uses), so it isn't persisted anywhere.
   const investorRefId = (key: string) => {
     const idx = unifiedRows.findIndex(r => r.key === key);
     return idx === -1 ? '—' : `INR-${String(idx + 1).padStart(3, '0')}`;
@@ -174,14 +255,9 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
         {
           text: 'Approve',
           onPress: () => {
-            // FIX — RATE NOT UPDATING BUG:
-            // Previously this called updateInvestmentRequestRate(id, rate)
-            // and then approveInvestmentRequest(id) on the next line. Since
-            // React state updates are async, approveInvestmentRequest was
-            // still reading the OLD rate when it built the bond, so "All
-            // Investments" never reflected the rate the admin had just
-            // edited. Passing the rate straight into approveInvestmentRequest
-            // applies it in one atomic step instead.
+            // Passing the rate straight into approveInvestmentRequest
+            // applies it in one atomic step, avoiding a stale-read race
+            // between two separate state updates.
             approveInvestmentRequest(reviewReq.id, finalRate);
             closeReview();
           },
@@ -223,11 +299,30 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
   const openDetails = (row: UnifiedRow) => setDetailsRow(row);
   const closeDetails = () => setDetailsRow(null);
 
+  // Detects whether this bond has a pending investor-submitted tenure
+  // extension request and, if so, prefills the modal from it (months +
+  // rate) and remembers the request id so approval can mark it Approved
+  // and notify the investor's screen (via tenureExtensionRequests status
+  // flipping, which useInvestments() already reacts to).
   const openTenure = (row: UnifiedRow) => {
+    const linked = tenureExtensionRequests.find(
+      r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
+    );
     setTenureRow(row);
-    setExtendMonths('3');
+    setLinkedTenureRequest(linked || null);
+    setExtendMonths(linked ? String(linked.extensionMonths) : '3');
     setNewRate(String(row.interestRate));
     setRemarks('');
+  };
+
+  // Jump straight into the Tenure modal for a given bond series id, used
+  // by the "Review in Investments" shortcut on the Pending Approval info
+  // card.
+  const openTenureForBondSeries = (bondSeriesId: string) => {
+    const row = unifiedRows.find(r => r.bondNumber === bondSeriesId);
+    if (!row) return;
+    setTopTab('All Investments');
+    openTenure(row);
   };
 
   const calcNewMaturity = () => {
@@ -257,6 +352,30 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
     }
   };
 
+  // Applies the extension to the bond via context, and — when this modal
+  // was opened from an investor request — marks that request Approved so
+  // the investor's MyInvestments screen flips the bond back from "Pending
+  // Extension" to "Active" automatically.
+  const handleApproveTenure = () => {
+    if (!tenureRow) return;
+    const months = parseInt(extendMonths, 10) || 0;
+    const rate = parseFloat(newRate);
+
+    approveTenureExtension(
+      tenureRow.bondNumber,
+      months,
+      !Number.isNaN(rate) ? rate : undefined,
+      linkedTenureRequest?.id,
+    );
+
+    Alert.alert(
+      'Approved',
+      `${tenureRow.bondNumber} extended by ${months} month${months === 1 ? '' : 's'}. New maturity: ${calcNewMaturity()}.`,
+    );
+    setTenureRow(null);
+    setLinkedTenureRequest(null);
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -284,9 +403,11 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
               ]}>
               Pending Approval
             </Text>
-            {pendingRequests.length > 0 && (
+            {(pendingRequests.length + pendingTenureRequests.length + pendingSettlementRequests.length) > 0 && (
               <View style={styles.badge}>
-                <Text style={styles.badgeText}>{pendingRequests.length}</Text>
+                <Text style={styles.badgeText}>
+                  {pendingRequests.length + pendingTenureRequests.length + pendingSettlementRequests.length}
+                </Text>
               </View>
             )}
           </TouchableOpacity>
@@ -303,17 +424,26 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
               ]}>
               All Investments
             </Text>
+             {(pendingTenureRequests.length + pendingSettlementRequests.length) > 0 && (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>
+                  {pendingTenureRequests.length + pendingSettlementRequests.length}
+                </Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
         {/* ===================== PENDING APPROVAL ===================== */}
         {topTab === 'Pending Approval' && (
           <>
-            {pendingRequests.length === 0 && (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyText}>No pending investment requests.</Text>
-              </View>
-            )}
+            {pendingRequests.length === 0 &&
+              pendingTenureRequests.length === 0 &&
+              pendingSettlementRequests.length === 0 && (
+                <View style={styles.emptyWrap}>
+                  <Text style={styles.emptyText}>No pending investment requests.</Text>
+                </View>
+              )}
 
             {pendingRequests.map(req => (
               <View key={req.id} style={styles.pendingCard}>
@@ -322,12 +452,10 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                     <Text style={styles.pendingInvestorName}>
                       {getInvestorName(req.investorId, req.investorName)}
                     </Text>
-                    {/* FIX: this used to hardcode the literal word "Pending"
-                        here regardless of the request — now shows the
-                        INR-XXX reference, matching the web's Investor ID
-                        column. */}
+                    {/* Shows the INR-XXX reference, matching the web's
+                        Investor ID column. */}
                     <Text style={styles.pendingReqId}>Investor ID: {investorRefId(req.id)}</Text>
-                    {/* NEW: Investment ID — stays "Pending" until the admin
+                    {/* Investment ID — stays "Pending" until the admin
                         approves, matching the web reference. */}
                     <Text style={styles.pendingReqId}>Investment ID: Pending</Text>
                   </View>
@@ -391,6 +519,87 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                 </View>
               </View>
             ))}
+
+            {/* Tenure Extension requests: informational only. No
+                approve/reject buttons here on purpose — the admin may want
+                to adjust months/rate, so the actual approval happens in the
+                existing Tenure modal (opened from "All Investments"), which
+                auto-detects and prefills from this request. */}
+            {pendingTenureRequests.map(r => (
+              <View key={r.id} style={local.infoCard}>
+                <View style={local.infoCardTopRow}>
+                  <Text style={local.infoCardTitle}>{r.investorName}</Text>
+                  <View style={local.infoBadge}>
+                    <Text style={local.infoBadgeText}>TENURE EXTENSION</Text>
+                  </View>
+                </View>
+                <Text style={local.infoCardBondId}>{r.bondSeriesId}</Text>
+                <Text style={local.infoCardText}>
+                  Waiting for your approval — requested +{r.extensionMonths} months (current tenure{' '}
+                  {r.currentTenureMonths}M) on {r.requestedOn}.
+                </Text>
+                <TouchableOpacity
+                  style={local.infoCardBtn}
+                  onPress={() => openTenureForBondSeries(r.bondSeriesId)}>
+                  <Text style={local.infoCardBtnText}>Review in All Investments →</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            {/* Pre-Settlement (pre-close) requests: principal/penalty/net
+                are fixed by the investor's original request, so there's
+                nothing for the admin to edit — approve/reject directly
+                here. */}
+            {pendingSettlementRequests.map(r => (
+              <View key={r.id} style={local.infoCard}>
+                <View style={local.infoCardTopRow}>
+                  <Text style={local.infoCardTitle}>{r.investorName}</Text>
+                  <View style={[local.infoBadge, {backgroundColor: '#FEE2E2'}]}>
+                    <Text style={[local.infoBadgeText, {color: '#DC2626'}]}>PRE-CLOSE</Text>
+                  </View>
+                </View>
+                <Text style={local.infoCardBondId}>{r.bondSeriesId}</Text>
+                <Text style={local.infoCardText}>
+                  Waiting for your approval — requested on {r.requestedOn}. Net payable{' '}
+                  {formatINR(r.netAmount)} (principal {formatINR(r.principal)}, penalty{' '}
+                  {formatINR(r.penalty)}).
+                </Text>
+                <View style={{flexDirection: 'row', gap: 8, marginTop: 10}}>
+                  <TouchableOpacity
+                    style={local.rejectBtn}
+                    onPress={() =>
+                      Alert.alert(
+                        'Reject pre-close',
+                        `Reject the pre-close request for ${r.bondSeriesId}?`,
+                        [
+                          {text: 'Cancel', style: 'cancel'},
+                          {
+                            text: 'Reject',
+                            style: 'destructive',
+                            onPress: () => rejectPreSettlement(r.id),
+                          },
+                        ],
+                      )
+                    }>
+                    <Text style={local.rejectBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalApproveBtn, {flex: 1}]}
+                    onPress={() =>
+                      Alert.alert(
+                        'Approve pre-close',
+                        `Settle ${r.bondSeriesId} and pay out ${formatINR(r.netAmount)} to ${r.investorName}?`,
+                        [
+                          {text: 'Cancel', style: 'cancel'},
+                          {text: 'Approve', onPress: () => approvePreSettlement(r.id)},
+                        ],
+                      )
+                    }>
+                    <Text style={styles.modalApproveText}>Approve Pre-Close</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
           </>
         )}
 
@@ -425,6 +634,21 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
 
             {filteredRows.map(row => {
               const s = statusStyle(row.status);
+              // Flags rows that have a pending investor request, or that
+              // have simply matured, so the admin can spot them at a
+              // glance in "All Investments" too.
+              const hasPendingTenureReq = tenureExtensionRequests.some(
+                r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
+              );
+              const hasPendingSettlementReq = preSettlementRequests.some(
+                r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
+              );
+              const maturityCrossed =
+                row.bond?.status === 'Active' && isMaturityCrossed(row.bond?.maturityDate);
+              // Matured (Settled) bonds only get View + Bond — no Tenure
+              // action, since there's nothing left to extend/close on a
+              // bond that has already been settled.
+              const isMatured = row.bond?.status === 'Settled';
               return (
                 <View key={row.key} style={styles.card}>
                   <View style={styles.cardTopRow}>
@@ -440,6 +664,18 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                     </View>
                   </View>
 
+                  {(hasPendingTenureReq || hasPendingSettlementReq || maturityCrossed) && (
+                    <View style={local.rowFlag}>
+                      <Text style={local.rowFlagText}>
+                        {hasPendingTenureReq
+                          ? 'Investor requested a tenure extension — awaiting your review'
+                          : hasPendingSettlementReq
+                          ? 'Investor requested pre-close — awaiting your review'
+                          : 'Bond has matured — awaiting settlement approval'}
+                      </Text>
+                    </View>
+                  )}
+
                   <View style={styles.detailsRow}>
                     <View>
                       <Text style={styles.detailLabel}>Investor</Text>
@@ -447,16 +683,16 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                     </View>
                     <View>
                       <Text style={styles.detailLabel}>Investor ID</Text>
-                      {/* FIX: now shows the INR-XXX reference (matching the
-                          web's Investor ID column) instead of the raw
-                          investor registry ID / literal "Pending". */}
+                      {/* Shows the INR-XXX reference (matching the web's
+                          Investor ID column) instead of the raw investor
+                          registry ID / literal "Pending". */}
                       <Text style={styles.detailValueDark}>{investorRefId(row.key)}</Text>
                     </View>
                   </View>
 
-                  {/* NEW: Investment ID — the investor's real registry ID
-                      once approved, "-" while still pending. Matches the
-                      web's Investment ID column. */}
+                  {/* Investment ID — the investor's real registry ID once
+                      approved, "-" while still pending. Matches the web's
+                      Investment ID column. */}
                   <View style={styles.detailsRow}>
                     <View>
                       <Text style={styles.detailLabel}>Investment ID</Text>
@@ -527,11 +763,32 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                           }}>
                           <Text style={local.bondBtnText}>Bond</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity
-                          style={local.tenureBtn}
-                          onPress={() => openTenure(row)}>
-                          <Text style={local.tenureBtnText}>Tenure</Text>
-                        </TouchableOpacity>
+                        {/* Tenure action hidden once the bond has matured
+                            (isMatured) — only View + Bond remain for those.
+                            For non-matured bonds, Tenure is only enabled
+                            once the investor has actually submitted an
+                            extension request for this bond — otherwise
+                            it's shown disabled/greyed out so the admin
+                            can't act on a request that doesn't exist. */}
+                        {!isMatured && (
+                          <TouchableOpacity
+                            disabled={!hasPendingTenureReq}
+                            style={[
+                              local.tenureBtn,
+                              hasPendingTenureReq && local.tenureBtnFlagged,
+                              !hasPendingTenureReq && local.tenureBtnDisabled,
+                            ]}
+                            onPress={() => hasPendingTenureReq && openTenure(row)}>
+                            <Text
+                              style={[
+                                local.tenureBtnText,
+                                hasPendingTenureReq && local.tenureBtnTextFlagged,
+                                !hasPendingTenureReq && local.tenureBtnTextDisabled,
+                              ]}>
+                              {hasPendingTenureReq ? 'Tenure •' : 'Tenure'}
+                            </Text>
+                          </TouchableOpacity>
+                        )}
                       </>
                     )}
                   </View>
@@ -814,12 +1071,29 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
         visible={!!tenureRow}
         transparent
         animationType="fade"
-        onRequestClose={() => setTenureRow(null)}>
+        onRequestClose={() => {
+          setTenureRow(null);
+          setLinkedTenureRequest(null);
+        }}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             {tenureRow && (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <Text style={styles.modalTitle}>Renew / Increase Tenure</Text>
+
+                {/* Shown only when this bond has a matching pending
+                    investor request — tells the admin exactly what was
+                    asked for, and the fields above are already prefilled
+                    from it. */}
+                {linkedTenureRequest && (
+                  <View style={local.noticeBox}>
+                    <Text style={local.noticeText}>
+                      {tenureRow.investorName} requested a {linkedTenureRequest.extensionMonths}-month
+                      extension on {linkedTenureRequest.requestedOn}. Adjust below if needed, then
+                      approve to notify the investor.
+                    </Text>
+                  </View>
+                )}
 
                 <Text style={local.detailLabelSmall}>Investor</Text>
                 <Text style={[local.detailValueSmall, {marginBottom: 14}]}>
@@ -883,18 +1157,39 @@ const getInvestorBranch = (investorId: string, fallbackName?: string) => {
                 <View style={local.modalActionsRow3}>
                   <TouchableOpacity
                     style={styles.modalCancelBtn}
-                    onPress={() => setTenureRow(null)}>
+                    onPress={() => {
+                      setTenureRow(null);
+                      setLinkedTenureRequest(null);
+                    }}>
                     <Text style={styles.modalCancelText}>Cancel</Text>
                   </TouchableOpacity>
+                  {linkedTenureRequest && (
+                    <TouchableOpacity
+                      style={local.rejectBtn}
+                      onPress={() => {
+                        Alert.alert(
+                          'Reject extension',
+                          `Reject ${tenureRow.investorName}'s extension request for ${tenureRow.bondNumber}?`,
+                          [
+                            {text: 'Cancel', style: 'cancel'},
+                            {
+                              text: 'Reject',
+                              style: 'destructive',
+                              onPress: () => {
+                                rejectTenureExtension(linkedTenureRequest.id);
+                                setTenureRow(null);
+                                setLinkedTenureRequest(null);
+                              },
+                            },
+                          ],
+                        );
+                      }}>
+                      <Text style={local.rejectBtnText}>Reject</Text>
+                    </TouchableOpacity>
+                  )}
                   <TouchableOpacity
                     style={styles.modalApproveBtn}
-                    onPress={() => {
-                      Alert.alert(
-                        'Success',
-                        'Tenure extension request submitted for review.',
-                      );
-                      setTenureRow(null);
-                    }}>
+                    onPress={handleApproveTenure}>
                     <Text style={styles.modalApproveText}>Review & Approve</Text>
                   </TouchableOpacity>
                 </View>
@@ -954,6 +1249,7 @@ const local = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     marginTop: 14,
+    marginBottom: 4,
   },
   noticeText: {
     fontSize: 12,
@@ -1022,6 +1318,26 @@ const local = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  // Highlights the Tenure button when there's a pending investor request
+  // behind this specific bond, so the admin doesn't have to open every
+  // bond to find it.
+  tenureBtnFlagged: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#FDE68A',
+  },
+  tenureBtnTextFlagged: {
+    color: '#B45309',
+  },
+  // Tenure button is disabled/greyed out when there's no pending
+  // investor-submitted extension request for this bond — admin can't open
+  // the extension flow until the investor actually asks for one.
+  tenureBtnDisabled: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+  },
+  tenureBtnTextDisabled: {
+    color: '#9CA3AF',
+  },
   awaitingBtn: {
     backgroundColor: '#FEF3C7',
     paddingHorizontal: 16,
@@ -1031,6 +1347,72 @@ const local = StyleSheet.create({
   awaitingBtnText: {
     color: '#D97706',
     fontSize: 13,
+    fontWeight: '600',
+  },
+  // Info card style for the Pending Approval tab — used for tenure
+  // extension / pre-close requests.
+  infoCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F3E8C7',
+    padding: 14,
+    marginBottom: 12,
+  },
+  infoCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  infoCardTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  infoBadge: {
+    backgroundColor: '#FEF3C7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  infoBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#B45309',
+    letterSpacing: 0.3,
+  },
+  infoCardBondId: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginBottom: 6,
+  },
+  infoCardText: {
+    fontSize: 13,
+    color: '#374151',
+    lineHeight: 18,
+  },
+  infoCardBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+  },
+  infoCardBtnText: {
+    color: '#1D4ED8',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  // Small flag shown on a bond's card in "All Investments" when it has a
+  // pending investor request behind it, or has simply matured.
+  rowFlag: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 10,
+  },
+  rowFlagText: {
+    fontSize: 11,
+    color: '#B45309',
     fontWeight: '600',
   },
 });

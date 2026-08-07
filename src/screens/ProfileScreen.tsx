@@ -105,11 +105,11 @@ const ProfileScreen = ({navigation, route}: {navigation: any; route?: any}) => {
                 <TouchableOpacity onPress={handleStartEdit}>
                   <Text style={styles.editText}>EDIT</Text>
                 </TouchableOpacity>
-                <TouchableOpacity
+                {/* <TouchableOpacity
                   onPress={() => navigation.navigate('InvestorSettings')}
                   style={styles.settingsBtn}>
                   <Icon name="cog-outline" size={20} color="#fff" />
-                </TouchableOpacity>
+                </TouchableOpacity> */}
               </>
             )}
           </View>
