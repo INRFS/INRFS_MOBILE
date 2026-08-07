@@ -14,7 +14,7 @@ import MyInvestmentsscreen from '../screens/MyInvestmentsscreen';
 import BondDetailsScreen from '../screens/BondDetailsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import InvestorNotificationsScreen from '../screens/NotificationsScreen';
-import InvestorSettingsScreen from '../screens/SettingsScreen';
+// import InvestorSettingsScreen from '../screens/SettingsScreen';
 // ---- ADMIN SCREENS (kept in their own subfolder, investor code above is untouched) ----
 import AdminDashboardScreen from '../screens/admin/AdminDashboardScreen';
 import InvestorRegistryScreen from '../screens/admin/InvestorRegistryScreen';
@@ -181,6 +181,7 @@ export type PreSettlementRequest = {
   netAmount: number;
   status: 'Pending' | 'Approved' | 'Rejected';
   requestedOn: string;
+    reason?: string;
 };
 export type Branch = {
   id: string;
@@ -415,7 +416,28 @@ type AppDataContextType = {
     earned: number;
     penalty: number;
     netAmount: number;
+    // NEW: matches the web "REASON FOR PRE-CLOSE" field, surfaced on the
+    // admin's Settlement screen under each Pre-Close request.
+    reason?: string;
   }) => void;
+  // NEW: admin-side actions on investor-submitted tenure extension / pre-close
+  // requests. approveTenureExtension takes the bond directly (not just the
+  // request id) because the admin can tweak months/rate in the Tenure modal
+  // even when there's no linked request (manual renewal). linkedRequestId is
+  // optional so a manual renewal (no investor request behind it) still works.
+  approveTenureExtension: (
+    bondSeriesId: string,
+    extensionMonths: number,
+    newRate?: number,
+    linkedRequestId?: string,
+  ) => void;
+  rejectTenureExtension: (requestId: string) => void;
+  approvePreSettlement: (requestId: string) => void;
+  rejectPreSettlement: (requestId: string) => void;
+  // NEW: settles a bond that reached its maturity date naturally (no
+  // investor pre-close request behind it) — used by the "Tenure Timeout"
+  // tab's Approve Settlement action on SettlementCalculatorScreen.
+  settleMaturedBond: (bondSeriesId: string) => void;
   // NEW: called from ProfileScreen so investor-entered data (both personal
   // info and bank details) lives in shared context/AsyncStorage instead of
   // that screen's own local state, and is therefore visible everywhere else
@@ -776,6 +798,8 @@ const AppNavigator = () => {
         if (saved.auditLogs) setAuditLogs(saved.auditLogs);
         if (saved.saNotifications) setSaNotifications(saved.saNotifications);
         if (saved.systemSettings) setSystemSettingsState(saved.systemSettings);
+        if (saved.tenureExtensionRequests) setTenureExtensionRequests(saved.tenureExtensionRequests);
+        if (saved.preSettlementRequests) setPreSettlementRequests(saved.preSettlementRequests);
       }
       setIsDataHydrated(true);
     })();
@@ -822,6 +846,8 @@ const AppNavigator = () => {
     auditLogs,
     saNotifications,
     systemSettings,
+    tenureExtensionRequests,
+    preSettlementRequests,
   ]);
 
   // ---------------------------------------------------------------------
@@ -1175,115 +1201,7 @@ const rejectKyc = (id: string) => {
       status: 'Pending',
       requestedOn: nowTimestamp(),
     };
-  const requestTenureExtension = ({
-    bondSeriesId,
-    investorId,
-    investorName,
-    currentTenureMonths,
-    extensionMonths,
-  }: {
-    bondSeriesId: string;
-    investorId: string;
-    investorName: string;
-    currentTenureMonths: number;
-    extensionMonths: number;
-  }) => {
-    const newReq: TenureExtensionRequest = {
-      id: `TE-${Date.now().toString().slice(-6)}`,
-      bondSeriesId,
-      investorId,
-      investorName,
-      currentTenureMonths,
-      extensionMonths,
-      status: 'Pending',
-      requestedOn: nowTimestamp(),
-    };
 
-    setTenureExtensionRequests(prev => [newReq, ...prev]);
-
-    setAdminNotifications(prev => [
-      {
-        id: `an-${Date.now()}`,
-        title: 'Tenure Extension Request',
-        isNew: true,
-        message: `${investorName} requested to extend ${bondSeriesId} by ${extensionMonths} months (current tenure ${currentTenureMonths}M).`,
-        time: 'Just now',
-        icon: 'bell',
-      },
-      ...prev,
-    ]);
-
-    setActivities(prev => [
-      {
-        id: `a-${Date.now()}`,
-        title: 'Tenure Extension Requested',
-        subtitle: `${investorName} • ${bondSeriesId} • +${extensionMonths} months`,
-        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
-        icon: 'bond',
-      },
-      ...prev,
-    ]);
-
-    pushAuditLog(investorName || 'Investor', 'Investor', `Tenure Extension Requested — ${bondSeriesId} (+${extensionMonths}M)`);
-  };
-
-  const requestPreSettlement = ({
-    bondSeriesId,
-    investorId,
-    investorName,
-    principal,
-    earned,
-    penalty,
-    netAmount,
-  }: {
-    bondSeriesId: string;
-    investorId: string;
-    investorName: string;
-    principal: number;
-    earned: number;
-    penalty: number;
-    netAmount: number;
-  }) => {
-    const newReq: PreSettlementRequest = {
-      id: `PS-${Date.now().toString().slice(-6)}`,
-      bondSeriesId,
-      investorId,
-      investorName,
-      principal,
-      earned,
-      penalty,
-      netAmount,
-      status: 'Pending',
-      requestedOn: nowTimestamp(),
-    };
-
-    setPreSettlementRequests(prev => [newReq, ...prev]);
-
-    setAdminNotifications(prev => [
-      {
-        id: `an-${Date.now()}`,
-        title: 'Pre-Settlement Request',
-        isNew: true,
-        message: `${investorName} requested pre-settlement for ${bondSeriesId}. Net amount ${formatINRShort(netAmount)}.`,
-        time: 'Just now',
-        icon: 'money',
-      },
-      ...prev,
-    ]);
-
-    setActivities(prev => [
-      {
-        id: `a-${Date.now()}`,
-        title: 'Pre-Settlement Requested',
-        subtitle: `${investorName} • ${bondSeriesId} • ${formatINRShort(netAmount)}`,
-        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
-        icon: 'transaction',
-      },
-      ...prev,
-    ]);
-
-    pushAuditLog(investorName || 'Investor', 'Investor', `Pre-Settlement Requested — ${bondSeriesId}`);
-  };
     setInvestmentRequests(prev => [newRequest, ...prev]);
 
     setInvestors(prev => {
@@ -1689,40 +1607,245 @@ const rejectKyc = (id: string) => {
 
   };
 
-const requestTenureExtension = (params: {
-  bondSeriesId: string;
-  investorId: string;
-  investorName: string;
-  currentTenureMonths: number;
-  extensionMonths: number;
-}) => {
-  const request: TenureExtensionRequest = {
-    id: `TEN-${Date.now()}`,
-    ...params,
-    status: 'Pending',
-    requestedOn: nowTimestamp(),
+  // ---------------------------------------------------------------------
+  // requestTenureExtension / requestPreSettlement
+  // Called by the investor's MyInvestments screen. These now also raise an
+  // admin notification, an activity entry, and an audit log entry so the
+  // request is actually visible to the admin somewhere (previously these
+  // just silently pushed into tenureExtensionRequests/preSettlementRequests
+  // with nothing surfacing it anywhere in the admin UI).
+  // ---------------------------------------------------------------------
+  const requestTenureExtension = (params: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    currentTenureMonths: number;
+    extensionMonths: number;
+  }) => {
+    const request: TenureExtensionRequest = {
+      id: `TEN-${Date.now()}`,
+      ...params,
+      status: 'Pending',
+      requestedOn: nowTimestamp(),
+    };
+
+    setTenureExtensionRequests(prev => [request, ...prev]);
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Tenure Extension Request',
+        isNew: true,
+        message: `${params.investorName} requested to extend ${params.bondSeriesId} by ${params.extensionMonths} months (current tenure ${params.currentTenureMonths}M).`,
+        time: 'Just now',
+        icon: 'bell',
+      },
+      ...prev,
+    ]);
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'Tenure Extension Requested',
+        subtitle: `${params.investorName} • ${params.bondSeriesId} • +${params.extensionMonths} months`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'bond',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog(
+      params.investorName || 'Investor',
+      'Investor',
+      `Tenure Extension Requested — ${params.bondSeriesId} (+${params.extensionMonths}M)`,
+    );
   };
 
-  setTenureExtensionRequests(prev => [...prev, request]);
-};
-const requestPreSettlement = (params: {
-  bondSeriesId: string;
-  investorId: string;
-  investorName: string;
-  principal: number;
-  penalty: number;
-  netAmount: number;
-}) => {
-  const request: PreSettlementRequest = {
-    id: `PRE-${Date.now()}`,
-    ...params,
-    earned:0,
-    status: 'Pending',
-    requestedOn: nowTimestamp(),
+  // NEW: `reason` accepted on the params object and spread straight into
+  // the stored PreSettlementRequest (which already declares `reason?:
+  // string`) — this is what MyInvestmentsScreen's Pre-Close modal sends,
+  // and what SettlementCalculatorScreen reads back on the admin side.
+  const requestPreSettlement = (params: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    principal: number;
+    earned: number;
+    penalty: number;
+    netAmount: number;
+    reason?: string;
+  }) => {
+    const request: PreSettlementRequest = {
+      id: `PRE-${Date.now()}`,
+      ...params,
+      status: 'Pending',
+      requestedOn: nowTimestamp(),
+    };
+
+    setPreSettlementRequests(prev => [request, ...prev]);
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Pre-Settlement Request',
+        isNew: true,
+        message: `${params.investorName} requested pre-close on ${params.bondSeriesId}. Net payable ${formatINRShort(params.netAmount)}.`,
+        time: 'Just now',
+        icon: 'money',
+      },
+      ...prev,
+    ]);
+
+    setActivities(prev => [
+      {
+        id: `a-${Date.now()}`,
+        title: 'Pre-Settlement Requested',
+        subtitle: `${params.investorName} • ${params.bondSeriesId} • ${formatINRShort(params.netAmount)}`,
+        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}),
+        icon: 'transaction',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog(params.investorName || 'Investor', 'Investor', `Pre-Settlement Requested — ${params.bondSeriesId}`);
   };
 
-  setPreSettlementRequests(prev => [...prev, request]);
-};
+  // ---------------------------------------------------------------------
+  // NEW: approveTenureExtension
+  // Called from BondTrackingScreen's "Renew / Increase Tenure" modal. Takes
+  // the bond series id directly (not just a request id) so it also works
+  // for a manual renewal the admin initiates with no investor request
+  // behind it — linkedRequestId is optional and only gets marked Approved
+  // when there actually is a matching pending investor request.
+  // ---------------------------------------------------------------------
+  const approveTenureExtension = (
+    bondSeriesId: string,
+    extensionMonths: number,
+    newRate?: number,
+    linkedRequestId?: string,
+  ) => {
+    setBonds(prev =>
+      prev.map(b => {
+        if (b.seriesId !== bondSeriesId) return b;
+        const maturity = parseDDMMYYYY(b.maturityDate);
+        maturity.setMonth(maturity.getMonth() + extensionMonths);
+        return {
+          ...b,
+          tenureMonths: (b.tenureMonths ?? 0) + extensionMonths,
+          maturityDate: formatDDMMYYYY(maturity),
+          interestRate:
+            newRate !== undefined && !Number.isNaN(newRate) ? newRate : b.interestRate,
+        };
+      }),
+    );
+
+    if (linkedRequestId) {
+      setTenureExtensionRequests(prev =>
+        prev.map(r => (r.id === linkedRequestId ? {...r, status: 'Approved'} : r)),
+      );
+    }
+
+    const bond = bonds.find(b => b.seriesId === bondSeriesId);
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Tenure Extension Approved',
+        isNew: true,
+        message: `${bondSeriesId} extended by ${extensionMonths} months${
+          bond ? ` for ${bond.investorName}` : ''
+        }.`,
+        time: 'Just now',
+        icon: 'check',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Tenure Extension Approved — ${bondSeriesId} (+${extensionMonths}M)`);
+  };
+
+  const rejectTenureExtension = (requestId: string) => {
+    const req = tenureExtensionRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'Pending') return;
+    setTenureExtensionRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Rejected'} : r)),
+    );
+    pushAuditLog('Admin', 'Admin', `Tenure Extension Rejected — ${req.bondSeriesId}`);
+  };
+
+  // ---------------------------------------------------------------------
+  // NEW: approvePreSettlement / rejectPreSettlement
+  // Unlike tenure extension, principal/penalty/net were fixed by the
+  // investor's original request, so there's nothing for the admin to edit
+  // — approving here settles the bond directly.
+  // ---------------------------------------------------------------------
+  const approvePreSettlement = (requestId: string) => {
+    const req = preSettlementRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'Pending') return;
+
+    setPreSettlementRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Approved'} : r)),
+    );
+    setBonds(prev =>
+      prev.map(b => (b.seriesId === req.bondSeriesId ? {...b, status: 'Settled'} : b)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Pre-Settlement Approved',
+        isNew: true,
+        message: `${req.bondSeriesId} settled for ${req.investorName}. Net paid ${formatINRShort(req.netAmount)}.`,
+        time: 'Just now',
+        icon: 'check',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Pre-Settlement Approved — ${req.bondSeriesId}`);
+  };
+
+  const rejectPreSettlement = (requestId: string) => {
+    const req = preSettlementRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'Pending') return;
+    setPreSettlementRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Rejected'} : r)),
+    );
+    pushAuditLog('Admin', 'Admin', `Pre-Settlement Rejected — ${req.bondSeriesId}`);
+  };
+
+  // ---------------------------------------------------------------------
+  // NEW: settleMaturedBond
+  // Called from SettlementCalculatorScreen's "Tenure Timeout" tab when the
+  // admin approves settlement for a bond that simply reached its maturity
+  // date — no investor pre-close request behind it. Marks the bond
+  // 'Settled' directly, mirroring what approvePreSettlement already does
+  // for the pre-close path, so both roads into "settled" converge on the
+  // same bond state (which is what BondTrackingScreen's `isMatured` /
+  // Tenure-button-hiding logic keys off of).
+  // ---------------------------------------------------------------------
+  const settleMaturedBond = (bondSeriesId: string) => {
+    const bond = bonds.find(b => b.seriesId === bondSeriesId);
+    if (!bond || bond.status !== 'Active') return;
+
+    setBonds(prev =>
+      prev.map(b => (b.seriesId === bondSeriesId ? {...b, status: 'Settled'} : b)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Bond Settled',
+        isNew: true,
+        message: `${bondSeriesId} matured and has been settled for ${bond.investorName}.`,
+        time: 'Just now',
+        icon: 'check',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Bond Settlement Approved — ${bondSeriesId}`);
+  };
 
   return (
     <SafeAreaProvider>
@@ -1760,6 +1883,11 @@ const requestPreSettlement = (params: {
     preSettlementRequests,
     requestTenureExtension,
     requestPreSettlement,
+    approveTenureExtension,
+    rejectTenureExtension,
+    approvePreSettlement,
+    rejectPreSettlement,
+    settleMaturedBond,
 
     updateInvestorProfile,
     updateInvestorBankDetails,
@@ -1815,7 +1943,7 @@ const requestPreSettlement = (params: {
             <Stack.Screen name="BondDetails" component={BondDetailsScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="InvestorNotifications" component={InvestorNotificationsScreen} />
-            <Stack.Screen name="InvestorSettings" component={InvestorSettingsScreen} />
+            {/* <Stack.Screen name="InvestorSettings" component={InvestorSettingsScreen} /> */}
    
             <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
             <Stack.Screen name="InvestorRegistry" component={InvestorRegistryScreen} />
