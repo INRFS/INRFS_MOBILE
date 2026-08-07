@@ -13,7 +13,7 @@ const LandingScreen = ({navigation}: any) => {
 
         <View style={styles.heroPlaceholder} />
 
-        <Text style={styles.title}>Secure investor management, in your pocket</Text>
+        <Text style={styles.title}>secure investor management, in your pocket</Text>
         <Text style={styles.subtitle}>
           Track investments and manage your portfolio from anywhere
         </Text>

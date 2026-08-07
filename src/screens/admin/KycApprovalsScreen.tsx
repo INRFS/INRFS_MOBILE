@@ -33,6 +33,7 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
     escalateKyc,
     approveInvestorKyc,
     rejectInvestorKyc,
+     updateInvestorBranch,
     branches,
   } = useAppData();
   const [visibleCount, setVisibleCount] = useState(3);
@@ -84,26 +85,31 @@ const KycApprovalsScreen = ({navigation, route}: any) => {
   };
 
   const confirmFocusedAction = (action: 'approve' | 'reject') => {
-    if (!focusedInvestor) return;
-    const actionLabel = action === 'approve' ? 'Approve' : 'Reject';
-    Alert.alert(`${actionLabel} KYC`, `${actionLabel} KYC for ${focusedInvestor.name}?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {
-        text: actionLabel,
-        style: action === 'reject' ? 'destructive' : 'default',
-        onPress: () => {
-          if (focusedKycRequest) {
-            if (action === 'approve') approveKyc(focusedKycRequest.id);
-            else rejectKyc(focusedKycRequest.id);
-          } else {
-            if (action === 'approve') approveInvestorKyc(focusedInvestor.id);
-            else rejectInvestorKyc(focusedInvestor.id);
-          }
-          navigation.navigate('AdminInvestments');
-        },
+  if (!focusedInvestor) return;
+  const actionLabel = action === 'approve' ? 'Approve' : 'Reject';
+  Alert.alert(`${actionLabel} KYC`, `${actionLabel} KYC for ${focusedInvestor.name}?`, [
+    {text: 'Cancel', style: 'cancel'},
+    {
+      text: actionLabel,
+      style: action === 'reject' ? 'destructive' : 'default',
+      onPress: () => {
+        if (action === 'approve') {
+          // Persist whatever branch is selected in the dropdown (falls
+          // back to the investor's existing branch if nothing was changed).
+          updateInvestorBranch(focusedInvestor.id, selectedBranch || focusedInvestor.branch);
+        }
+        if (focusedKycRequest) {
+          if (action === 'approve') approveKyc(focusedKycRequest.id);
+          else rejectKyc(focusedKycRequest.id);
+        } else {
+          if (action === 'approve') approveInvestorKyc(focusedInvestor.id);
+          else rejectInvestorKyc(focusedInvestor.id);
+        }
+        navigation.navigate('AdminInvestments');
       },
-    ]);
-  };
+    },
+  ]);
+};
 
   return (
     <SafeAreaView style={styles.safeArea}>
