@@ -67,12 +67,23 @@ export const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 20,
   },
+  statusPillInactive: {
+    backgroundColor: '#FEE2E2',
+  },
   statusPillText: {
     color: '#16A34A',
     fontSize: 11,
     fontWeight: '700',
   },
+  statusPillTextInactive: {
+    color: '#DC2626',
+  },
   email: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 2,
+  },
+  mobile: {
     fontSize: 13,
     color: '#6B7280',
     marginBottom: 10,
@@ -98,52 +109,35 @@ export const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+
+  // ---- Actions row: icon buttons, matches web ----
   actionsRow: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     gap: 8,
   },
-  actionChip: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 8,
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 9,
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  deleteChip: {
+  iconBtnDelete: {
     backgroundColor: '#FEE2E2',
   },
-  deleteChipText: {
-    color: '#DC2626',
+  iconText: {
+    fontSize: 15,
   },
+
   emptyText: {
     textAlign: 'center',
     color: '#9CA3AF',
     marginTop: 40,
     fontSize: 14,
   },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#FFFFFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '90%',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 16,
-  },
+
   modalLabel: {
     fontSize: 13,
     fontWeight: '600',
@@ -163,7 +157,7 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 8,
+    marginTop: 4,
   },
   branchChip: {
     paddingHorizontal: 12,
@@ -171,15 +165,21 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
     backgroundColor: '#EFF6FF',
   },
+  branchChipActive: {
+    backgroundColor: '#2563EB',
+  },
   branchChipText: {
     fontSize: 12,
     color: '#2563EB',
     fontWeight: '600',
   },
+  branchChipTextActive: {
+    color: '#FFFFFF',
+  },
   roleToggleRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 4,
+    marginTop: 2,
   },
   roleToggle: {
     flex: 1,
@@ -201,10 +201,11 @@ export const styles = StyleSheet.create({
   roleToggleTextActive: {
     color: '#FFFFFF',
   },
+
   modalBtnRow: {
     flexDirection: 'row',
     gap: 10,
-    marginTop: 24,
+    marginTop: 20,
   },
   modalCancelBtn: {
     flex: 1,
@@ -229,5 +230,93 @@ export const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  modalRemoveBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+  },
+  modalRemoveBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  // ---- Centered modals: View / Edit / Delete / Add ----
+  centeredOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  centeredCard: {
+    width: '100%',
+    maxWidth: 420,
+    maxHeight: '85%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  centeredHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  closeX: {
+    fontSize: 18,
+    color: '#6B7280',
+    paddingHorizontal: 4,
+  },
+  editScroll: {
+    maxHeight: 420,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  closeBtn: {
+    marginTop: 20,
+    backgroundColor: '#2563EB',
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  closeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  deleteMessage: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  deleteMessageBold: {
+    fontWeight: '700',
+    color: '#111827',
   },
 });

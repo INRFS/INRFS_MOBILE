@@ -105,34 +105,36 @@ export const styles = StyleSheet.create({
     color: '#6B7280',
     marginTop: 2,
   },
+
+  // ---- Actions row: now 3 icon buttons instead of text chips ----
   actionsRow: {
     flexDirection: 'row',
+    justifyContent: 'flex-end',
     gap: 8,
   },
-  actionChip: {
-    flex: 1,
-    paddingVertical: 9,
-    borderRadius: 8,
+  iconBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 9,
     backgroundColor: '#F3F4F6',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  actionChipText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-  },
-  deleteChip: {
+  iconBtnDelete: {
     backgroundColor: '#FEE2E2',
   },
-  deleteChipText: {
-    color: '#DC2626',
+  iconText: {
+    fontSize: 15,
   },
+
   emptyText: {
     textAlign: 'center',
     color: '#9CA3AF',
     marginTop: 40,
     fontSize: 14,
   },
+
+  // ---- Add Branch (bottom sheet) modal ----
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
@@ -194,5 +196,111 @@ export const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
     fontSize: 14,
+  },
+  modalRemoveBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 10,
+    backgroundColor: '#DC2626',
+    alignItems: 'center',
+  },
+  modalRemoveBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+
+  // ---- Status segmented toggle (Add / Edit modals) ----
+  statusToggleRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 2,
+  },
+  statusToggleBtn: {
+    flex: 1,
+    paddingVertical: 11,
+    borderRadius: 10,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  statusToggleBtnActive: {
+    backgroundColor: '#2563EB',
+  },
+  statusToggleText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  statusToggleTextActive: {
+    color: '#FFFFFF',
+  },
+
+  // ---- Centered modals: View Details / Edit / Delete confirm ----
+  centeredOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  centeredCard: {
+    width: '100%',
+    maxWidth: 420,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  centeredHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  closeX: {
+    fontSize: 18,
+    color: '#6B7280',
+    paddingHorizontal: 4,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  detailValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  closeBtn: {
+    marginTop: 20,
+    backgroundColor: '#2563EB',
+    paddingVertical: 13,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  closeBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  deleteMessage: {
+    fontSize: 14,
+    color: '#374151',
+    lineHeight: 20,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  deleteMessageBold: {
+    fontWeight: '700',
+    color: '#111827',
   },
 });

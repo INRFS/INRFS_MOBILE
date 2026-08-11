@@ -198,6 +198,7 @@ export type SAAdmin = {
   id: string;
   name: string;
   email: string;
+  mobile: string;
   branch: string;
   role: 'Admin' | 'Branch Manager';
   status: 'Active' | 'Inactive';
@@ -341,8 +342,22 @@ type AddBranchParams = {
 type AddSAAdminParams = {
   name: string;
   email: string;
+  mobile?: string;
   branch: string;
   role: 'Admin' | 'Branch Manager';
+};
+
+// NEW: params for editing an existing Super Admin-managed admin/branch
+// manager record. Used by AdminManagementScreen's Edit Admin modal so
+// changes are written through context (and therefore persisted to
+// AsyncStorage) instead of being kept as local, session-only state.
+type UpdateSAAdminParams = {
+  name?: string;
+  email?: string;
+  mobile?: string;
+  branch?: string;
+  role?: SAAdmin['role'];
+  status?: SAAdmin['status'];
 };
 
 type AddSystemUserParams = {
@@ -471,6 +486,8 @@ updateInvestorBranch: (investorId: string, branch: string) => void;
   toggleBranchStatus: (id: string) => void;
   deleteBranch: (id: string) => void;
   addSAAdmin: (params: AddSAAdminParams) => void;
+  // NEW: persists edits made in AdminManagementScreen's Edit Admin modal.
+  updateSAAdmin: (id: string, params: UpdateSAAdminParams) => void;
   deleteSAAdmin: (id: string) => void;
   addSystemUser: (params: AddSystemUserParams) => void;
   deleteSystemUser: (id: string) => void;
@@ -585,10 +602,10 @@ const initialBranches: Branch[] = [
 ];
 
 const initialSAAdmins: SAAdmin[] = [
-  {id: 'ad1', name: 'Ravi Mehta', email: 'ravi@inrfs.in', branch: 'Mumbai HQ', role: 'Admin', status: 'Active'},
-  {id: 'ad2', name: 'Suresh Kumar', email: 'suresh@inrfs.in', branch: 'Delhi North', role: 'Admin', status: 'Active'},
-  {id: 'ad3', name: 'Anita Rao', email: 'anita@inrfs.in', branch: 'Bangalore', role: 'Admin', status: 'Active'},
-  {id: 'ad4', name: 'Mohan Das', email: 'mohan@inrfs.in', branch: 'Chennai', role: 'Branch Manager', status: 'Active'},
+  {id: 'ad1', name: 'Ravi Mehta', email: 'ravi@inrfs.in', mobile: '+91 98765 43210', branch: 'Mumbai HQ', role: 'Admin', status: 'Active'},
+  {id: 'ad2', name: 'Suresh Kumar', email: 'suresh@inrfs.in', mobile: '+91 98765 43211', branch: 'Delhi North', role: 'Admin', status: 'Active'},
+  {id: 'ad3', name: 'Anita Rao', email: 'anita@inrfs.in', mobile: '+91 98765 43212', branch: 'Bangalore', role: 'Admin', status: 'Active'},
+  {id: 'ad4', name: 'Mohan Das', email: 'mohan@inrfs.in', mobile: '+91 98765 43213', branch: 'Chennai', role: 'Branch Manager', status: 'Active'},
 ];
 
 const initialSystemUsers: SystemUser[] = [
@@ -1574,10 +1591,30 @@ const rejectKyc = (id: string) => {
     setBranches(prev => prev.filter(b => b.id !== id));
   };
 
-  const addSAAdmin = ({name, email, branch, role}: AddSAAdminParams) => {
-    const newAdmin: SAAdmin = {id: `ad-${Date.now()}`, name, email, branch, role, status: 'Active'};
+  const addSAAdmin = ({name, email, mobile, branch, role}: AddSAAdminParams) => {
+    const newAdmin: SAAdmin = {
+      id: `ad-${Date.now()}`,
+      name,
+      email,
+      mobile: mobile && mobile.trim() ? mobile.trim() : '—',
+      branch,
+      role,
+      status: 'Active',
+    };
     setSaAdmins(prev => [newAdmin, ...prev]);
     pushAuditLog('Super Admin', 'Super Admin', `${role} Created — ${name}`);
+  };
+
+  // NEW: called from AdminManagementScreen's Edit Admin modal so edits
+  // (name, email, mobile, branch, role, status) are saved through context
+  // and therefore persisted to AsyncStorage — same pattern as
+  // updateInvestorProfile above.
+  const updateSAAdmin = (id: string, params: UpdateSAAdminParams) => {
+    const admin = saAdmins.find(a => a.id === id);
+    setSaAdmins(prev => prev.map(a => (a.id === id ? {...a, ...params} : a)));
+    if (admin) {
+      pushAuditLog('Super Admin', 'Super Admin', `Admin Updated — ${params.name ?? admin.name}`);
+    }
   };
 
   const deleteSAAdmin = (id: string) => {
@@ -1923,6 +1960,7 @@ updateInvestorBranch,
     deleteBranch,
 
     addSAAdmin,
+    updateSAAdmin,
     deleteSAAdmin,
 
     addSystemUser,
