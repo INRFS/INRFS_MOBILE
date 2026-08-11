@@ -27,14 +27,14 @@ const SuperAdminHeader = ({navigation, title, showBack = true}: Props) => {
         </Text>
       </View>
       <View style={styles.right}>
-        <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('Notifications')}>
+        {/* <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('Notifications')}>
           <Text style={styles.bellIcon}>🔔</Text>
           {unreadCount > 0 ? (
             <View style={styles.dot}>
               <Text style={styles.dotText}>{unreadCount}</Text>
             </View>
           ) : null}
-        </TouchableOpacity>
+        </TouchableOpacity> */}
         <TouchableOpacity style={styles.avatar} onPress={() => navigation.navigate('SuperAdminProfile')}>
           <Text style={styles.avatarText}>{initial}</Text>
         </TouchableOpacity>

@@ -37,9 +37,10 @@ import RolesPermissionsScreen from '../screens/superadmin/RolesPermissionsScreen
 import AuditLogsScreen from '../screens/superadmin/AuditLogsScreen';
 import SuperAdminReportsScreen from '../screens/superadmin/SuperAdminReportsScreen';
 import SystemSettingsScreen from '../screens/superadmin/SystemSettingsScreen';
-import NotificationsScreen from '../screens/superadmin/NotificationsScreen';
+import PaymentQueueScreen from '../screens/superadmin/PaymentQueueScreen';
 import SuperAdminProfileScreen from '../screens/superadmin/SuperAdminProfileScreen';
-
+import InvestorManagementScreen from '../screens/superadmin/InvestorManagementScreen';
+import InvestmentManagementScreen from '../screens/superadmin/InvestmentManagementScreen';
 const Stack = createNativeStackNavigator();
 
 
@@ -2010,8 +2011,10 @@ updateInvestorBranch,
             <Stack.Screen name="AuditLogs" component={AuditLogsScreen} />
             <Stack.Screen name="SuperAdminReports" component={SuperAdminReportsScreen} />
             <Stack.Screen name="SystemSettings" component={SystemSettingsScreen} />
-            <Stack.Screen name="Notifications" component={NotificationsScreen} />
+           <Stack.Screen name="Notifications" component={PaymentQueueScreen} />
             <Stack.Screen name="SuperAdminProfile" component={SuperAdminProfileScreen} />
+            <Stack.Screen name="InvestorManagement" component={InvestorManagementScreen} />
+<Stack.Screen name="InvestmentManagement" component={InvestmentManagementScreen} />
           </Stack.Navigator>
         </NavigationContainer>
       </AppDataContext.Provider>

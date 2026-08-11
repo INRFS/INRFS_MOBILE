@@ -1,15 +1,16 @@
 import React from 'react';
 import {View, Text, TouchableOpacity} from 'react-native';
 import {styles} from '../../../styles/superadmin/components/SuperAdminBottomTabBar.styles';
-// import {styles} from '../../../styles/superadmin/SuperAdminBottomTabBar.styles';
 import {useAppData} from '../../../navigation/AppNavigator';
 
-type TabKey = 'Dashboard' | 'Reports' | 'Notifications' | 'Profile';
+type TabKey = 'Dashboard' | 'Investors' | 'Investments' | 'Reports' | 'Notifications' | 'Profile';
 
 const tabs: {key: TabKey; label: string; icon: string; route: string}[] = [
   {key: 'Dashboard', label: 'Dashboard', icon: '⬛', route: 'SuperAdminDashboard'},
+  {key: 'Investors', label: 'Investors', icon: '👥', route: 'InvestorManagement'},
+  {key: 'Investments', label: 'Investments', icon: '📈', route: 'InvestmentManagement'},
   {key: 'Reports', label: 'Reports', icon: '📊', route: 'SuperAdminReports'},
-  {key: 'Notifications', label: 'Alerts', icon: '🔔', route: 'Notifications'},
+  {key: 'Notifications', label: 'Payments', icon: '🔔', route: 'Notifications'},
   {key: 'Profile', label: 'Profile', icon: '👤', route: 'SuperAdminProfile'},
 ];
 
@@ -43,7 +44,9 @@ const SuperAdminBottomTabBar = ({navigation, active}: Props) => {
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
+            <Text style={[styles.label, isActive && styles.labelActive]} numberOfLines={1}>
+              {tab.label}
+            </Text>
           </TouchableOpacity>
         );
       })}
