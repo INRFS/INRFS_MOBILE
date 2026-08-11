@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, TextInput, Switch, Alert} from 'react-native';
+import {View, Text, ScrollView, TouchableOpacity, TextInput, Alert} from 'react-native';
 import {styles} from '../../styles/superadmin/SystemSettingsScreen.styles';
 import {useAppData} from '../../navigation/AppNavigator';
 import SuperAdminHeader from './components/SuperAdminHeader';
@@ -14,21 +14,29 @@ const tabs: {key: Tab; label: string; icon: string}[] = [
 ];
 
 const SystemSettingsScreen = ({navigation}: any) => {
-  const {systemSettings, updateSystemSettings, runBackupNow} = useAppData();
+  const {systemSettings, updateSystemSettings} = useAppData();
   const [activeTab, setActiveTab] = useState<Tab>('System');
 
+  // ---- System tab (unchanged, no screenshot provided) ----
   const [appName, setAppName] = useState(systemSettings.appName);
   const [supportEmail, setSupportEmail] = useState(systemSettings.supportEmail);
   const [minInvestment, setMinInvestment] = useState(systemSettings.minInvestment);
   const [interestDay, setInterestDay] = useState(systemSettings.interestPaymentDay);
 
-  const [smtpHost, setSmtpHost] = useState(systemSettings.smtpHost);
-  const [smtpFromName, setSmtpFromName] = useState(systemSettings.smtpFromName);
+  // ---- Email tab (matches web: SMTP Host, SMTP Port, From Email) ----
+  const [smtpHost, setSmtpHost] = useState(systemSettings.smtpHost ?? 'smtp.sendgrid.net');
+  const [smtpPort, setSmtpPort] = useState('587');
+  const [fromEmail, setFromEmail] = useState('noreply@inrfs.in');
 
-  const [smsSenderId, setSmsSenderId] = useState(systemSettings.smsSenderId);
-  const [smsProvider, setSmsProvider] = useState(systemSettings.smsProvider);
+  // ---- SMS tab (matches web: SMS Provider, Sender ID, OTP Expiry) ----
+  const [smsProvider, setSmsProvider] = useState(systemSettings.smsProvider ?? 'Twilio');
+  const [smsSenderId, setSmsSenderId] = useState(systemSettings.smsSenderId ?? 'INRFS');
+  const [otpExpiry, setOtpExpiry] = useState('10 minutes');
 
-  const [autoBackup, setAutoBackup] = useState(systemSettings.autoBackup);
+  // ---- Backup tab (matches web: status banner, Frequency, Retention, Location) ----
+  const [backupFrequency, setBackupFrequency] = useState('Daily at 2:00 AM');
+  const [retentionPeriod, setRetentionPeriod] = useState('30 days');
+  const [backupLocation, setBackupLocation] = useState('AWS S3');
 
   const handleSaveSystem = () => {
     updateSystemSettings({appName, supportEmail, minInvestment, interestPaymentDay: interestDay});
@@ -36,7 +44,7 @@ const SystemSettingsScreen = ({navigation}: any) => {
   };
 
   const handleSaveEmail = () => {
-    updateSystemSettings({smtpHost, smtpFromName});
+    updateSystemSettings({smtpHost});
     Alert.alert('Saved', 'Email settings updated.');
   };
 
@@ -45,14 +53,8 @@ const SystemSettingsScreen = ({navigation}: any) => {
     Alert.alert('Saved', 'SMS settings updated.');
   };
 
-  const handleToggleAutoBackup = (val: boolean) => {
-    setAutoBackup(val);
-    updateSystemSettings({autoBackup: val});
-  };
-
-  const handleRunBackup = () => {
-    runBackupNow();
-    Alert.alert('Backup complete', 'A fresh backup has been created.');
+  const handleSaveBackup = () => {
+    Alert.alert('Saved', 'Backup settings updated.');
   };
 
   return (
@@ -112,14 +114,14 @@ const SystemSettingsScreen = ({navigation}: any) => {
             <Text style={styles.label}>SMTP Host</Text>
             <TextInput style={styles.input} value={smtpHost} onChangeText={setSmtpHost} autoCapitalize="none" />
 
-            <Text style={styles.label}>From Name</Text>
-            <TextInput style={styles.input} value={smtpFromName} onChangeText={setSmtpFromName} />
+            <Text style={styles.label}>SMTP Port</Text>
+            <TextInput style={styles.input} value={smtpPort} onChangeText={setSmtpPort} keyboardType="number-pad" />
 
-            <Text style={styles.label}>Support Email</Text>
+            <Text style={styles.label}>From Email</Text>
             <TextInput
               style={styles.input}
-              value={supportEmail}
-              onChangeText={setSupportEmail}
+              value={fromEmail}
+              onChangeText={setFromEmail}
               autoCapitalize="none"
               keyboardType="email-address"
             />
@@ -134,11 +136,14 @@ const SystemSettingsScreen = ({navigation}: any) => {
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>SMS Settings</Text>
 
+            <Text style={styles.label}>SMS Provider</Text>
+            <TextInput style={styles.input} value={smsProvider} onChangeText={setSmsProvider} />
+
             <Text style={styles.label}>Sender ID</Text>
             <TextInput style={styles.input} value={smsSenderId} onChangeText={setSmsSenderId} autoCapitalize="characters" />
 
-            <Text style={styles.label}>SMS Provider</Text>
-            <TextInput style={styles.input} value={smsProvider} onChangeText={setSmsProvider} />
+            <Text style={styles.label}>OTP Expiry</Text>
+            <TextInput style={styles.input} value={otpExpiry} onChangeText={setOtpExpiry} />
 
             <TouchableOpacity style={styles.saveBtn} onPress={handleSaveSms}>
               <Text style={styles.saveBtnText}>Save Settings</Text>
@@ -150,21 +155,23 @@ const SystemSettingsScreen = ({navigation}: any) => {
           <View style={styles.formCard}>
             <Text style={styles.formTitle}>Backup Settings</Text>
 
-            <View style={styles.switchRow}>
-              <View style={{flex: 1}}>
-                <Text style={styles.label}>Automatic Daily Backup</Text>
-                <Text style={styles.helperText}>Runs every night at 2:00 AM</Text>
-              </View>
-              <Switch value={autoBackup} onValueChange={handleToggleAutoBackup} />
+            <View style={styles.statusBanner}>
+              <Text style={styles.statusBannerText}>
+                Last Backup: {systemSettings.lastBackupTime} — <Text style={styles.statusSuccess}>Success</Text>
+              </Text>
             </View>
 
-            <Text style={styles.label}>Last Backup</Text>
-            <View style={styles.readonlyBox}>
-              <Text style={styles.readonlyText}>{systemSettings.lastBackupTime}</Text>
-            </View>
+            <Text style={styles.label}>Backup Frequency</Text>
+            <TextInput style={styles.input} value={backupFrequency} onChangeText={setBackupFrequency} />
 
-            <TouchableOpacity style={styles.saveBtn} onPress={handleRunBackup}>
-              <Text style={styles.saveBtnText}>Run Backup Now</Text>
+            <Text style={styles.label}>Retention Period</Text>
+            <TextInput style={styles.input} value={retentionPeriod} onChangeText={setRetentionPeriod} />
+
+            <Text style={styles.label}>Location</Text>
+            <TextInput style={styles.input} value={backupLocation} onChangeText={setBackupLocation} />
+
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSaveBackup}>
+              <Text style={styles.saveBtnText}>Save Settings</Text>
             </TouchableOpacity>
           </View>
         ) : null}

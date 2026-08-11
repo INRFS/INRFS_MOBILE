@@ -102,4 +102,19 @@ export const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6B7280',
   },
+  statusBanner: {
+    backgroundColor: '#ECFDF5',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 4,
+  },
+  statusBannerText: {
+    fontSize: 13,
+    color: '#065F46',
+  },
+  statusSuccess: {
+    color: '#059669',
+    fontWeight: '700',
+  },
 });
