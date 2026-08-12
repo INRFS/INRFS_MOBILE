@@ -37,18 +37,6 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
       route: 'AdminManagement',
       actions: ['Create Admin', 'Assign Role', 'Reset Password', 'Deactivate'],
     },
-    {
-      title: 'Roles & Permissions',
-      icon: '🔑',
-      route: 'RolesPermissions',
-      actions: ['Create Role', 'Edit Permissions', 'Assign Role', 'Audit Roles'],
-    },
-    {
-      title: 'System Config',
-      icon: '⚙️',
-      route: 'SystemSettings',
-      actions: ['App Settings', 'Email Config', 'SMS Config', 'Backup'],
-    },
   ];
 
   const recentLogs = auditLogs.slice(0, 4);
