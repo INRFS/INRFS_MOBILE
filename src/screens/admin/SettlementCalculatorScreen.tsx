@@ -114,13 +114,13 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
     );
   };
 
-  const handleApprovePreClose = (id: string, bondSeriesId: string, netAmount: number, investorName: string) => {
+ const handleApprovePreClose = (id: string, bondSeriesId: string, netAmount: number, investorName: string) => {
     Alert.alert(
       'Approve pre-close',
-      `Settle ${bondSeriesId} and pay out ${formatINR(netAmount)} to ${investorName}?`,
+      `Send ${bondSeriesId} (${formatINR(netAmount)} to ${investorName}) to Super Admin for final settlement?`,
       [
         {text: 'Cancel', style: 'cancel'},
-        {text: 'Approve', onPress: () => approvePreSettlement(id)},
+        {text: 'Send to Super Admin', onPress: () => approvePreSettlement(id)},
       ],
     );
   };
@@ -325,7 +325,7 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
                       onPress={() =>
                         handleApprovePreClose(r.id, r.bondSeriesId, r.netAmount, r.investorName)
                       }>
-                      <Text style={local.approveBtnText}>✓  Approve</Text>
+                       <Text style={local.approveBtnText}>→  Send to Super Admin</Text>
                     </TouchableOpacity>
                   </View>
                 </View>

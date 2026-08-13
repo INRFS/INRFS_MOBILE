@@ -102,8 +102,6 @@ const BondTrackingScreen = ({navigation}: any) => {
     approveTenureExtension,
     rejectTenureExtension,
     preSettlementRequests,
-    approvePreSettlement,
-    rejectPreSettlement,
   } = useAppData();
 
   const [topTab, setTopTab] = useState<TopTab>('Pending Approval');
@@ -127,6 +125,10 @@ const BondTrackingScreen = ({navigation}: any) => {
   // Investor-submitted tenure extension / pre-close requests still awaiting
   // admin action.
   const pendingTenureRequests = tenureExtensionRequests.filter(r => r.status === 'Pending');
+  // Still used for the "All Investments" tab badge count below — pre-close
+  // requests no longer get their own action cards on this screen (see
+  // SettlementCalculatorScreen for that), but the badge on "All
+  // Investments" still reflects them.
   const pendingSettlementRequests = preSettlementRequests.filter(r => r.status === 'Pending');
 
 // Normalizes so minor casing/whitespace differences don't break a match.
@@ -184,7 +186,9 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
         r => r.bondSeriesId === b.seriesId && r.status === 'Pending',
       );
       const hasPendingSettlementReq = preSettlementRequests.some(
-        r => r.bondSeriesId === b.seriesId && r.status === 'Pending',
+        r =>
+          r.bondSeriesId === b.seriesId &&
+          (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
       );
       const maturityCrossed = b.status === 'Active' && isMaturityCrossed(b.maturityDate);
       let displayStatus: RowStatus = b.status as RowStatus;
@@ -412,10 +416,10 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
               ]}>
               Pending Approval
             </Text>
-            {(pendingRequests.length + pendingTenureRequests.length + pendingSettlementRequests.length) > 0 && (
+            {(pendingRequests.length + pendingTenureRequests.length) > 0 && (
               <View style={styles.badge}>
                 <Text style={styles.badgeText}>
-                  {pendingRequests.length + pendingTenureRequests.length + pendingSettlementRequests.length}
+                  {pendingRequests.length + pendingTenureRequests.length}
                 </Text>
               </View>
             )}
@@ -447,8 +451,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
         {topTab === 'Pending Approval' && (
           <>
             {pendingRequests.length === 0 &&
-              pendingTenureRequests.length === 0 &&
-              pendingSettlementRequests.length === 0 && (
+              pendingTenureRequests.length === 0 && (
                 <View style={styles.emptyWrap}>
                   <Text style={styles.emptyText}>No pending investment requests.</Text>
                 </View>
@@ -554,61 +557,6 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
                 </TouchableOpacity>
               </View>
             ))}
-
-            {/* Pre-Settlement (pre-close) requests: principal/penalty/net
-                are fixed by the investor's original request, so there's
-                nothing for the admin to edit — approve/reject directly
-                here. */}
-            {pendingSettlementRequests.map(r => (
-              <View key={r.id} style={local.infoCard}>
-                <View style={local.infoCardTopRow}>
-                  <Text style={local.infoCardTitle}>{r.investorName}</Text>
-                  <View style={[local.infoBadge, {backgroundColor: '#FEE2E2'}]}>
-                    <Text style={[local.infoBadgeText, {color: '#DC2626'}]}>PRE-CLOSE</Text>
-                  </View>
-                </View>
-                <Text style={local.infoCardBondId}>{r.bondSeriesId}</Text>
-                <Text style={local.infoCardText}>
-                  Waiting for your approval — requested on {r.requestedOn}. Net payable{' '}
-                  {formatINR(r.netAmount)} (principal {formatINR(r.principal)}, penalty{' '}
-                  {formatINR(r.penalty)}).
-                </Text>
-                <View style={{flexDirection: 'row', gap: 8, marginTop: 10}}>
-                  <TouchableOpacity
-                    style={local.rejectBtn}
-                    onPress={() =>
-                      Alert.alert(
-                        'Reject pre-close',
-                        `Reject the pre-close request for ${r.bondSeriesId}?`,
-                        [
-                          {text: 'Cancel', style: 'cancel'},
-                          {
-                            text: 'Reject',
-                            style: 'destructive',
-                            onPress: () => rejectPreSettlement(r.id),
-                          },
-                        ],
-                      )
-                    }>
-                    <Text style={local.rejectBtnText}>Reject</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalApproveBtn, {flex: 1}]}
-                    onPress={() =>
-                      Alert.alert(
-                        'Approve pre-close',
-                        `Settle ${r.bondSeriesId} and pay out ${formatINR(r.netAmount)} to ${r.investorName}?`,
-                        [
-                          {text: 'Cancel', style: 'cancel'},
-                          {text: 'Approve', onPress: () => approvePreSettlement(r.id)},
-                        ],
-                      )
-                    }>
-                    <Text style={styles.modalApproveText}>Approve Pre-Close</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
           </>
         )}
 
@@ -650,7 +598,9 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
                 r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
               );
               const hasPendingSettlementReq = preSettlementRequests.some(
-                r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
+                r =>
+                  r.bondSeriesId === row.bondNumber &&
+                  (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
               );
               const maturityCrossed =
                 row.bond?.status === 'Active' && isMaturityCrossed(row.bond?.maturityDate);
@@ -679,7 +629,11 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
                         {hasPendingTenureReq
                           ? 'Investor requested a tenure extension — awaiting your review'
                           : hasPendingSettlementReq
-                          ? 'Investor requested pre-close — awaiting your review'
+                          ? preSettlementRequests.find(
+                              r => r.bondSeriesId === row.bondNumber && r.status === 'PendingSuperAdmin',
+                            )
+                            ? 'Pre-close approved — awaiting Super Admin settlement'
+                            : 'Investor requested pre-close — awaiting your review'
                           : 'Bond has matured — awaiting settlement approval'}
                       </Text>
                     </View>
@@ -1359,7 +1313,7 @@ const local = StyleSheet.create({
     fontWeight: '600',
   },
   // Info card style for the Pending Approval tab — used for tenure
-  // extension / pre-close requests.
+  // extension requests.
   infoCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
