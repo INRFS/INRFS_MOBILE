@@ -300,8 +300,16 @@ const statusStyleFor = (status: string) => {
 };
 
 const PaymentQueueScreen = ({navigation}: any) => {
-  const {payouts, saNotifications, approvePayoutRequest, rejectPayoutRequest, markPayoutPaid} =
-    useAppData();
+ const {
+    payouts,
+    saNotifications,
+    approvePayoutRequest,
+    rejectPayoutRequest,
+    markPayoutPaid,
+    preSettlementRequests,
+    superAdminApprovePreSettlement,
+    superAdminRejectPreSettlement,
+  } = useAppData();
   const [activeTab, setActiveTab] = useState<TabKey>('Monthly Interest');
   const [receiptRow, setReceiptRow] = useState<Payout | null>(null);
 
@@ -309,8 +317,12 @@ const PaymentQueueScreen = ({navigation}: any) => {
   // Settlement are placeholders for now (Option B).
   const monthlyInterestRows = payouts.filter(p => QUEUE_STATUSES.includes(p.status));
 
-  const rows =
+ const rows =
     activeTab === 'All' || activeTab === 'Monthly Interest' ? monthlyInterestRows : [];
+
+  // Pre-close requests the admin has already forwarded — this is the
+  // Super Admin's action queue for settling early exits.
+  const precloseRows = preSettlementRequests.filter(r => r.status === 'PendingSuperAdmin');
 
   const pendingRows = payouts.filter(p => p.status === 'pending_approval');
   const pendingTotal = pendingRows.reduce((sum, p) => sum + p.amount, 0);
@@ -365,12 +377,81 @@ const PaymentQueueScreen = ({navigation}: any) => {
           ))}
         </ScrollView>
 
-        {(activeTab === 'Tenure Settlement' || activeTab === 'Pre-Close Settlement') && (
+       {activeTab === 'Tenure Settlement' && (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>Coming soon — not wired up yet</Text>
           </View>
         )}
 
+        {activeTab === 'Pre-Close Settlement' && (
+          <>
+            {precloseRows.length === 0 && (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>No pre-close requests awaiting settlement.</Text>
+              </View>
+            )}
+            {precloseRows.map(r => (
+              <View key={r.id} style={styles.card}>
+                <View style={styles.cardTopRow}>
+                  <Text style={styles.investorName}>{r.investorName}</Text>
+                  <View style={[styles.pill, styles.pillPending]}>
+                    <Text style={[styles.pillText, styles.pillTextPending]}>Pending</Text>
+                  </View>
+                </View>
+
+                <View style={styles.typePillRow}>
+                  <View style={styles.typePill}>
+                    <Text style={styles.typePillText}>Pre-Close Settlement</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardGrid}>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>BOND</Text>
+                    <Text style={styles.cardValueLink}>{r.bondSeriesId}</Text>
+                  </View>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>NET PAYABLE</Text>
+                    <Text style={styles.cardValue}>{formatINR(r.netAmount)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardGrid}>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>PRINCIPAL</Text>
+                    <Text style={styles.cardValueSm}>{formatINR(r.principal)}</Text>
+                  </View>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>PENALTY</Text>
+                    <Text style={styles.cardValueSm}>{formatINR(r.penalty)}</Text>
+                  </View>
+                </View>
+
+                {r.reason ? (
+                  <View style={styles.cardGrid}>
+                    <View style={styles.cardCol}>
+                      <Text style={styles.cardLabel}>REASON</Text>
+                      <Text style={styles.cardValueSm}>{r.reason}</Text>
+                    </View>
+                  </View>
+                ) : null}
+
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.rejectBtn}
+                    onPress={() => superAdminRejectPreSettlement(r.id)}>
+                    <Text style={styles.rejectBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.markPaidBtn}
+                    onPress={() => superAdminApprovePreSettlement(r.id)}>
+                    <Text style={styles.markPaidBtnText}>Mark as Paid</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </>
+        )}
         {rows.length === 0 && (activeTab === 'All' || activeTab === 'Monthly Interest') && (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>No payments in this category</Text>

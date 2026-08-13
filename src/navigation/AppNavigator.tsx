@@ -181,7 +181,7 @@ export type PreSettlementRequest = {
   earned: number;
   penalty: number;
   netAmount: number;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingSuperAdmin' | 'Approved' | 'Rejected';
   requestedOn: string;
     reason?: string;
 };
@@ -455,6 +455,10 @@ type AppDataContextType = {
   // investor pre-close request behind it) — used by the "Tenure Timeout"
   // tab's Approve Settlement action on SettlementCalculatorScreen.
   settleMaturedBond: (bondSeriesId: string) => void;
+  // NEW: Super Admin's final action on a pre-close request the admin has
+  // already forwarded. This is what actually settles the bond now.
+  superAdminApprovePreSettlement: (requestId: string) => void;
+  superAdminRejectPreSettlement: (requestId: string) => void;
   // NEW: called from ProfileScreen so investor-entered data (both personal
   // info and bank details) lives in shared context/AsyncStorage instead of
   // that screen's own local state, and is therefore visible everywhere else
@@ -1824,9 +1828,40 @@ const rejectKyc = (id: string) => {
   // investor's original request, so there's nothing for the admin to edit
   // — approving here settles the bond directly.
   // ---------------------------------------------------------------------
+ // CHANGED: Admin "approving" a pre-close request no longer settles the
+  // bond. It now forwards the request to the Super Admin for final
+  // settlement — mirrors the existing monthly-payout admin -> super admin
+  // flow (requestPayoutApproval). The bond stays 'Active' until
+  // superAdminApprovePreSettlement runs.
   const approvePreSettlement = (requestId: string) => {
     const req = preSettlementRequests.find(r => r.id === requestId);
     if (!req || req.status !== 'Pending') return;
+
+    setPreSettlementRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'PendingSuperAdmin'} : r)),
+    );
+
+    setSaNotifications(prev => [
+      {
+        id: `sn-${Date.now()}`,
+        title: 'Pre-Close Settlement Requested',
+        isNew: true,
+        message: `Admin approved pre-close on ${req.bondSeriesId} for ${req.investorName}. Net payable ${formatINRShort(req.netAmount)}. Please review and settle.`,
+        time: 'Just now',
+        icon: 'money',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Pre-Settlement Approved — sent to Super Admin — ${req.bondSeriesId}`);
+  };
+
+  // NEW: Super Admin's final settlement action. This now does what
+  // approvePreSettlement used to do — settle the bond — but only once the
+  // admin has already forwarded it (status 'PendingSuperAdmin').
+  const superAdminApprovePreSettlement = (requestId: string) => {
+    const req = preSettlementRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'PendingSuperAdmin') return;
 
     setPreSettlementRequests(prev =>
       prev.map(r => (r.id === requestId ? {...r, status: 'Approved'} : r)),
@@ -1838,7 +1873,7 @@ const rejectKyc = (id: string) => {
     setAdminNotifications(prev => [
       {
         id: `an-${Date.now()}`,
-        title: 'Pre-Settlement Approved',
+        title: 'Pre-Settlement Paid',
         isNew: true,
         message: `${req.bondSeriesId} settled for ${req.investorName}. Net paid ${formatINRShort(req.netAmount)}.`,
         time: 'Just now',
@@ -1847,10 +1882,32 @@ const rejectKyc = (id: string) => {
       ...prev,
     ]);
 
-    pushAuditLog('Admin', 'Admin', `Pre-Settlement Approved — ${req.bondSeriesId}`);
+    pushAuditLog('Super Admin', 'Super Admin', `Pre-Settlement Paid — ${req.bondSeriesId}`);
   };
 
-  const rejectPreSettlement = (requestId: string) => {
+  const superAdminRejectPreSettlement = (requestId: string) => {
+    const req = preSettlementRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'PendingSuperAdmin') return;
+
+    setPreSettlementRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Rejected'} : r)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Pre-Close Rejected by Super Admin',
+        isNew: true,
+        message: `${req.bondSeriesId} pre-close request was rejected by Super Admin.`,
+        time: 'Just now',
+        icon: 'bell',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Super Admin', 'Super Admin', `Pre-Settlement Rejected — ${req.bondSeriesId}`);
+  };
+const rejectPreSettlement = (requestId: string) => {
     const req = preSettlementRequests.find(r => r.id === requestId);
     if (!req || req.status !== 'Pending') return;
     setPreSettlementRequests(prev =>
@@ -1858,7 +1915,6 @@ const rejectKyc = (id: string) => {
     );
     pushAuditLog('Admin', 'Admin', `Pre-Settlement Rejected — ${req.bondSeriesId}`);
   };
-
   // ---------------------------------------------------------------------
   // NEW: settleMaturedBond
   // Called from SettlementCalculatorScreen's "Tenure Timeout" tab when the
@@ -1930,8 +1986,10 @@ const rejectKyc = (id: string) => {
     requestPreSettlement,
     approveTenureExtension,
     rejectTenureExtension,
-    approvePreSettlement,
+   approvePreSettlement,
     rejectPreSettlement,
+    superAdminApprovePreSettlement,
+    superAdminRejectPreSettlement,
     settleMaturedBond,
 
     updateInvestorProfile,
