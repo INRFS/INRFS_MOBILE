@@ -48,13 +48,14 @@ const isMaturityCrossed = (maturityDate?: string): boolean => {
 };
 
 const SettlementCalculatorScreen = ({navigation}: any) => {
-  const {
+const {
     bonds,
     investors,
     preSettlementRequests,
     approvePreSettlement,
     rejectPreSettlement,
-    settleMaturedBond,
+    maturitySettlementRequests,
+    requestMaturitySettlement,
   } = useAppData();
 
   const [tab, setTab] = useState<Tab>('timeout');
@@ -71,8 +72,13 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
   // as long as it's still 'Active' — i.e. nobody has settled it yet,
   // whether via this tab's Approve Settlement or via a pre-close approval
   // (both of which flip status to 'Settled', which removes it from here).
-  const timeoutBonds = bonds.filter(
-    b => b.status === 'Active' && isMaturityCrossed(b.maturityDate),
+const timeoutBonds = bonds.filter(
+    b =>
+      b.status === 'Active' &&
+      isMaturityCrossed(b.maturityDate) &&
+      !maturitySettlementRequests.some(
+        r => r.bondSeriesId === b.seriesId && r.status === 'PendingSuperAdmin',
+      ),
   );
 
   const timeoutRows = timeoutBonds.map(b => {
@@ -100,15 +106,23 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
   // ---- Pre-Close Requests: investor-submitted early exits ----
   const pendingPreClose = preSettlementRequests.filter(r => r.status === 'Pending');
 
-  const handleApproveTimeout = (bondSeriesId: string, netSettlement: number, investorName: string) => {
+const handleApproveTimeout = (row: (typeof timeoutRows)[number]) => {
     Alert.alert(
       'Approve settlement',
-      `Approve ${formatINR(netSettlement)} settlement for ${investorName} (${bondSeriesId})?`,
+      `Send ${formatINR(row.netSettlement)} settlement for ${row.investorName} (${row.bond.seriesId}) to Super Admin for final approval?`,
       [
         {text: 'Cancel', style: 'cancel'},
         {
-          text: 'Approve',
-          onPress: () => settleMaturedBond(bondSeriesId),
+          text: 'Send to Super Admin',
+          onPress: () =>
+            requestMaturitySettlement({
+              bondSeriesId: row.bond.seriesId,
+              investorId: row.bond.investorId,
+              investorName: row.investorName,
+              principal: row.principal,
+              totalInterest: row.totalInterest,
+              netSettlement: row.netSettlement,
+            }),
         },
       ],
     );
@@ -194,12 +208,10 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
                       <Text style={local.pendingBadgeText}>Pending</Text>
                     </View>
                   </View>
-                  <TouchableOpacity
+               <TouchableOpacity
                     style={local.approveBtn}
-                    onPress={() =>
-                      handleApproveTimeout(row.bond.seriesId, row.netSettlement, row.investorName)
-                    }>
-                    <Text style={local.approveBtnText}>↗  Approve Settlement</Text>
+                    onPress={() => handleApproveTimeout(row)}>
+                    <Text style={local.approveBtnText}>→  Send to Super Admin</Text>
                   </TouchableOpacity>
                 </View>
 
