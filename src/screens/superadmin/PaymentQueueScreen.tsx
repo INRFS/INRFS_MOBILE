@@ -300,7 +300,7 @@ const statusStyleFor = (status: string) => {
 };
 
 const PaymentQueueScreen = ({navigation}: any) => {
- const {
+const {
     payouts,
     saNotifications,
     approvePayoutRequest,
@@ -309,6 +309,12 @@ const PaymentQueueScreen = ({navigation}: any) => {
     preSettlementRequests,
     superAdminApprovePreSettlement,
     superAdminRejectPreSettlement,
+    tenureExtensionRequests,
+    superAdminApproveTenureExtension,
+    superAdminRejectTenureExtension,
+    maturitySettlementRequests,
+    superAdminApproveMaturitySettlement,
+    superAdminRejectMaturitySettlement,
   } = useAppData();
   const [activeTab, setActiveTab] = useState<TabKey>('Monthly Interest');
   const [receiptRow, setReceiptRow] = useState<Payout | null>(null);
@@ -323,7 +329,8 @@ const PaymentQueueScreen = ({navigation}: any) => {
   // Pre-close requests the admin has already forwarded — this is the
   // Super Admin's action queue for settling early exits.
   const precloseRows = preSettlementRequests.filter(r => r.status === 'PendingSuperAdmin');
-
+const tenureExtensionRows = tenureExtensionRequests.filter(r => r.status === 'PendingSuperAdmin');
+  const maturitySettlementRows = maturitySettlementRequests.filter(r => r.status === 'PendingSuperAdmin');
   const pendingRows = payouts.filter(p => p.status === 'pending_approval');
   const pendingTotal = pendingRows.reduce((sum, p) => sum + p.amount, 0);
 
@@ -377,10 +384,120 @@ const PaymentQueueScreen = ({navigation}: any) => {
           ))}
         </ScrollView>
 
-       {activeTab === 'Tenure Settlement' && (
-          <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>Coming soon — not wired up yet</Text>
-          </View>
+      {activeTab === 'Tenure Settlement' && (
+          <>
+            {tenureExtensionRows.length === 0 && maturitySettlementRows.length === 0 && (
+              <View style={styles.emptyWrap}>
+                <Text style={styles.emptyText}>No tenure settlements awaiting approval.</Text>
+              </View>
+            )}
+
+            {tenureExtensionRows.map(r => (
+              <View key={r.id} style={styles.card}>
+                <View style={styles.cardTopRow}>
+                  <Text style={styles.investorName}>{r.investorName}</Text>
+                  <View style={[styles.pill, styles.pillPending]}>
+                    <Text style={[styles.pillText, styles.pillTextPending]}>Pending</Text>
+                  </View>
+                </View>
+
+                <View style={styles.typePillRow}>
+                  <View style={styles.typePill}>
+                    <Text style={styles.typePillText}>Tenure Extension</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardGrid}>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>BOND</Text>
+                    <Text style={styles.cardValueLink}>{r.bondSeriesId}</Text>
+                  </View>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>EXTEND BY</Text>
+                    <Text style={styles.cardValue}>{r.extensionMonths} months</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardGrid}>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>CURRENT TENURE</Text>
+                    <Text style={styles.cardValueSm}>{r.currentTenureMonths} months</Text>
+                  </View>
+                  {r.decidedRate !== undefined && (
+                    <View style={styles.cardCol}>
+                      <Text style={styles.cardLabel}>NEW RATE</Text>
+                      <Text style={styles.cardValueSm}>{r.decidedRate}% p.a.</Text>
+                    </View>
+                  )}
+                </View>
+
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.rejectBtn}
+                    onPress={() => superAdminRejectTenureExtension(r.id)}>
+                    <Text style={styles.rejectBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.markPaidBtn}
+                    onPress={() => superAdminApproveTenureExtension(r.id)}>
+                    <Text style={styles.markPaidBtnText}>Approve Extension</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+
+            {maturitySettlementRows.map(r => (
+              <View key={r.id} style={styles.card}>
+                <View style={styles.cardTopRow}>
+                  <Text style={styles.investorName}>{r.investorName}</Text>
+                  <View style={[styles.pill, styles.pillPending]}>
+                    <Text style={[styles.pillText, styles.pillTextPending]}>Pending</Text>
+                  </View>
+                </View>
+
+                <View style={styles.typePillRow}>
+                  <View style={styles.typePill}>
+                    <Text style={styles.typePillText}>Bond Maturity Settlement</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardGrid}>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>BOND</Text>
+                    <Text style={styles.cardValueLink}>{r.bondSeriesId}</Text>
+                  </View>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>NET SETTLEMENT</Text>
+                    <Text style={styles.cardValue}>{formatINR(r.netSettlement)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardGrid}>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>PRINCIPAL</Text>
+                    <Text style={styles.cardValueSm}>{formatINR(r.principal)}</Text>
+                  </View>
+                  <View style={styles.cardCol}>
+                    <Text style={styles.cardLabel}>INTEREST EARNED</Text>
+                    <Text style={styles.cardValueSm}>{formatINR(r.totalInterest)}</Text>
+                  </View>
+                </View>
+
+                <View style={styles.actionRow}>
+                  <TouchableOpacity
+                    style={styles.rejectBtn}
+                    onPress={() => superAdminRejectMaturitySettlement(r.id)}>
+                    <Text style={styles.rejectBtnText}>Reject</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.markPaidBtn}
+                    onPress={() => superAdminApproveMaturitySettlement(r.id)}>
+                    <Text style={styles.markPaidBtnText}>Mark as Paid</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </>
         )}
 
         {activeTab === 'Pre-Close Settlement' && (

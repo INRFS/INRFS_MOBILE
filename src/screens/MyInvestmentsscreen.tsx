@@ -47,6 +47,7 @@ export type Investment = {
   // "Waiting for Admin Approval" vs "Waiting for Super Admin Approval"
   // even though both stages share the same 'Pending Settlement' badge.
   settlementStage?: 'Pending' | 'PendingSuperAdmin';
+   extensionStage?: 'Pending' | 'PendingSuperAdmin';
 };
 
 const parseDisplayDate = (s: string): Date => {
@@ -87,12 +88,13 @@ export function useInvestments(investorId?: string): Investment[] {
       const totalInterest = b.amount * (b.interestRate / 100) * years;
 
       // Check if this bond already has a pending extension / settlement
-      const hasPendingExtension = tenureExtensionRequests.some(
+      const linkedExtensionReq = tenureExtensionRequests.find(
         r =>
           r.bondSeriesId === b.seriesId &&
-          r.status === 'Pending' &&
+          (r.status === 'Pending' || r.status === 'PendingSuperAdmin') &&
           (!investorId || r.investorId === investorId),
       );
+      const hasPendingExtension = !!linkedExtensionReq;
    const linkedSettlementReq = preSettlementRequests.find(
         r =>
           r.bondSeriesId === b.seriesId &&
@@ -121,7 +123,11 @@ export function useInvestments(investorId?: string): Investment[] {
           : hasPendingSettlement
           ? 'settlement'
           : undefined,
-       settlementStage: linkedSettlementReq?.status as
+      settlementStage: linkedSettlementReq?.status as
+          | 'Pending'
+          | 'PendingSuperAdmin'
+          | undefined,
+        extensionStage: linkedExtensionReq?.status as
           | 'Pending'
           | 'PendingSuperAdmin'
           | undefined,
@@ -145,8 +151,12 @@ export function useInvestments(investorId?: string): Investment[] {
     }));
 
   // Stand-alone pending extension cards (in case bond list is filtered differently)
-  const pendingExtensionItems: Investment[] = tenureExtensionRequests
-    .filter(r => r.status === 'Pending' && (!investorId || r.investorId === investorId))
+ const pendingExtensionItems: Investment[] = tenureExtensionRequests
+    .filter(
+      r =>
+        (r.status === 'Pending' || r.status === 'PendingSuperAdmin') &&
+        (!investorId || r.investorId === investorId),
+    )
     .filter(r => !bondItems.some(b => b.id === r.bondSeriesId)) // avoid duplicates
     .map(r => ({
       id: r.bondSeriesId,
@@ -161,6 +171,7 @@ export function useInvestments(investorId?: string): Investment[] {
       earned: 0,
       requestType: 'extension' as const,
       extensionMonths: r.extensionMonths,
+      extensionStage: r.status as 'Pending' | 'PendingSuperAdmin',
     }));
 
 const pendingSettlementItems: Investment[] = preSettlementRequests
@@ -575,10 +586,14 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               inv.status === 'Pending Extension' ||
               inv.status === 'Pending Settlement' ? (
                 <Text style={styles.pendingHint}>
-                  {inv.status === 'Pending Extension'
-                    ? `Waiting for Admin Approval — extension of ${
-                        inv.extensionMonths ?? '—'
-                      } months requested.`
+                {inv.status === 'Pending Extension'
+                    ? inv.extensionStage === 'PendingSuperAdmin'
+                      ? `Waiting for Super Admin Approval — your ${
+                          inv.extensionMonths ?? '—'
+                        }-month extension has been approved by the admin and sent for final approval.`
+                      : `Waiting for Admin Approval — extension of ${
+                          inv.extensionMonths ?? '—'
+                        } months requested.`
                     : inv.status === 'Pending Settlement'
                     ? inv.settlementStage === 'PendingSuperAdmin'
                       ? 'Waiting for Super Admin Approval — your pre-close request has been approved by the admin and sent for final settlement.'

@@ -168,10 +168,26 @@ export type TenureExtensionRequest = {
   investorName: string;
   currentTenureMonths: number;
   extensionMonths: number;
-  status: 'Pending' | 'Approved' | 'Rejected';
+  status: 'Pending' | 'PendingSuperAdmin' | 'Approved' | 'Rejected';
+  requestedOn: string;
+  // NEW: the rate the admin decided on when forwarding to Super Admin —
+  // applied to the bond only once Super Admin gives final approval.
+  decidedRate?: number;
+};
+// NEW: tracks a matured bond the admin has forwarded to Super Admin for
+// final settlement approval — the "Tenure Timeout" equivalent of a
+// pre-close request, but with no investor-submitted request behind it.
+export type MaturitySettlementRequest = {
+  id: string;
+  bondSeriesId: string;
+  investorId: string;
+  investorName: string;
+  principal: number;
+  totalInterest: number;
+  netSettlement: number;
+  status: 'PendingSuperAdmin' | 'Approved' | 'Rejected';
   requestedOn: string;
 };
-
 export type PreSettlementRequest = {
   id: string;
   bondSeriesId: string;
@@ -451,10 +467,24 @@ type AppDataContextType = {
   rejectTenureExtension: (requestId: string) => void;
   approvePreSettlement: (requestId: string) => void;
   rejectPreSettlement: (requestId: string) => void;
-  // NEW: settles a bond that reached its maturity date naturally (no
-  // investor pre-close request behind it) — used by the "Tenure Timeout"
-  // tab's Approve Settlement action on SettlementCalculatorScreen.
-  settleMaturedBond: (bondSeriesId: string) => void;
+  // NEW: Super Admin's final action on a tenure extension the admin has
+  // already forwarded — this is what actually applies the extension to
+  // the bond now.
+  superAdminApproveTenureExtension: (requestId: string) => void;
+  superAdminRejectTenureExtension: (requestId: string) => void;
+  // NEW: replaces the old settleMaturedBond — admin no longer settles a
+  // matured bond directly, only forwards it to Super Admin.
+  maturitySettlementRequests: MaturitySettlementRequest[];
+  requestMaturitySettlement: (params: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    principal: number;
+    totalInterest: number;
+    netSettlement: number;
+  }) => void;
+  superAdminApproveMaturitySettlement: (requestId: string) => void;
+  superAdminRejectMaturitySettlement: (requestId: string) => void;
   // NEW: Super Admin's final action on a pre-close request the admin has
   // already forwarded. This is what actually settles the bond now.
   superAdminApprovePreSettlement: (requestId: string) => void;
@@ -716,9 +746,12 @@ type PersistedState = {
   auditLogs: AuditLogEntry[];
   saNotifications: SANotification[];
   systemSettings: SystemSettings;
-    tenureExtensionRequests: TenureExtensionRequest[];
+   tenureExtensionRequests: TenureExtensionRequest[];
   preSettlementRequests: PreSettlementRequest[];
+  maturitySettlementRequests: MaturitySettlementRequest[];
 };
+  // preSettlementRequests: PreSettlementRequest[];
+// };
 
 const loadAppData = async (): Promise<Partial<PersistedState> | null> => {
   try {
@@ -797,7 +830,9 @@ const AppNavigator = () => {
   const [saNotifications, setSaNotifications] = useState<SANotification[]>(initialSANotifications);
   const [systemSettings, setSystemSettingsState] = useState<SystemSettings>(initialSystemSettings);
   const [tenureExtensionRequests, setTenureExtensionRequests] = useState<TenureExtensionRequest[]>([]);
+
   const [preSettlementRequests, setPreSettlementRequests] = useState<PreSettlementRequest[]>([]);
+  const [maturitySettlementRequests, setMaturitySettlementRequests] = useState<MaturitySettlementRequest[]>([]);
   const [isDataHydrated, setIsDataHydrated] = useState(false);
 
   useEffect(() => {
@@ -822,6 +857,7 @@ const AppNavigator = () => {
         if (saved.systemSettings) setSystemSettingsState(saved.systemSettings);
         if (saved.tenureExtensionRequests) setTenureExtensionRequests(saved.tenureExtensionRequests);
         if (saved.preSettlementRequests) setPreSettlementRequests(saved.preSettlementRequests);
+          if (saved.maturitySettlementRequests) setMaturitySettlementRequests(saved.maturitySettlementRequests);
       }
       setIsDataHydrated(true);
     })();
@@ -849,6 +885,7 @@ const AppNavigator = () => {
       systemSettings,
             tenureExtensionRequests,
       preSettlementRequests,
+       maturitySettlementRequests,
     });
   }, [
     isDataHydrated,
@@ -870,6 +907,7 @@ const AppNavigator = () => {
     systemSettings,
     tenureExtensionRequests,
     preSettlementRequests,
+     maturitySettlementRequests,
   ]);
 
   // ---------------------------------------------------------------------
@@ -1767,12 +1805,50 @@ const rejectKyc = (id: string) => {
   // behind it — linkedRequestId is optional and only gets marked Approved
   // when there actually is a matching pending investor request.
   // ---------------------------------------------------------------------
+// CHANGED: Admin "approving" a tenure extension in the Tenure modal no
+  // longer applies it to the bond directly. It now forwards the
+  // (possibly admin-adjusted) months/rate to the Super Admin for final
+  // approval — mirrors the pre-close flow. The bond's tenure, maturity
+  // date, and rate stay unchanged until superAdminApproveTenureExtension
+  // runs.
   const approveTenureExtension = (
     bondSeriesId: string,
     extensionMonths: number,
     newRate?: number,
     linkedRequestId?: string,
   ) => {
+    const bond = bonds.find(b => b.seriesId === bondSeriesId);
+
+    if (linkedRequestId) {
+      setTenureExtensionRequests(prev =>
+        prev.map(r =>
+          r.id === linkedRequestId
+            ? {...r, extensionMonths, decidedRate: newRate, status: 'PendingSuperAdmin'}
+            : r,
+        ),
+      );
+
+      setSaNotifications(prev => [
+        {
+          id: `sn-${Date.now()}`,
+          title: 'Tenure Extension Requested',
+          isNew: true,
+          message: `Admin approved a ${extensionMonths}-month extension on ${bondSeriesId}${
+            bond ? ` for ${bond.investorName}` : ''
+          }. Please review and approve.`,
+          time: 'Just now',
+          icon: 'bond',
+        },
+        ...prev,
+      ]);
+
+      pushAuditLog('Admin', 'Admin', `Tenure Extension Approved — sent to Super Admin — ${bondSeriesId}`);
+      return;
+    }
+
+    // Manual renewal with no investor request behind it — not currently
+    // reachable from the UI (Tenure button is only enabled when a request
+    // exists), kept as a safe fallback that applies immediately.
     setBonds(prev =>
       prev.map(b => {
         if (b.seriesId !== bondSeriesId) return b;
@@ -1787,14 +1863,6 @@ const rejectKyc = (id: string) => {
         };
       }),
     );
-
-    if (linkedRequestId) {
-      setTenureExtensionRequests(prev =>
-        prev.map(r => (r.id === linkedRequestId ? {...r, status: 'Approved'} : r)),
-      );
-    }
-
-    const bond = bonds.find(b => b.seriesId === bondSeriesId);
 
     setAdminNotifications(prev => [
       {
@@ -1811,6 +1879,72 @@ const rejectKyc = (id: string) => {
     ]);
 
     pushAuditLog('Admin', 'Admin', `Tenure Extension Approved — ${bondSeriesId} (+${extensionMonths}M)`);
+  };
+
+  // NEW: Super Admin's final settlement action for a forwarded tenure
+  // extension — this now does what approveTenureExtension used to do:
+  // actually extends the bond's tenure, maturity date, and rate.
+  const superAdminApproveTenureExtension = (requestId: string) => {
+    const req = tenureExtensionRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'PendingSuperAdmin') return;
+
+    setBonds(prev =>
+      prev.map(b => {
+        if (b.seriesId !== req.bondSeriesId) return b;
+        const maturity = parseDDMMYYYY(b.maturityDate);
+        maturity.setMonth(maturity.getMonth() + req.extensionMonths);
+        return {
+          ...b,
+          tenureMonths: (b.tenureMonths ?? 0) + req.extensionMonths,
+          maturityDate: formatDDMMYYYY(maturity),
+          interestRate:
+            req.decidedRate !== undefined && !Number.isNaN(req.decidedRate)
+              ? req.decidedRate
+              : b.interestRate,
+        };
+      }),
+    );
+
+    setTenureExtensionRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Approved'} : r)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Tenure Extension Finalized',
+        isNew: true,
+        message: `${req.bondSeriesId} extended by ${req.extensionMonths} months for ${req.investorName}.`,
+        time: 'Just now',
+        icon: 'check',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Super Admin', 'Super Admin', `Tenure Extension Finalized — ${req.bondSeriesId} (+${req.extensionMonths}M)`);
+  };
+
+  const superAdminRejectTenureExtension = (requestId: string) => {
+    const req = tenureExtensionRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'PendingSuperAdmin') return;
+
+    setTenureExtensionRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Rejected'} : r)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Tenure Extension Rejected by Super Admin',
+        isNew: true,
+        message: `${req.bondSeriesId} tenure extension request was rejected by Super Admin.`,
+        time: 'Just now',
+        icon: 'bell',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Super Admin', 'Super Admin', `Tenure Extension Rejected — ${req.bondSeriesId}`);
   };
 
   const rejectTenureExtension = (requestId: string) => {
@@ -1925,12 +2059,58 @@ const rejectPreSettlement = (requestId: string) => {
   // same bond state (which is what BondTrackingScreen's `isMatured` /
   // Tenure-button-hiding logic keys off of).
   // ---------------------------------------------------------------------
-  const settleMaturedBond = (bondSeriesId: string) => {
-    const bond = bonds.find(b => b.seriesId === bondSeriesId);
-    if (!bond || bond.status !== 'Active') return;
+// CHANGED: Admin approving a matured bond in the "Tenure Timeout" tab
+  // no longer settles it directly. It now forwards it to the Super
+  // Admin's "Tenure Settlement" queue for final approval — mirrors the
+  // pre-close flow. The bond stays 'Active' until
+  // superAdminApproveMaturitySettlement runs.
+  const requestMaturitySettlement = (params: {
+    bondSeriesId: string;
+    investorId: string;
+    investorName: string;
+    principal: number;
+    totalInterest: number;
+    netSettlement: number;
+  }) => {
+    const already = maturitySettlementRequests.some(
+      r => r.bondSeriesId === params.bondSeriesId && r.status === 'PendingSuperAdmin',
+    );
+    if (already) return;
+
+    const request: MaturitySettlementRequest = {
+      id: `MAT-${Date.now()}`,
+      ...params,
+      status: 'PendingSuperAdmin',
+      requestedOn: nowTimestamp(),
+    };
+
+    setMaturitySettlementRequests(prev => [request, ...prev]);
+
+    setSaNotifications(prev => [
+      {
+        id: `sn-${Date.now()}`,
+        title: 'Bond Maturity Settlement Requested',
+        isNew: true,
+        message: `Admin approved settlement for matured bond ${params.bondSeriesId} (${params.investorName}). Net payable ${formatINRShort(params.netSettlement)}. Please review.`,
+        time: 'Just now',
+        icon: 'money',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Admin', 'Admin', `Bond Settlement Approved — sent to Super Admin — ${params.bondSeriesId}`);
+  };
+
+  const superAdminApproveMaturitySettlement = (requestId: string) => {
+    const req = maturitySettlementRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'PendingSuperAdmin') return;
 
     setBonds(prev =>
-      prev.map(b => (b.seriesId === bondSeriesId ? {...b, status: 'Settled'} : b)),
+      prev.map(b => (b.seriesId === req.bondSeriesId ? {...b, status: 'Settled'} : b)),
+    );
+
+    setMaturitySettlementRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Approved'} : r)),
     );
 
     setAdminNotifications(prev => [
@@ -1938,14 +2118,37 @@ const rejectPreSettlement = (requestId: string) => {
         id: `an-${Date.now()}`,
         title: 'Bond Settled',
         isNew: true,
-        message: `${bondSeriesId} matured and has been settled for ${bond.investorName}.`,
+        message: `${req.bondSeriesId} matured and has been settled for ${req.investorName}. Net paid ${formatINRShort(req.netSettlement)}.`,
         time: 'Just now',
         icon: 'check',
       },
       ...prev,
     ]);
 
-    pushAuditLog('Admin', 'Admin', `Bond Settlement Approved — ${bondSeriesId}`);
+    pushAuditLog('Super Admin', 'Super Admin', `Bond Settlement Paid — ${req.bondSeriesId}`);
+  };
+
+  const superAdminRejectMaturitySettlement = (requestId: string) => {
+    const req = maturitySettlementRequests.find(r => r.id === requestId);
+    if (!req || req.status !== 'PendingSuperAdmin') return;
+
+    setMaturitySettlementRequests(prev =>
+      prev.map(r => (r.id === requestId ? {...r, status: 'Rejected'} : r)),
+    );
+
+    setAdminNotifications(prev => [
+      {
+        id: `an-${Date.now()}`,
+        title: 'Bond Settlement Rejected by Super Admin',
+        isNew: true,
+        message: `${req.bondSeriesId} settlement request was rejected by Super Admin.`,
+        time: 'Just now',
+        icon: 'bell',
+      },
+      ...prev,
+    ]);
+
+    pushAuditLog('Super Admin', 'Super Admin', `Bond Settlement Rejected — ${req.bondSeriesId}`);
   };
 
   return (
@@ -1990,7 +2193,13 @@ const rejectPreSettlement = (requestId: string) => {
     rejectPreSettlement,
     superAdminApprovePreSettlement,
     superAdminRejectPreSettlement,
-    settleMaturedBond,
+    superAdminApproveTenureExtension,
+    superAdminRejectTenureExtension,
+    maturitySettlementRequests,
+    requestMaturitySettlement,
+    superAdminApproveMaturitySettlement,
+    superAdminRejectMaturitySettlement,
+    // settleMaturedBond,
 
     updateInvestorProfile,
     updateInvestorBankDetails,

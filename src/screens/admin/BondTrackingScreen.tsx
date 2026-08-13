@@ -182,8 +182,10 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
       // request is approved) the bond's own status becomes 'Settled' and
       // this check stops matching too — no extra state to manage either
       // way.
-      const hasPendingTenureReq = tenureExtensionRequests.some(
-        r => r.bondSeriesId === b.seriesId && r.status === 'Pending',
+     const hasPendingTenureReq = tenureExtensionRequests.some(
+        r =>
+          r.bondSeriesId === b.seriesId &&
+          (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
       );
       const hasPendingSettlementReq = preSettlementRequests.some(
         r =>
@@ -380,10 +382,9 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
       !Number.isNaN(rate) ? rate : undefined,
       linkedTenureRequest?.id,
     );
-
-    Alert.alert(
-      'Approved',
-      `${tenureRow.bondNumber} extended by ${months} month${months === 1 ? '' : 's'}. New maturity: ${calcNewMaturity()}.`,
+Alert.alert(
+      'Sent to Super Admin',
+      `${tenureRow.bondNumber}'s ${months}-month extension has been sent to the Super Admin for final approval. New maturity will be ${calcNewMaturity()} once approved.`,
     );
     setTenureRow(null);
     setLinkedTenureRequest(null);
@@ -594,7 +595,14 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
               // Flags rows that have a pending investor request, or that
               // have simply matured, so the admin can spot them at a
               // glance in "All Investments" too.
-              const hasPendingTenureReq = tenureExtensionRequests.some(
+             const hasPendingTenureReq = tenureExtensionRequests.some(
+                r =>
+                  r.bondSeriesId === row.bondNumber &&
+                  (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
+              );
+              // Whether the admin can still act on this — false once
+              // it's been forwarded to Super Admin.
+              const hasActionableTenureReq = tenureExtensionRequests.some(
                 r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
               );
               const hasPendingSettlementReq = preSettlementRequests.some(
@@ -626,8 +634,10 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
                   {(hasPendingTenureReq || hasPendingSettlementReq || maturityCrossed) && (
                     <View style={local.rowFlag}>
                       <Text style={local.rowFlagText}>
-                        {hasPendingTenureReq
-                          ? 'Investor requested a tenure extension — awaiting your review'
+                       {hasPendingTenureReq
+                          ? hasActionableTenureReq
+                            ? 'Investor requested a tenure extension — awaiting your review'
+                            : 'Tenure extension approved — awaiting Super Admin settlement'
                           : hasPendingSettlementReq
                           ? preSettlementRequests.find(
                               r => r.bondSeriesId === row.bondNumber && r.status === 'PendingSuperAdmin',
@@ -733,22 +743,26 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
                             extension request for this bond — otherwise
                             it's shown disabled/greyed out so the admin
                             can't act on a request that doesn't exist. */}
-                        {!isMatured && (
+                      {!isMatured && (
                           <TouchableOpacity
-                            disabled={!hasPendingTenureReq}
+                            disabled={!hasActionableTenureReq}
                             style={[
                               local.tenureBtn,
-                              hasPendingTenureReq && local.tenureBtnFlagged,
-                              !hasPendingTenureReq && local.tenureBtnDisabled,
+                              hasActionableTenureReq && local.tenureBtnFlagged,
+                              !hasActionableTenureReq && local.tenureBtnDisabled,
                             ]}
-                            onPress={() => hasPendingTenureReq && openTenure(row)}>
+                            onPress={() => hasActionableTenureReq && openTenure(row)}>
                             <Text
                               style={[
                                 local.tenureBtnText,
-                                hasPendingTenureReq && local.tenureBtnTextFlagged,
-                                !hasPendingTenureReq && local.tenureBtnTextDisabled,
+                                hasActionableTenureReq && local.tenureBtnTextFlagged,
+                                !hasActionableTenureReq && local.tenureBtnTextDisabled,
                               ]}>
-                              {hasPendingTenureReq ? 'Tenure •' : 'Tenure'}
+                              {hasActionableTenureReq
+                                ? 'Tenure •'
+                                : hasPendingTenureReq
+                                ? 'Awaiting SA'
+                                : 'Tenure'}
                             </Text>
                           </TouchableOpacity>
                         )}
@@ -916,11 +930,11 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
                     onPress={() => handleReject(reviewReq)}>
                     <Text style={local.rejectBtnText}>Reject</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.modalApproveBtn}
-                    onPress={handleConfirmApprove}>
-                    <Text style={styles.modalApproveText}>Approve</Text>
-                  </TouchableOpacity>
+                <TouchableOpacity
+   style={styles.modalApproveBtn}
+   onPress={handleConfirmApprove}>
+   <Text style={styles.modalApproveText}>Approve</Text>
+ </TouchableOpacity>
                 </View>
               </>
             )}
