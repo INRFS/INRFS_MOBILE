@@ -8,6 +8,13 @@ export const BORDER = '#E2E4E9';
 export const BG = '#F5F6FA';
 export const GREEN = '#16A34A';
 export const GREEN_BG = '#DCFCE7';
+export const PURPLE = '#7C3AED';
+export const PURPLE_BG = '#EDE9FE';
+export const ORANGE = '#F59E0B';
+export const ORANGE_BG = '#FEF3C7';
+export const BLUE_BG = '#DBEAFE';
+export const RED = '#EF4444';
+export const RED_BG = '#FEE2E2';
 
 export const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: BG},
@@ -22,47 +29,62 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
   },
-  headerBrand: {flexDirection: 'row', alignItems: 'center', gap: 8},
+  headerBrand: {flexDirection: 'row', alignItems: 'center', gap: 10},
   brandIconWrap: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
     backgroundColor: NAVY,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerTitle: {fontSize: 17, fontWeight: '800', color: NAVY, letterSpacing: 0.3},
-  headerActions: {flexDirection: 'row', alignItems: 'center', gap: 14},
-  bellWrap: {position: 'relative'},
-  bellDot: {
-    position: 'absolute',
-    top: -1,
-    right: -1,
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-    backgroundColor: '#EF4444',
-  },
-  avatar: {width: 30, height: 30, borderRadius: 15},
+  headerTitleWrap: {flexDirection: 'column'},
+  headerTitle: {fontSize: 17, fontWeight: '800', color: NAVY, letterSpacing: 0.3, lineHeight: 20},
+  headerSubtitle: {fontSize: 11, color: GRAY, fontWeight: '500', marginTop: 1},
+  headerActions: {flexDirection: 'row', alignItems: 'center', gap: 16},
 
-  container: {padding: 16, paddingBottom: 24},
+  // Notification bell with numbered badge (replaces the old plain dot)
+  bellWrap: {position: 'relative', padding: 2},
+  bellBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 17,
+    height: 17,
+    borderRadius: 9,
+    backgroundColor: RED,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+    borderWidth: 1.5,
+    borderColor: '#fff',
+  },
+  bellBadgeText: {color: '#fff', fontSize: 9.5, fontWeight: '800'},
+
+  avatar: {width: 34, height: 34, borderRadius: 17},
+
+  container: {paddingBottom: 110, paddingTop: 54},
 
   greetingTitle: {fontSize: 19, fontWeight: '800', color: '#111827', marginBottom: 2},
   greetingSubtitle: {fontSize: 12.5, color: GRAY, marginBottom: 16},
 
   statGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14},
+  // Base card style. Each card additionally gets `borderLeftColor` set inline
+  // per-stat (see STAT_ACCENTS in the screen) to match the colored left rail
+  // in the design.
   statGridCard: {
     width: '48%',
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
+    borderLeftWidth: 4,
     borderRadius: 14,
     padding: 12,
   },
   statGridIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -164,6 +186,7 @@ export const styles = StyleSheet.create({
   sectionTitle: {fontSize: 16, fontWeight: '800', color: '#111827'},
   viewAllLink: {color: PRIMARY, fontSize: 13, fontWeight: '700'},
 
+  // ---- Portfolio Distribution: donut + legend (replaces the bar-list card) ----
   distributionCard: {
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -172,6 +195,26 @@ export const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 20,
   },
+  distributionBody: {flexDirection: 'row', alignItems: 'center', gap: 16},
+  donutWrap: {alignItems: 'center', justifyContent: 'center'},
+  legendWrap: {flex: 1, gap: 10},
+  legendRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
+  legendLabelRow: {flexDirection: 'row', alignItems: 'center', flex: 1},
+  legendDot: {width: 8, height: 8, borderRadius: 4, marginRight: 8},
+  legendLabel: {fontSize: 13, fontWeight: '600', color: '#111827'},
+  legendPct: {fontSize: 12, fontWeight: '700', color: GRAY},
+  viewDetailsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+  viewDetailsText: {color: PRIMARY, fontSize: 13, fontWeight: '700'},
+
+  // Legacy bar-style rows (kept in case the bar layout is needed elsewhere)
   distributionRow: {marginBottom: 12},
   distributionLabelRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4},
   distributionDot: {width: 8, height: 8, borderRadius: 4, marginRight: 8},
@@ -217,12 +260,14 @@ export const styles = StyleSheet.create({
   bondMetaValue: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   bondReturnValue: {fontSize: 13.5, fontWeight: '800', color: GREEN},
 
+  // Quick actions get a colored top rail (see QUICK_ACTION_ACCENTS in the screen)
   quickActionsGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20},
   quickActionBtn: {
     width: '48%',
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
+    borderTopWidth: 3,
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
@@ -252,6 +297,12 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
+  // Colored notification icon variants (each notification picks one inline
+  // via NOTIF_ACCENTS in the screen, instead of every icon using green)
+  txIconGreen: {backgroundColor: GREEN_BG},
+  txIconBlue: {backgroundColor: BLUE_BG},
+  txIconPurple: {backgroundColor: PURPLE_BG},
+  txIconOrange: {backgroundColor: ORANGE_BG},
   txIconCredit: {backgroundColor: '#E8F8ED'},
   txIconDebit: {backgroundColor: '#F0F1F4'},
   txTitleWrap: {flex: 1},
@@ -260,4 +311,5 @@ export const styles = StyleSheet.create({
   txAmount: {fontSize: 13.5, fontWeight: '800', color: '#111827'},
   txAmountCredit: {color: GREEN},
   txStatus: {fontSize: 11, color: GRAY, marginTop: 2},
+  txChevron: {color: GRAY},
 });

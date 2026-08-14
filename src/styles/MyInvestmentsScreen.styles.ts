@@ -2,7 +2,10 @@ import {StyleSheet} from 'react-native';
 
 export const NAVY = '#0E2A5E';
 export const NAVY_DARK = '#0A1F44';
-export const PRIMARY = '#1955F0';
+// Shifted from blue to a violet/indigo to match the hero card, filter chip,
+// bond-id text, and rate values in the reference screen.
+export const PRIMARY = '#6C4CE0';
+export const PRIMARY_DARK = '#5B3FD1';
 export const GRAY = '#6B7280';
 export const BORDER = '#E2E4E9';
 export const BG = '#F5F6FA';
@@ -27,40 +30,48 @@ export const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: BORDER,
   },
-  headerBrand: {flexDirection: 'row', alignItems: 'center', gap: 10},
-  avatar: {width: 28, height: 28, borderRadius: 14},
-  headerTitle: {fontSize: 17, fontWeight: '800', color: NAVY, letterSpacing: 0.3},
+  headerBrand: {flexDirection: 'row', alignItems: 'center'},
+  // marginRight (not `gap`) — some RN/Yoga versions silently ignore flex
+  // `gap`, which was collapsing spacing throughout this screen.
+  avatar: {width: 34, height: 34, borderRadius: 17, marginRight: 10},
+  headerTitle: {fontSize: 18, fontWeight: '800', color: '#111827', letterSpacing: 0.2},
 
-  container: {padding: 16, paddingBottom: 24},
+ container: {padding: 16, paddingBottom: 100},
 
+  // Was flat NAVY — the reference screen shows a vivid purple hero card, so
+  // this now follows PRIMARY.
   heroCard: {
-    backgroundColor: NAVY,
-    borderRadius: 16,
-    paddingVertical: 20,
-    paddingHorizontal: 18,
+    backgroundColor: PRIMARY,
+    borderRadius: 18,
+    paddingVertical: 22,
+    paddingHorizontal: 20,
     marginBottom: 16,
   },
   heroLabel: {
     fontSize: 11,
     letterSpacing: 0.6,
-    color: 'rgba(255,255,255,0.65)',
+    color: 'rgba(255,255,255,0.75)',
     fontWeight: '700',
     marginBottom: 8,
   },
-  heroValue: {fontSize: 26, fontWeight: '800', color: '#fff'},
+  heroValue: {fontSize: 28, fontWeight: '800', color: '#fff'},
 
-  searchRow: {flexDirection: 'row', gap: 10, marginBottom: 14},
+  searchRow: {flexDirection: 'row', marginBottom: 16},
   searchBox: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
+    // Internal icon-to-text gap can't be fixed via styles alone since the
+    // Icon element in this row isn't given a style prop in the component —
+    // only the box itself gets the marginRight fix here.
     gap: 8,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 46,
+    borderRadius: 26,
+    paddingHorizontal: 16,
+    height: 48,
+    marginRight: 10,
   },
   searchInput: {flex: 1, fontSize: 13.5, color: '#111827'},
   exportBtn: {
@@ -70,29 +81,29 @@ export const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 46,
+    borderRadius: 26,
+    paddingHorizontal: 16,
+    height: 48,
   },
   exportBtnText: {fontSize: 13, fontWeight: '700', color: '#111827'},
 
   // ---------- Filter chips ----------
   filterRow: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 18,
+    marginBottom: 20,
   },
   filterChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: BORDER,
     backgroundColor: '#fff',
+    marginRight: 10,
   },
   filterChipActive: {
-    backgroundColor: NAVY,
-    borderColor: NAVY,
+    backgroundColor: PRIMARY,
+    borderColor: PRIMARY,
   },
   filterChipText: {
     fontSize: 13,
@@ -107,16 +118,16 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'baseline',
-    marginBottom: 12,
+    marginBottom: 14,
   },
-  sectionTitle: {fontSize: 16, fontWeight: '800', color: '#111827'},
-  recordCount: {fontSize: 12, color: GRAY},
+  sectionTitle: {fontSize: 17, fontWeight: '800', color: '#111827'},
+  recordCount: {fontSize: 12.5, color: GRAY},
 
   investmentCard: {
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 16,
     marginBottom: 14,
   },
@@ -128,18 +139,18 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 4,
   },
-  bondId: {fontSize: 12.5, fontWeight: '700', color: PRIMARY, letterSpacing: 0.2},
-  statusBadge: {paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20},
+  bondId: {fontSize: 13, fontWeight: '800', color: PRIMARY, letterSpacing: 0.2},
+  statusBadge: {paddingHorizontal: 12, paddingVertical: 5, borderRadius: 20},
   statusBadgeActive: {backgroundColor: GREEN_BG},
-  statusBadgeMatured: {backgroundColor: SLATE_BG},
+  statusBadgeMatured: {backgroundColor: GREEN_BG},
   statusBadgePending: {backgroundColor: AMBER_BG},
-  statusBadgeText: {fontSize: 11, fontWeight: '700', letterSpacing: 0.2},
+  statusBadgeText: {fontSize: 11, fontWeight: '800', letterSpacing: 0.3},
   statusBadgeTextActive: {color: GREEN},
-  statusBadgeTextMatured: {color: SLATE},
+  statusBadgeTextMatured: {color: GREEN},
   statusBadgeTextPending: {color: AMBER},
 
   idLabel: {fontSize: 10, color: GRAY, fontWeight: '700', letterSpacing: 0.4, marginBottom: 2},
-  bondIdPending: {fontStyle: 'italic', color: GRAY},
+  bondIdPending: {fontStyle: 'italic', color: PRIMARY},
 
   bondName: {fontSize: 14.5, fontWeight: '700', color: '#111827', marginBottom: 14},
 
@@ -156,12 +167,20 @@ export const styles = StyleSheet.create({
   metaValueGold: {fontSize: 13.5, fontWeight: '700', color: PRIMARY},
   metaValueGreen: {fontSize: 13.5, fontWeight: '700', color: GREEN},
 
+  // Boxed look (background + padding + radius) so the hint reads as its own
+  // callout instead of a bare line of text, matching the reference screen.
   pendingHint: {
-    marginTop: 12,
+    marginTop: 14,
     fontSize: 12.5,
     color: AMBER,
     fontWeight: '600',
     lineHeight: 18,
+    backgroundColor: AMBER_BG,
+    borderWidth: 1,
+    borderColor: '#FDE3A7',
+    borderRadius: 12,
+    padding: 12,
+    overflow: 'hidden',
   },
 
   viewBondBtn: {
@@ -169,7 +188,7 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#EDEFF4',
+    backgroundColor: '#EEF0FC',
     borderRadius: 10,
     height: 42,
     marginTop: 14,
@@ -182,27 +201,31 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderWidth: 1.5,
-    borderColor: BORDER,
+    borderColor: '#C9BFF7',
     borderStyle: 'dashed',
-    borderRadius: 12,
-    height: 52,
+    borderRadius: 14,
+    height: 54,
     marginTop: 4,
     backgroundColor: '#fff',
   },
-  newInvestmentBtnText: {fontSize: 14, fontWeight: '700', color: PRIMARY},
+  newInvestmentBtnText: {fontSize: 14.5, fontWeight: '700', color: PRIMARY},
 
-  actionIconRow: {flexDirection: 'row', gap: 8, marginTop: 14},
+  actionIconRow: {flexDirection: 'row', marginTop: 14},
   actionIconBtn: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    // Internal icon-to-text gap can't be fixed via styles alone (the Icon
+    // element here has no style prop in the component) — marginRight below
+    // is what actually separates each button from the next.
     gap: 6,
-    backgroundColor: '#EDEFF4',
+    backgroundColor: '#EEF0FC',
     borderRadius: 10,
-    height: 42,
+    height: 44,
+    marginRight: 8,
   },
-  actionIconBtnText: {fontSize: 12.5, fontWeight: '700', color: '#1A1A18'},
+  actionIconBtnText: {fontSize: 12.5, fontWeight: '700', color: PRIMARY_DARK},
 
   // empty state
   emptyState: {
@@ -253,7 +276,7 @@ export const styles = StyleSheet.create({
     paddingRight: 10,
   },
   modalFieldLabel: {fontSize: 12.5, color: GRAY, marginBottom: 10, fontWeight: '600'},
-  modalChipRow: {flexDirection: 'row', gap: 8, marginBottom: 20},
+  modalChipRow: {flexDirection: 'row', marginBottom: 20},
   modalChip: {
     flex: 1,
     borderWidth: 1,
@@ -262,6 +285,7 @@ export const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: 'center',
     backgroundColor: '#fff',
+    marginRight: 8,
   },
   modalChipActive: {backgroundColor: PRIMARY, borderColor: PRIMARY},
   modalChipText: {fontSize: 13, fontWeight: '700', color: '#111827'},
@@ -278,9 +302,9 @@ export const styles = StyleSheet.create({
   modalRowValueRed: {fontSize: 13.5, fontWeight: '700', color: RED},
   modalDivider: {height: 1, backgroundColor: BORDER, marginVertical: 6},
   modalNetLabel: {fontSize: 14.5, fontWeight: '800', color: '#111827'},
-  modalNetValue: {fontSize: 15.5, fontWeight: '800', color: NAVY},
+  modalNetValue: {fontSize: 15.5, fontWeight: '800', color: PRIMARY_DARK},
 
-  modalActionRow: {flexDirection: 'row', gap: 10, marginTop: 18},
+  modalActionRow: {flexDirection: 'row', marginTop: 18},
   modalCancelBtn: {
     flex: 1,
     height: 48,
@@ -290,13 +314,14 @@ export const styles = StyleSheet.create({
     backgroundColor: '#fff',
     alignItems: 'center',
     justifyContent: 'center',
+    marginRight: 10,
   },
   modalCancelBtnText: {color: '#111827', fontWeight: '700', fontSize: 14},
   modalConfirmBtn: {
     flex: 1.4,
     height: 48,
     borderRadius: 12,
-    backgroundColor: NAVY_DARK,
+    backgroundColor: PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
   },

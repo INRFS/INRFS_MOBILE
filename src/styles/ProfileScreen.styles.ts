@@ -1,41 +1,71 @@
 import {StyleSheet} from 'react-native';
 
-const NAVY = '#0B1E45';
-const GRAY = '#6B7280';
+const PAGE_BG = '#F3F4F6';
+const CARD_BG = '#FFFFFF';
 const BORDER = '#E5E7EB';
+const TEXT_DARK = '#111827';
+const TEXT_GRAY = '#6B7280';
+const BLUE = '#2563EB';
+const BLUE_LIGHT = '#EEF2FF';
+const GREEN = '#059669';
+const GREEN_LIGHT = '#ECFDF5';
+const RED = '#DC2626';
+const RED_LIGHT = '#FEE2E2';
+const NAVY = '#131B4D';
+const KYC_BG = 'rgba(16,185,129,0.22)';
+const KYC_TEXT = '#34D399';
 
 export const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: '#F4F6FA'},
-  scrollContent: {paddingBottom: 110},
+  safeArea: {flex: 1, backgroundColor: PAGE_BG},
+  scrollContent: {paddingBottom: 110, paddingTop: 54},
 
+  // ---------- Header ----------
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 54,
+    paddingHorizontal: 16,
     paddingBottom: 16,
-    backgroundColor: NAVY,
   },
-  backBtn: {padding: 4},
-  headerTitle: {color: '#fff', fontSize: 17, fontWeight: '700'},
-  editText: {color: '#93C5FD', fontSize: 13, fontWeight: '700'},
-
-  avatarBlock: {
-    backgroundColor: NAVY,
-    alignItems: 'center',
-    paddingBottom: 28,
-  },
-  avatarWrap: {position: 'relative', marginBottom: 12},
-  avatarCircle: {
-    width: 84,
-    height: 84,
-    borderRadius: 42,
-    backgroundColor: '#2563EB',
+  iconBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: CARD_BG,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  avatarInitial: {color: '#fff', fontSize: 32, fontWeight: '700'},
+  headerTitle: {color: TEXT_DARK, fontSize: 19, fontWeight: '800'},
+  headerActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  // ---------- Hero / avatar card ----------
+  heroCard: {
+    backgroundColor: NAVY,
+    marginHorizontal: 16,
+    borderRadius: 20,
+    padding: 22,
+    overflow: 'hidden',
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  avatarWrap: {position: 'relative'},
+  avatarCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#4F5BD5',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarInitial: {color: '#fff', fontSize: 28, fontWeight: '700'},
   avatarBadge: {
     position: 'absolute',
     right: -2,
@@ -43,28 +73,31 @@ export const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#059669',
+    backgroundColor: GREEN,
     borderWidth: 2,
     borderColor: NAVY,
     alignItems: 'center',
     justifyContent: 'center',
   },
+  heroTextCol: {flexShrink: 1},
   name: {color: '#fff', fontSize: 20, fontWeight: '700'},
-  email: {color: '#B9C4DA', fontSize: 13, marginTop: 2},
+  email: {color: '#B9C0DE', fontSize: 13, marginTop: 2},
   kycPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#D1FAE5',
+    gap: 6,
+    backgroundColor: KYC_BG,
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 20,
-    marginTop: 12,
+    marginTop: 10,
+    alignSelf: 'flex-start',
   },
-  kycPillText: {color: '#059669', fontSize: 11, fontWeight: '700', letterSpacing: 0.4},
+  kycPillText: {color: KYC_TEXT, fontSize: 11, fontWeight: '700', letterSpacing: 0.4},
 
+  // ---------- White info cards ----------
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: CARD_BG,
     marginHorizontal: 16,
     marginTop: 16,
     borderRadius: 16,
@@ -72,72 +105,89 @@ export const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: BORDER,
   },
-  cardHeaderRow: {flexDirection: 'row', alignItems: 'center', gap: 8},
-  cardHeaderText: {fontSize: 12, fontWeight: '700', color: '#374151', letterSpacing: 0.5},
-  divider: {height: 1, backgroundColor: BORDER, marginVertical: 12},
-
-  infoRow: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 16},
-  infoCol: {flex: 1},
-  infoLabel: {fontSize: 10, color: GRAY, letterSpacing: 0.4, marginBottom: 4},
-  infoValue: {fontSize: 14, fontWeight: '600', color: '#111827'},
-  statusRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
-  statusDot: {width: 8, height: 8, borderRadius: 4, backgroundColor: '#059669'},
-
-  downloadBtn: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: NAVY,
-    marginHorizontal: 16,
-    marginTop: 20,
-    paddingVertical: 15,
-    borderRadius: 14,
+    justifyContent: 'space-between',
   },
-  downloadBtnText: {color: '#fff', fontSize: 14, fontWeight: '700'},
-headerActions: {
-  flexDirection: 'row',
-  alignItems: 'center',
-},
-settingsBtn: {
-  marginLeft: 14,
-},
-// NEW: "Cancel" / "Save" buttons shown in the header while editing.
-headerActionBtn: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  gap: 4,
-  marginLeft: 14,
-},
-// NEW: editable TextInput styling for Personal Information / Bank Details
-// fields, styled to sit inside the existing infoCol layout.
-input: {
-  borderWidth: 1,
-  borderColor: BORDER,
-  borderRadius: 8,
-  paddingVertical: 8,
-  paddingHorizontal: 10,
-  fontSize: 14,
-  fontWeight: '600',
-  color: '#111827',
-  backgroundColor: '#fff',
-},
-// NEW: lets the Address field span the full row width instead of sharing
-// it with a second column.
-fullWidthCol: {
-  flex: 1,
-  width: '100%',
-},
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  cardHeaderIconWrap: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: BLUE_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardHeaderIconWrapGreen: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: GREEN_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardHeaderText: {fontSize: 15, fontWeight: '800', color: TEXT_DARK},
+  viewAllRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  viewAllText: {color: BLUE, fontSize: 13, fontWeight: '700'},
+  divider: {height: 1, backgroundColor: BORDER, marginVertical: 14},
+
+  fieldIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: BLUE_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldIconWrapGreen: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: GREEN_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  infoRow: {flexDirection: 'row', marginBottom: 18},
+  infoCol: {flex: 1, flexDirection: 'row', gap: 10, alignItems: 'flex-start'},
+  infoTextCol: {flex: 1},
+  fullWidthCol: {flex: 1, width: '100%'},
+  infoLabel: {fontSize: 12, color: TEXT_GRAY, marginBottom: 3},
+  infoValue: {fontSize: 14.5, fontWeight: '700', color: TEXT_DARK},
+  statusRow: {flexDirection: 'row', alignItems: 'center', gap: 6},
+  statusDot: {width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN},
+
+  input: {
+    borderWidth: 1,
+    borderColor: BORDER,
+    borderRadius: 8,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    fontWeight: '600',
+    color: TEXT_DARK,
+    backgroundColor: '#fff',
+  },
+
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#FEE2E2',
+    backgroundColor: RED_LIGHT,
     marginHorizontal: 16,
-    marginTop: 12,
+    marginTop: 16,
     paddingVertical: 15,
     borderRadius: 14,
   },
-  logoutBtnText: {color: '#DC2626', fontSize: 14, fontWeight: '700'},
+  logoutBtnText: {color: RED, fontSize: 14, fontWeight: '700'},
 });

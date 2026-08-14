@@ -1,67 +1,140 @@
 import {StyleSheet} from 'react-native';
 
-export const NAVY = '#0E2A5E';
+export const NAVY = '#0E1B4D';
+export const BLUE = '#3B5BFF';
 export const GRAY = '#6B7280';
 export const BORDER = '#E2E4E9';
 export const GREEN = '#1E8F5F';
+export const REQUIRED = '#F0653A';
+export const BG = '#F2F4FC';
 
 export const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: '#fff'},
+  safeArea: {flex: 1, backgroundColor: BG},
   container: {padding: 20, paddingBottom: 40},
 
-  header: {alignItems: 'center', marginBottom: 12},
-  logoBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: NAVY,
+  // ---- Decorative background ----
+  topDecorWrap: {
+    position: 'absolute',
+    top: -50,
+    right: -70,
+    width: 260,
+    height: 260,
+  },
+  topDecorBlob: {
+    position: 'absolute',
+    width: 260,
+    height: 260,
+    borderRadius: 130,
+    backgroundColor: '#E1E6FB',
+    opacity: 0.6,
+  },
+  topDecorArcOuter: {
+    position: 'absolute',
+    top: 50,
+    left: -15,
+    width: 225,
+    height: 225,
+    borderRadius: 113,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.55)',
+  },
+  topDecorArcInner: {
+    position: 'absolute',
+    top: 90,
+    left: -35,
+    width: 245,
+    height: 245,
+    borderRadius: 123,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+  },
+  bottomDecorWrap: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 150,
+  },
+  bgWaveFront: {
+    position: 'absolute',
+    bottom: -170,
+    left: -30,
+    right: -30,
+    height: 220,
+    borderRadius: 999,
+    backgroundColor: '#E7EAFC',
+    opacity: 0.7,
+  },
+
+  // ---- Header ----
+  backBtn: {marginBottom: 6},
+  backArrow: {fontSize: 20, color: '#111'},
+  header: {alignItems: 'center', marginBottom: 14},
+  logo: {width: 190, height: 60},
+  brand: {color: GRAY, fontWeight: '500', fontSize: 13, marginTop: 2},
+
+  title: {fontSize: 24, fontWeight: '800', color: NAVY, textAlign: 'center'},
+  subtitle: {fontSize: 13.5, color: GRAY, textAlign: 'center', marginTop: 4, marginBottom: 26},
+
+  // ---- Stepper ----
+  stepperRow: {flexDirection: 'row', alignItems: 'flex-start', marginBottom: 24, paddingHorizontal: 4},
+  stepItem: {alignItems: 'center', width: 84},
+  stepCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#EEF0F8',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 6,
   },
-  logoText: {color: '#fff', fontWeight: 'bold', fontSize: 13},
-  brand: {color: NAVY, fontWeight: '700', fontSize: 15, letterSpacing: 1},
-
-  title: {fontSize: 20, fontWeight: '700', color: '#111', textAlign: 'center'},
-  subtitle: {fontSize: 12, color: GRAY, textAlign: 'center', marginBottom: 20},
-
-  stepperRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 20, paddingHorizontal: 4},
-  stepItem: {alignItems: 'center', width: 70},
-  stepCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#F1F2F5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
   stepCircleActive: {backgroundColor: NAVY},
   stepCircleDone: {backgroundColor: GREEN},
-  stepNum: {fontSize: 12, color: GRAY, fontWeight: '600'},
+  stepNum: {fontSize: 13, color: GRAY, fontWeight: '700'},
   stepNumActive: {color: '#fff'},
-  stepLabel: {fontSize: 9, color: GRAY, textAlign: 'center'},
-  stepLine: {flex: 1, height: 1, backgroundColor: BORDER, marginBottom: 16},
+  stepLabel: {fontSize: 11, color: GRAY, textAlign: 'center', fontWeight: '500'},
+  stepLabelActive: {color: NAVY, fontWeight: '700'},
+  stepLineWrap: {
+    flex: 1,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: BORDER,
+    overflow: 'hidden',
+    marginTop: 16,
+    marginHorizontal: 6,
+  },
+  stepLineFill: {height: '100%', backgroundColor: NAVY, borderRadius: 2},
   thumb: {width: 40, height: 40, borderRadius: 8},
 
   card: {
+    backgroundColor: '#fff',
+    borderRadius: 22,
+    padding: 20,
+    marginBottom: 22,
+    shadowColor: '#3949AB',
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    shadowOffset: {width: 0, height: 8},
+    elevation: 3,
+  },
+
+  label: {fontSize: 13, color: '#111827', fontWeight: '600', marginBottom: 8, marginTop: 14},
+  required: {color: REQUIRED},
+
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: BORDER,
     borderRadius: 14,
-    padding: 16,
-    marginBottom: 20,
-  },
-
-  label: {fontSize: 12, color: GRAY, marginBottom: 6, marginTop: 10},
-  input: {
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 10,
+    backgroundColor: '#fff',
     paddingHorizontal: 14,
-    height: 46,
-    fontSize: 14,
-    color: '#111',
+    height: 52,
+    gap: 10,
   },
+  inputField: {flex: 1, fontSize: 14, color: '#111827', height: '100%'},
+  inputPlaceholder: {flex: 1, fontSize: 14, color: '#9CA3AF'},
+
   row3: {flexDirection: 'row', gap: 12},
   col: {flex: 1},
 
@@ -111,23 +184,31 @@ export const styles = StyleSheet.create({
   agreeLink: {color: NAVY, fontWeight: '700'},
 
   navRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'},
-  prevBtn: {paddingVertical: 12, paddingHorizontal: 4},
-  prevBtnText: {fontSize: 13, color: GRAY, fontWeight: '600'},
+  prevBtn: {flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 12, paddingHorizontal: 4},
+  prevBtnText: {fontSize: 13.5, color: BLUE, fontWeight: '700'},
   nextBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     backgroundColor: NAVY,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 22,
+    borderRadius: 12,
+    shadowColor: NAVY,
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: {width: 0, height: 6},
+    elevation: 4,
   },
   nextBtnDisabled: {opacity: 0.4},
-  nextBtnText: {color: '#fff', fontWeight: '700', fontSize: 13},
+  nextBtnText: {color: '#fff', fontWeight: '700', fontSize: 14},
 
   // ---------- Dropdown (State / Branch) ----------
   dropdownList: {
     borderWidth: 1,
     borderColor: BORDER,
-    borderRadius: 8,
-    marginTop: 4,
+    borderRadius: 12,
+    marginTop: 6,
     overflow: 'hidden',
     backgroundColor: '#fff',
   },

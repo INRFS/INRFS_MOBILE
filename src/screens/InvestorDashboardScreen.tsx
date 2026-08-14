@@ -1,9 +1,18 @@
 import React from 'react';
-import {View, Text, TouchableOpacity,  ScrollView, Image, Alert} from 'react-native';
+import {View, Text, TouchableOpacity, ScrollView, Image, Alert} from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
+import Svg, {Circle} from 'react-native-svg'; // npm install react-native-svg
 import BottomTabBar from '../components/BottomTabBar';
-import {styles} from '../styles/InvestorDashboardScreen.styles';
+import {
+  styles,
+  PRIMARY,
+  GREEN,
+  PURPLE,
+  ORANGE,
+  RED,
+} from '../styles/InvestorDashboardScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+
 // Replace with real investor data (from context/API) once available — matches
 // the same fields the web Investor Dashboard reads from the shared backend.
 const investor = {
@@ -23,13 +32,15 @@ const investor = {
   nextMaturityBondId: 'BND-2025-001',
 };
 
+const notificationCount = 3;
+
 const chartBars = [34, 46, 58, 66, 52, 74, 60];
 
 const portfolioDistribution = [
   {label: 'Fixed Deposit', pct: 45, color: '#0E2A5E'},
-  {label: 'Recurring', pct: 28, color: '#1955F0'},
-  {label: 'Short Term', pct: 17, color: '#16A34A'},
-  {label: 'Long Term', pct: 10, color: '#F59E0B'},
+  {label: 'Recurring', pct: 28, color: PURPLE},
+  {label: 'Short Term', pct: 17, color: GREEN},
+  {label: 'Long Term', pct: 10, color: ORANGE},
 ];
 
 const recentInvestments = [
@@ -37,37 +48,61 @@ const recentInvestments = [
   {bondNumber: 'BND-2024-087', amount: 300000, rate: '11% p.a.', investedOn: '10 Jun 2024', status: 'Matured'},
 ];
 
+// Each notification picks an accent (icon color + light bg) instead of every
+// row defaulting to green.
 const notifications = [
-  {title: 'Investment Approved', time: '2 hours ago', icon: 'check-circle-outline'},
-  {title: 'Bond Generated', time: '2 hours ago', icon: 'file-document-outline'},
-  {title: 'Interest Credited', time: '5 days ago', icon: 'cash-multiple'},
-];
+  {title: 'Investment Approved', time: '2 hours ago', icon: 'shield-check-outline', accent: 'green'},
+  {title: 'Bond Generated', time: '2 hours ago', icon: 'file-document-outline', accent: 'blue'},
+  {title: 'Interest Credited', time: '5 days ago', icon: 'chart-line', accent: 'purple'},
+] as const;
 
-const transactions = [
-  {
-    title: 'Monthly Interest',
-    date: 'Today, 10:45 AM',
-    amount: '+₹8,000.00',
-    status: 'Settled',
-    credit: true,
-  },
-  {
-    title: 'New Investment',
-    date: 'Yesterday',
-    amount: '-₹2,00,000.00',
-    status: 'BND-2025-001',
-    credit: false,
-  },
-  {
-    title: 'Interest Credit',
-    date: '24 Oct 2023',
-    amount: '+₹8,000.00',
-    status: 'Settled',
-    credit: true,
-  },
-];
+const NOTIF_ACCENTS: Record<string, {wrap: any; color: string}> = {
+  green: {wrap: styles.txIconGreen, color: GREEN},
+  blue: {wrap: styles.txIconBlue, color: PRIMARY},
+  purple: {wrap: styles.txIconPurple, color: PURPLE},
+  orange: {wrap: styles.txIconOrange, color: ORANGE},
+};
+
+// Left-rail accent color per stat card, in the same order they're rendered.
+const STAT_ACCENTS = [PRIMARY, GREEN, PURPLE, ORANGE, PRIMARY, RED];
+
+// Top-rail accent color per quick action, in the same order they're rendered.
+const QUICK_ACTION_ACCENTS = [PRIMARY, GREEN, PURPLE, ORANGE];
 
 const formatINR = (n: number) => '₹' + n.toLocaleString('en-IN');
+
+// Simple SVG donut built from stroke-dasharray segments — no chart library needed.
+const Donut = ({data, size = 96, strokeWidth = 14}: {data: typeof portfolioDistribution; size?: number; strokeWidth?: number}) => {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  let offsetAcc = 0;
+
+  return (
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+      {data.map((d, i) => {
+        const dash = (d.pct / 100) * circumference;
+        const segment = (
+          <Circle
+            key={d.label}
+            cx={size / 2}
+            cy={size / 2}
+            r={radius}
+            stroke={d.color}
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${dash} ${circumference - dash}`}
+            strokeDashoffset={-offsetAcc}
+            strokeLinecap="butt"
+            fill="none"
+            rotation={-90}
+            origin={`${size / 2}, ${size / 2}`}
+          />
+        );
+        offsetAcc += dash;
+        return segment;
+      })}
+    </Svg>
+  );
+};
 
 const InvestorDashboardScreen = ({navigation, route}: any) => {
   const {investorId} = route?.params || {};
@@ -77,15 +112,22 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
       <View style={styles.header}>
         <View style={styles.headerBrand}>
           <View style={styles.brandIconWrap}>
-            <Icon name="bank" size={16} color="#fff" />
+            <Icon name="bank" size={18} color="#fff" />
           </View>
-          <Text style={styles.headerTitle}>INRFS</Text>
+          <View style={styles.headerTitleWrap}>
+            <Text style={styles.headerTitle}>INRFS</Text>
+            <Text style={styles.headerSubtitle}>Financer Platform</Text>
+          </View>
         </View>
         <View style={styles.headerActions}>
-         <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('InvestorNotifications')}>
-  <Icon name="bell-outline" size={20} color="#111827" />
-  <View style={styles.bellDot} />
-</TouchableOpacity>
+          <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('InvestorNotifications')}>
+            <Icon name="bell-outline" size={22} color="#111827" />
+            {notificationCount > 0 && (
+              <View style={styles.bellBadge}>
+                <Text style={styles.bellBadgeText}>{notificationCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
           <Image source={{uri: 'https://i.pravatar.cc/64'}} style={styles.avatar} />
         </View>
       </View>
@@ -95,56 +137,56 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
         <Text style={styles.greetingTitle}>Good morning, {investor.firstName}! 👋</Text>
         <Text style={styles.greetingSubtitle}>Here's your investment portfolio overview for today</Text>
 
-        {/* Stat grid — matches the 6 web dashboard cards */}
+        {/* Stat grid — matches the 6 web dashboard cards, each with a colored left rail */}
         <View style={styles.statGrid}>
-          <View style={styles.statGridCard}>
+          <View style={[styles.statGridCard, {borderLeftColor: STAT_ACCENTS[0]}]}>
             <View style={[styles.statGridIconWrap, {backgroundColor: '#DBEAFE'}]}>
-              <Icon name="currency-inr" size={16} color="#1955F0" />
+              <Icon name="currency-inr" size={16} color={PRIMARY} />
             </View>
             <Text style={styles.statGridLabel}>TOTAL INVESTED</Text>
             <Text style={styles.statGridValue}>{formatINR(investor.totalInvested)}</Text>
             <Text style={styles.statGridDeltaGood}>↑ {investor.totalInvestedDelta}</Text>
           </View>
 
-          <View style={styles.statGridCard}>
+          <View style={[styles.statGridCard, {borderLeftColor: STAT_ACCENTS[1]}]}>
             <View style={[styles.statGridIconWrap, {backgroundColor: '#DCFCE7'}]}>
-              <Icon name="trending-up" size={16} color="#16A34A" />
+              <Icon name="trending-up" size={16} color={GREEN} />
             </View>
             <Text style={styles.statGridLabel}>INTEREST EARNED</Text>
             <Text style={styles.statGridValue}>{formatINR(investor.interestEarned)}</Text>
             <Text style={styles.statGridDeltaGood}>↑ {investor.interestEarnedDelta}</Text>
           </View>
 
-          <View style={styles.statGridCard}>
+          <View style={[styles.statGridCard, {borderLeftColor: STAT_ACCENTS[2]}]}>
             <View style={[styles.statGridIconWrap, {backgroundColor: '#EDE9FE'}]}>
-              <Icon name="medal-outline" size={16} color="#7C3AED" />
+              <Icon name="medal-outline" size={16} color={PURPLE} />
             </View>
             <Text style={styles.statGridLabel}>ACTIVE BONDS</Text>
             <Text style={styles.statGridValue}>{investor.activeBondsCount}</Text>
             <Text style={styles.statGridDeltaNeutral}>{investor.activeBondsDelta}</Text>
           </View>
 
-          <View style={styles.statGridCard}>
-            <View style={[styles.statGridIconWrap, {backgroundColor: '#DCFCE7'}]}>
-              <Icon name="chart-line" size={16} color="#16A34A" />
+          <View style={[styles.statGridCard, {borderLeftColor: STAT_ACCENTS[3]}]}>
+            <View style={[styles.statGridIconWrap, {backgroundColor: '#FEF3C7'}]}>
+              <Icon name="chart-line" size={16} color={ORANGE} />
             </View>
             <Text style={styles.statGridLabel}>MONTHLY PAYOUT</Text>
             <Text style={styles.statGridValue}>{formatINR(investor.monthlyPayout)}</Text>
             <Text style={styles.statGridDeltaGood}>↑ {investor.monthlyPayoutDelta}</Text>
           </View>
 
-          <View style={styles.statGridCard}>
+          <View style={[styles.statGridCard, {borderLeftColor: STAT_ACCENTS[4]}]}>
             <View style={[styles.statGridIconWrap, {backgroundColor: '#DBEAFE'}]}>
-              <Icon name="chart-bar" size={16} color="#1955F0" />
+              <Icon name="chart-bar" size={16} color={PRIMARY} />
             </View>
             <Text style={styles.statGridLabel}>PORTFOLIO VALUE</Text>
             <Text style={styles.statGridValue}>{formatINR(investor.portfolioValue)}</Text>
             <Text style={styles.statGridDeltaGood}>↑ {investor.portfolioValueDelta}</Text>
           </View>
 
-          <View style={styles.statGridCard}>
-            <View style={[styles.statGridIconWrap, {backgroundColor: '#FEF3C7'}]}>
-              <Icon name="calendar-clock-outline" size={16} color="#B45309" />
+          <View style={[styles.statGridCard, {borderLeftColor: STAT_ACCENTS[5]}]}>
+            <View style={[styles.statGridIconWrap, {backgroundColor: '#FEE2E2'}]}>
+              <Icon name="calendar-clock-outline" size={16} color={RED} />
             </View>
             <Text style={styles.statGridLabel}>NEXT MATURITY</Text>
             <Text style={styles.statGridValue}>{investor.nextMaturityDays} Days</Text>
@@ -159,7 +201,7 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
           <View style={styles.portfolioTopRow}>
             <Text style={styles.portfolioLabel}>INVESTMENT GROWTH</Text>
             <View style={styles.trendBadge}>
-              <Icon name="trending-up" size={12} color="#16A34A" />
+              <Icon name="trending-up" size={12} color={GREEN} />
               <Text style={styles.trendText}>+12.5%</Text>
             </View>
           </View>
@@ -192,27 +234,31 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
           </View>
         </View>
 
-        {/* Portfolio Distribution */}
+        {/* Portfolio Distribution — donut + legend */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Portfolio Distribution</Text>
         </View>
         <View style={styles.distributionCard}>
-          {portfolioDistribution.map(d => (
-            <View key={d.label} style={styles.distributionRow}>
-              <View style={styles.distributionLabelRow}>
-                <View style={{flexDirection: 'row', alignItems: 'center', flex: 1}}>
-                  <View style={[styles.distributionDot, {backgroundColor: d.color}]} />
-                  <Text style={styles.distributionLabel}>{d.label}</Text>
-                </View>
-                <Text style={styles.distributionPct}>{d.pct}%</Text>
-              </View>
-              <View style={styles.distributionBarTrackWrap}>
-                <View style={styles.distributionBarTrack}>
-                  <View style={[styles.distributionBarFill, {width: `${d.pct}%`, backgroundColor: d.color}]} />
-                </View>
-              </View>
+          <View style={styles.distributionBody}>
+            <View style={styles.donutWrap}>
+              <Donut data={portfolioDistribution} />
             </View>
-          ))}
+            <View style={styles.legendWrap}>
+              {portfolioDistribution.map(d => (
+                <View key={d.label} style={styles.legendRow}>
+                  <View style={styles.legendLabelRow}>
+                    <View style={[styles.legendDot, {backgroundColor: d.color}]} />
+                    <Text style={styles.legendLabel}>{d.label}</Text>
+                  </View>
+                  <Text style={styles.legendPct}>{d.pct}%</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+          <TouchableOpacity style={styles.viewDetailsRow}>
+            <Text style={styles.viewDetailsText}>View Details</Text>
+            <Icon name="chevron-right" size={16} color={PRIMARY} />
+          </TouchableOpacity>
         </View>
 
         {/* Recent Investments (Bond Number / Amount / Rate / Invested On / Status) */}
@@ -253,82 +299,61 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
           </View>
         ))}
 
-        {/* Quick Actions */}
+        {/* Quick Actions — each card gets a colored top rail */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
         </View>
         <View style={styles.quickActionsGrid}>
           <TouchableOpacity
-            style={styles.quickActionBtn}
+            style={[styles.quickActionBtn, {borderTopColor: QUICK_ACTION_ACCENTS[0]}]}
             onPress={() => navigation.navigate('InvestNow', {investorId})}>
-            <Icon name="plus-circle-outline" size={18} color="#1955F0" />
+            <Icon name="crosshairs-gps" size={18} color={PRIMARY} />
             <Text style={styles.quickActionLabel}>Invest Now</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.quickActionBtn}
+            style={[styles.quickActionBtn, {borderTopColor: QUICK_ACTION_ACCENTS[1]}]}
             onPress={() => navigation.navigate('MyInvestments', {investorId})}>
-            <Icon name="briefcase-outline" size={18} color="#1955F0" />
+            <Icon name="briefcase-outline" size={18} color={GREEN} />
             <Text style={styles.quickActionLabel}>My Bonds</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={styles.quickActionBtn}
+            style={[styles.quickActionBtn, {borderTopColor: QUICK_ACTION_ACCENTS[2]}]}
             onPress={() => Alert.alert('Download Bond Certificate', 'Wire this up once the bond PDF endpoint is available.')}>
-            <Icon name="download-outline" size={18} color="#1955F0" />
+            <Icon name="download-outline" size={18} color={PURPLE} />
             <Text style={styles.quickActionLabel}>Download Bond{'\n'}Certificate</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickActionBtn} onPress={() => navigation.navigate('Profile')}>
-            <Icon name="account-edit-outline" size={18} color="#1955F0" />
+          <TouchableOpacity
+            style={[styles.quickActionBtn, {borderTopColor: QUICK_ACTION_ACCENTS[3]}]}
+            onPress={() => navigation.navigate('Profile')}>
+            <Icon name="account-edit-outline" size={18} color={ORANGE} />
             <Text style={styles.quickActionLabel}>Update Profile</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Recent Notifications */}
+        {/* Recent Notifications — each row gets its own accent color */}
         <View style={styles.sectionHeaderRow}>
           <Text style={styles.sectionTitle}>Recent Notifications</Text>
-        </View>
-        <View style={styles.txCard}>
-          {notifications.map((n, i) => (
-            <View key={n.title} style={[styles.txRow, i !== notifications.length - 1 && styles.txRowBorder]}>
-              <View style={[styles.txIconWrap, styles.txIconCredit]}>
-                <Icon name={n.icon} size={16} color="#16A34A" />
-              </View>
-              <View style={styles.txTitleWrap}>
-                <Text style={styles.txTitle}>{n.title}</Text>
-                <Text style={styles.txDate}>{n.time}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Recent Transactions (unchanged, kept as-is) */}
-        {/* <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Recent Transactions</Text>
-          <TouchableOpacity>
-            <Text style={styles.viewAllLink}>See History</Text>
+          <TouchableOpacity onPress={() => navigation.navigate('InvestorNotifications')}>
+            <Text style={styles.viewAllLink}>View All</Text>
           </TouchableOpacity>
         </View>
-
         <View style={styles.txCard}>
-          {transactions.map((tx, i) => (
-            <View key={i} style={[styles.txRow, i !== transactions.length - 1 && styles.txRowBorder]}>
-              <View style={[styles.txIconWrap, tx.credit ? styles.txIconCredit : styles.txIconDebit]}>
-                <Icon
-                  name={tx.credit ? 'arrow-bottom-left' : 'arrow-top-right'}
-                  size={16}
-                  color={tx.credit ? '#16A34A' : '#374151'}
-                />
+          {notifications.map((n, i) => {
+            const accent = NOTIF_ACCENTS[n.accent];
+            return (
+              <View key={n.title} style={[styles.txRow, i !== notifications.length - 1 && styles.txRowBorder]}>
+                <View style={[styles.txIconWrap, accent.wrap]}>
+                  <Icon name={n.icon} size={16} color={accent.color} />
+                </View>
+                <View style={styles.txTitleWrap}>
+                  <Text style={styles.txTitle}>{n.title}</Text>
+                  <Text style={styles.txDate}>{n.time}</Text>
+                </View>
+                <Icon name="chevron-right" size={18} style={styles.txChevron} />
               </View>
-              <View style={styles.txTitleWrap}>
-                <Text style={styles.txTitle}>{tx.title}</Text>
-                <Text style={styles.txDate}>{tx.date}</Text>
-              </View>
-              <View style={{alignItems: 'flex-end'}}>
-                <Text style={[styles.txAmount, tx.credit ? styles.txAmountCredit : null]}>{tx.amount}</Text>
-                <Text style={styles.txStatus}>{tx.status}</Text>
-              </View>
-            </View>
-          ))}
-        </View> */}
+            );
+          })}
+        </View>
       </ScrollView>
 
       <BottomTabBar active="Home" navigation={navigation} investorId={investorId} />
