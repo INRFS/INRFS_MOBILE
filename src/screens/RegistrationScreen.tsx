@@ -9,6 +9,7 @@ import {
   Modal,
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useAppData} from '../navigation/AppNavigator';
 import {styles} from '../styles/RegistrartionScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -20,6 +21,22 @@ const STATE_OPTIONS = ['Telangana', 'Andhra Pradesh', 'Chennai'];
 
 // Matches the branches currently offered on the web portal.
 const BRANCH_OPTIONS = ['Vijayawada', 'Hyderabad', 'Bengaluru', 'Chennai'];
+
+// Soft blurred blob with layered ring outlines, top-right corner —
+// plain Views only, no native SVG dependency required.
+const TopRightDecor = () => (
+  <View pointerEvents="none" style={styles.topDecorWrap}>
+    <View style={styles.topDecorBlob} />
+    <View style={styles.topDecorArcOuter} />
+    <View style={styles.topDecorArcInner} />
+  </View>
+);
+
+const BottomDecor = () => (
+  <View pointerEvents="none" style={styles.bottomDecorWrap}>
+    <View style={styles.bgWaveFront} />
+  </View>
+);
 
 const RegistrationScreen = ({navigation}: any) => {
   const {registerInvestor} = useAppData();
@@ -105,12 +122,17 @@ const RegistrationScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <TopRightDecor />
+      <BottomDecor />
+
       <ScrollView contentContainerStyle={styles.container}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backArrow}>←</Text>
+        </TouchableOpacity>
+
         <View style={styles.header}>
-          <View style={styles.logoBox}>
-            <Text style={styles.logoText}>IN</Text>
-          </View>
-          <Text style={styles.brand}>INRFS</Text>
+          <Image source={require('../assets/logo.jpeg')} style={styles.logo} resizeMode="contain" />
+          <Text style={styles.brand}>Financer Platform</Text>
         </View>
 
         <Text style={styles.title}>Investor registration</Text>
@@ -138,9 +160,20 @@ const RegistrationScreen = ({navigation}: any) => {
                       {done ? '✓' : num}
                     </Text>
                   </View>
-                  <Text style={styles.stepLabel}>{label}</Text>
+                  <Text style={[styles.stepLabel, active && styles.stepLabelActive]}>
+                    {label}
+                  </Text>
                 </View>
-                {idx < steps.length - 1 && <View style={styles.stepLine} />}
+                {idx < steps.length - 1 && (
+                  <View style={styles.stepLineWrap}>
+                    <View
+                      style={[
+                        styles.stepLineFill,
+                        {width: step > num ? '100%' : '35%'},
+                      ]}
+                    />
+                  </View>
+                )}
               </React.Fragment>
             );
           })}
@@ -148,92 +181,140 @@ const RegistrationScreen = ({navigation}: any) => {
 
         {step === 1 && (
           <View style={styles.card}>
-            <Text style={styles.label}>Full name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="As per Aadhaar card"
-              placeholderTextColor="#9CA3AF"
-              value={form.fullName}
-              onChangeText={v => update('fullName', v)}
-            />
-            <Text style={styles.label}>Mobile number *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="+91 XXXXX XXXXX"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="phone-pad"
-              value={form.mobile}
-              onChangeText={v => update('mobile', v)}
-            />
-            <Text style={styles.label}>Email address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="your@email.com"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              value={form.email}
-              onChangeText={v => update('email', v)}
-            />
-            <Text style={styles.label}>Date of birth *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="dd-mm-yyyy"
-              placeholderTextColor="#9CA3AF"
-              value={form.dob}
-              onChangeText={v => update('dob', v)}
-            />
-            <Text style={styles.label}>Aadhaar number *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="XXXX XXXX XXXX"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="number-pad"
-              value={form.aadhaar}
-              onChangeText={v => update('aadhaar', v)}
-            />
+            <Text style={styles.label}>
+              Full name <Text style={styles.required}>*</Text>
+            </Text>
+            <View style={styles.inputWrapper}>
+              <Icon name="account-outline" size={18} color="#3B5BFF" />
+              <TextInput
+                style={styles.inputField}
+                placeholder="As per Aadhaar card"
+                placeholderTextColor="#9CA3AF"
+                value={form.fullName}
+                onChangeText={v => update('fullName', v)}
+              />
+            </View>
 
-            <Text style={styles.label}>Address</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Street address"
-              placeholderTextColor="#9CA3AF"
-              value={form.address}
-              onChangeText={v => update('address', v)}
-            />
+            <Text style={styles.label}>
+              Mobile number <Text style={styles.required}>*</Text>
+            </Text>
+            <View style={styles.inputWrapper}>
+              <Icon name="phone-outline" size={18} color="#3B5BFF" />
+              <TextInput
+                style={styles.inputField}
+                placeholder="+91 XXXXX XXXXX"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="phone-pad"
+                value={form.mobile}
+                onChangeText={v => update('mobile', v)}
+              />
+            </View>
+
+            <Text style={styles.label}>Email address</Text>
+            <View style={styles.inputWrapper}>
+              <Icon name="email-outline" size={18} color="#3B5BFF" />
+              <TextInput
+                style={styles.inputField}
+                placeholder="your@email.com"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="email-address"
+                value={form.email}
+                onChangeText={v => update('email', v)}
+              />
+            </View>
+
+            <Text style={styles.label}>
+              Date of birth <Text style={styles.required}>*</Text>
+            </Text>
+            <View style={styles.inputWrapper}>
+              <Icon name="calendar-blank-outline" size={18} color="#3B5BFF" />
+              <TextInput
+                style={styles.inputField}
+                placeholder="dd-mm-yyyy"
+                placeholderTextColor="#9CA3AF"
+                value={form.dob}
+                onChangeText={v => update('dob', v)}
+              />
+              <Icon name="calendar-month-outline" size={18} color="#9CA3AF" />
+            </View>
+
+            <Text style={styles.label}>
+              Aadhaar number <Text style={styles.required}>*</Text>
+            </Text>
+            <View style={styles.inputWrapper}>
+              <Icon name="card-account-details-outline" size={18} color="#3B5BFF" />
+              <TextInput
+                style={styles.inputField}
+                placeholder="XXXX XXXX XXXX"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
+                value={form.aadhaar}
+                onChangeText={v => update('aadhaar', v)}
+              />
+            </View>
+
+            <Text style={styles.label}>
+              Address <Text style={styles.required}>*</Text>
+            </Text>
+            <View style={styles.inputWrapper}>
+              <Icon name="map-marker-outline" size={18} color="#3B5BFF" />
+              <TextInput
+                style={styles.inputField}
+                placeholder="Street address"
+                placeholderTextColor="#9CA3AF"
+                value={form.address}
+                onChangeText={v => update('address', v)}
+              />
+            </View>
+
             <View style={styles.row3}>
               <View style={styles.col}>
-                <Text style={styles.label}>City</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="City"
-                  placeholderTextColor="#9CA3AF"
-                  value={form.city}
-                  onChangeText={v => update('city', v)}
-                />
+                <Text style={styles.label}>
+                  City <Text style={styles.required}>*</Text>
+                </Text>
+                <View style={styles.inputWrapper}>
+                  <Icon name="office-building-outline" size={18} color="#3B5BFF" />
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="City"
+                    placeholderTextColor="#9CA3AF"
+                    value={form.city}
+                    onChangeText={v => update('city', v)}
+                  />
+                </View>
               </View>
               <View style={styles.col}>
-                <Text style={styles.label}>PIN code</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="400001"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="number-pad"
-                  value={form.pin}
-                  onChangeText={v => update('pin', v)}
-                />
+                <Text style={styles.label}>
+                  PIN code <Text style={styles.required}>*</Text>
+                </Text>
+                <View style={styles.inputWrapper}>
+                  <Icon name="numeric" size={18} color="#3B5BFF" />
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="400001"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    value={form.pin}
+                    onChangeText={v => update('pin', v)}
+                  />
+                </View>
               </View>
             </View>
 
-            <Text style={styles.label}>State</Text>
+            <Text style={styles.label}>
+              State <Text style={styles.required}>*</Text>
+            </Text>
             <TouchableOpacity
-              style={styles.input}
+              style={styles.inputWrapper}
               onPress={() => {
                 setStateDropdownOpen(prev => !prev);
                 setBranchDropdownOpen(false);
               }}>
-              <Text style={{color: form.state ? '#111827' : '#9CA3AF'}}>
+              <Icon name="map-outline" size={18} color="#3B5BFF" />
+              <Text style={form.state ? styles.inputField : styles.inputPlaceholder}>
                 {form.state || 'Select state'}
               </Text>
+              <Icon name="chevron-down" size={20} color="#9CA3AF" />
             </TouchableOpacity>
             {stateDropdownOpen && (
               <View style={styles.dropdownList}>
@@ -254,16 +335,20 @@ const RegistrationScreen = ({navigation}: any) => {
               </View>
             )}
 
-            <Text style={styles.label}>Branch *</Text>
+            <Text style={styles.label}>
+              Branch <Text style={styles.required}>*</Text>
+            </Text>
             <TouchableOpacity
-              style={styles.input}
+              style={styles.inputWrapper}
               onPress={() => {
                 setBranchDropdownOpen(prev => !prev);
                 setStateDropdownOpen(false);
               }}>
-              <Text style={{color: form.branch ? '#111827' : '#9CA3AF'}}>
+              <Icon name="bank-outline" size={18} color="#3B5BFF" />
+              <Text style={form.branch ? styles.inputField : styles.inputPlaceholder}>
                 {form.branch || 'Select branch'}
               </Text>
+              <Icon name="chevron-down" size={20} color="#9CA3AF" />
             </TouchableOpacity>
             {branchDropdownOpen && (
               <View style={styles.dropdownList}>
@@ -326,24 +411,28 @@ const RegistrationScreen = ({navigation}: any) => {
         <View style={styles.navRow}>
           {step > 1 ? (
             <TouchableOpacity style={styles.prevBtn} onPress={() => setStep(step - 1)}>
-              <Text style={styles.prevBtnText}>← Previous</Text>
+              <Icon name="arrow-left" size={16} color="#3B5BFF" />
+              <Text style={styles.prevBtnText}>Previous</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.prevBtn} onPress={() => navigation.goBack()}>
-              <Text style={styles.prevBtnText}>← Back to login</Text>
+              <Icon name="arrow-left" size={16} color="#3B5BFF" />
+              <Text style={styles.prevBtnText}>Back to login</Text>
             </TouchableOpacity>
           )}
 
           {step < 2 ? (
             <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(step + 1)}>
-              <Text style={styles.nextBtnText}>Next step →</Text>
+              <Text style={styles.nextBtnText}>Next step</Text>
+              <Icon name="arrow-right" size={16} color="#fff" />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
               style={[styles.nextBtn, !agreed && styles.nextBtnDisabled]}
               disabled={!agreed}
               onPress={handleSubmit}>
-              <Text style={styles.nextBtnText}>Submit application →</Text>
+              <Text style={styles.nextBtnText}>Submit application</Text>
+              <Icon name="arrow-right" size={16} color="#fff" />
             </TouchableOpacity>
           )}
         </View>
