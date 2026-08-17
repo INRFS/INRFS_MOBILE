@@ -15,6 +15,10 @@ export const ORANGE_BG = '#FEF3C7';
 export const BLUE_BG = '#DBEAFE';
 export const RED = '#EF4444';
 export const RED_BG = '#FEE2E2';
+// Hero banner gradient endpoints (used with react-native-linear-gradient if
+// available; HERO_FROM alone is used as a flat fallback background).
+export const HERO_FROM = '#4C3FE0';
+export const HERO_TO = '#7C3AED';
 
 export const styles = StyleSheet.create({
   safeArea: {flex: 1, backgroundColor: BG},
@@ -43,7 +47,6 @@ export const styles = StyleSheet.create({
   headerSubtitle: {fontSize: 11, color: GRAY, fontWeight: '500', marginTop: 1},
   headerActions: {flexDirection: 'row', alignItems: 'center', gap: 16},
 
-  // Notification bell with numbered badge (replaces the old plain dot)
   bellWrap: {position: 'relative', padding: 2},
   bellBadge: {
     position: 'absolute',
@@ -63,21 +66,50 @@ export const styles = StyleSheet.create({
 
   avatar: {width: 34, height: 34, borderRadius: 17},
 
-  container: {paddingBottom: 110, paddingTop: 54},
+  container: {paddingHorizontal: 16, paddingBottom: 110, paddingTop: 16},
 
-  greetingTitle: {fontSize: 19, fontWeight: '800', color: '#111827', marginBottom: 2},
-  greetingSubtitle: {fontSize: 12.5, color: GRAY, marginBottom: 16},
+  // ---- Hero: greeting + total portfolio value banner ----
+  heroCard: {
+    backgroundColor: HERO_TO,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
+    overflow: 'hidden',
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  heroTitle: {fontSize: 19, fontWeight: '800', color: '#fff', marginBottom: 3},
+  heroSubtitle: {fontSize: 12.5, color: 'rgba(255,255,255,0.8)', marginBottom: 16, maxWidth: '80%'},
+  heroBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroLabel: {color: 'rgba(255,255,255,0.7)', fontSize: 10.5, fontWeight: '700', letterSpacing: 0.6, marginBottom: 4},
+  heroValue: {color: '#fff', fontSize: 28, fontWeight: '800', marginBottom: 6},
+  heroDeltaRow: {flexDirection: 'row', alignItems: 'center', gap: 4},
+  heroDeltaText: {color: '#D9F99D', fontSize: 12, fontWeight: '700'},
 
-  statGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 14},
-  // Base card style. Each card additionally gets `borderLeftColor` set inline
-  // per-stat (see STAT_ACCENTS in the screen) to match the colored left rail
-  // in the design.
+  // Stat grid — 4 cards, each with an icon chip + small sparkline
+  statGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
+    marginBottom: 16,
+  },
   statGridCard: {
     width: '48%',
+    minHeight: 130,
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
-    borderLeftWidth: 4,
     borderRadius: 14,
     padding: 12,
   },
@@ -91,14 +123,16 @@ export const styles = StyleSheet.create({
   },
   statGridLabel: {fontSize: 10, color: GRAY, fontWeight: '700', letterSpacing: 0.4, marginBottom: 4},
   statGridValue: {fontSize: 16, fontWeight: '800', color: '#111827', marginBottom: 4},
-  statGridDeltaGood: {fontSize: 10.5, color: GREEN, fontWeight: '600'},
-  statGridDeltaNeutral: {fontSize: 10.5, color: GRAY, fontWeight: '600'},
+  statGridDeltaGood: {fontSize: 10.5, color: GREEN, fontWeight: '600', marginBottom: 6},
+  statGridDeltaNeutral: {fontSize: 10.5, color: GRAY, fontWeight: '600', marginBottom: 6},
+  statGridSparkWrap: {marginTop: 'auto', height: 24},
 
+  // ---- Investment Growth: line chart card ----
   portfolioCard: {
     backgroundColor: NAVY,
     borderRadius: 18,
     padding: 18,
-    marginBottom: 14,
+    marginBottom: 16,
   },
   portfolioTopRow: {
     flexDirection: 'row',
@@ -122,21 +156,11 @@ export const styles = StyleSheet.create({
     borderRadius: 20,
   },
   trendText: {color: GREEN, fontSize: 11, fontWeight: '700'},
-  portfolioValue: {color: '#fff', fontSize: 28, fontWeight: '800', marginBottom: 14},
+  portfolioValue: {color: '#fff', fontSize: 26, fontWeight: '800', marginBottom: 10},
 
-  chartRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 6,
-    height: 60,
-    marginBottom: 18,
-  },
-  chartBar: {
-    flex: 1,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    borderRadius: 4,
-  },
-  chartBarHighlight: {backgroundColor: 'rgba(255,255,255,0.65)'},
+  lineChartWrap: {marginBottom: 4},
+  lineChartMonthRow: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 18, paddingHorizontal: 2},
+  lineChartMonthText: {fontSize: 10.5, color: 'rgba(255,255,255,0.5)', fontWeight: '600'},
 
   portfolioBtnRow: {flexDirection: 'row', gap: 10},
   investBtn: {
@@ -164,18 +188,6 @@ export const styles = StyleSheet.create({
   },
   withdrawBtnText: {color: '#fff', fontWeight: '700', fontSize: 14},
 
-  statRow: {flexDirection: 'row', gap: 12, marginBottom: 20},
-  statCard: {
-    flex: 1,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 14,
-    padding: 14,
-  },
-  statLabel: {color: GRAY, fontSize: 12, marginTop: 8, marginBottom: 4},
-  statValue: {color: '#111827', fontSize: 17, fontWeight: '800'},
-
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -186,7 +198,7 @@ export const styles = StyleSheet.create({
   sectionTitle: {fontSize: 16, fontWeight: '800', color: '#111827'},
   viewAllLink: {color: PRIMARY, fontSize: 13, fontWeight: '700'},
 
-  // ---- Portfolio Distribution: donut + legend (replaces the bar-list card) ----
+  // ---- Portfolio Distribution: donut with center label + legend w/ amounts ----
   distributionCard: {
     backgroundColor: '#fff',
     borderWidth: 1,
@@ -196,13 +208,22 @@ export const styles = StyleSheet.create({
     marginBottom: 20,
   },
   distributionBody: {flexDirection: 'row', alignItems: 'center', gap: 16},
-  donutWrap: {alignItems: 'center', justifyContent: 'center'},
+  donutWrap: {alignItems: 'center', justifyContent: 'center', position: 'relative'},
+  donutCenterWrap: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutCenterValue: {fontSize: 11, fontWeight: '800', color: '#111827', textAlign: 'center'},
+  donutCenterLabel: {fontSize: 8.5, color: GRAY, fontWeight: '600', marginTop: 1},
   legendWrap: {flex: 1, gap: 10},
   legendRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between'},
   legendLabelRow: {flexDirection: 'row', alignItems: 'center', flex: 1},
   legendDot: {width: 8, height: 8, borderRadius: 4, marginRight: 8},
-  legendLabel: {fontSize: 13, fontWeight: '600', color: '#111827'},
-  legendPct: {fontSize: 12, fontWeight: '700', color: GRAY},
+  legendLabel: {fontSize: 12.5, fontWeight: '600', color: '#111827'},
+  legendValueWrap: {alignItems: 'flex-end'},
+  legendPct: {fontSize: 12, fontWeight: '700', color: '#111827'},
+  legendAmount: {fontSize: 10.5, color: GRAY, marginTop: 1},
   viewDetailsRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -214,20 +235,11 @@ export const styles = StyleSheet.create({
   },
   viewDetailsText: {color: PRIMARY, fontSize: 13, fontWeight: '700'},
 
-  // Legacy bar-style rows (kept in case the bar layout is needed elsewhere)
-  distributionRow: {marginBottom: 12},
-  distributionLabelRow: {flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4},
-  distributionDot: {width: 8, height: 8, borderRadius: 4, marginRight: 8},
-  distributionLabel: {fontSize: 13, fontWeight: '600', color: '#111827', flex: 1},
-  distributionPct: {fontSize: 12, fontWeight: '700', color: GRAY},
-  distributionBarTrackWrap: {marginTop: 4},
-  distributionBarTrack: {height: 6, borderRadius: 3, backgroundColor: '#F1F2F5', overflow: 'hidden'},
-  distributionBarFill: {height: 6, borderRadius: 3},
-
   bondCard: {
     backgroundColor: '#fff',
     borderWidth: 1,
     borderColor: BORDER,
+    borderLeftWidth: 4,
     borderRadius: 14,
     padding: 14,
     marginBottom: 12,
@@ -260,20 +272,30 @@ export const styles = StyleSheet.create({
   bondMetaValue: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   bondReturnValue: {fontSize: 13.5, fontWeight: '800', color: GREEN},
 
-  // Quick actions get a colored top rail (see QUICK_ACTION_ACCENTS in the screen)
-  quickActionsGrid: {flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20},
-  quickActionBtn: {
-    width: '48%',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderTopWidth: 3,
-    borderRadius: 14,
-    paddingVertical: 16,
-    alignItems: 'center',
-    gap: 8,
+  // ---- Quick Actions: solid colour tiles in a single row ----
+  quickActionsGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 20,
   },
-  quickActionLabel: {fontSize: 12.5, fontWeight: '700', color: '#111827', textAlign: 'center'},
+  quickActionBtn: {
+    flex: 1,
+    minHeight: 90,
+    borderRadius: 14,
+    padding: 10,
+    justifyContent: 'space-between',
+  },
+  quickActionIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  quickActionLabel: {fontSize: 11.5, fontWeight: '800', color: '#fff'},
+  quickActionSubLabel: {fontSize: 9.5, color: 'rgba(255,255,255,0.8)', marginTop: 2},
 
   txCard: {
     backgroundColor: '#fff',
@@ -297,19 +319,12 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
-  // Colored notification icon variants (each notification picks one inline
-  // via NOTIF_ACCENTS in the screen, instead of every icon using green)
   txIconGreen: {backgroundColor: GREEN_BG},
   txIconBlue: {backgroundColor: BLUE_BG},
   txIconPurple: {backgroundColor: PURPLE_BG},
   txIconOrange: {backgroundColor: ORANGE_BG},
-  txIconCredit: {backgroundColor: '#E8F8ED'},
-  txIconDebit: {backgroundColor: '#F0F1F4'},
   txTitleWrap: {flex: 1},
   txTitle: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   txDate: {fontSize: 11.5, color: GRAY, marginTop: 2},
-  txAmount: {fontSize: 13.5, fontWeight: '800', color: '#111827'},
-  txAmountCredit: {color: GREEN},
-  txStatus: {fontSize: 11, color: GRAY, marginTop: 2},
   txChevron: {color: GRAY},
 });
