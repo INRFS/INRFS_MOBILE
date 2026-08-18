@@ -1,140 +1,266 @@
-import {StyleSheet} from 'react-native';
+import {StyleSheet, Platform} from 'react-native';
+
+const PAGE_BG = '#F5F6FA';
+const CARD_BG = '#FFFFFF';
+const BORDER = '#EEF0F3';
+const TEXT_DARK = '#0F1424';
+const TEXT_GRAY = '#6B7280';
+const TEXT_MUTED = '#9CA3AF';
+const BLUE = '#2563EB';
+const BLUE_LIGHT = '#EEF2FF';
+const GREEN = '#059669';
+const GREEN_LIGHT = '#ECFDF5';
+const RED = '#DC2626';
+const RED_LIGHT = '#FEF2F2';
+const NAVY = '#0D1442';
+const NAVY_SOFT = '#1A2158';
+const GOLD = '#D4AF37';
+const GOLD_SOFT = 'rgba(212,175,55,0.16)';
+const ROLE_BG = 'rgba(16,185,129,0.18)';
+const ROLE_TEXT = '#4ADE80';
+
+const premiumShadow = Platform.select({
+  ios: {
+    shadowColor: '#0F1424',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+  },
+  android: {elevation: 4},
+});
+
+const heroShadow = Platform.select({
+  ios: {
+    shadowColor: NAVY,
+    shadowOffset: {width: 0, height: 12},
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+  },
+  android: {elevation: 8},
+});
 
 export const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F5F6FA',
-  },
-  container: {
-    paddingHorizontal: 16,
-    paddingBottom: 100,
-    paddingTop: 12,
-  },
+  safeArea: {flex: 1, backgroundColor: PAGE_BG},
+  scrollContent: {paddingBottom: 110, paddingTop: 8},
 
-  // Avatar section
-  avatarSection: {
+  // ---------- Hero / avatar card ----------
+  heroCard: {
+    backgroundColor: NAVY,
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 24,
+    padding: 24,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.06)',
+    ...heroShadow,
+  },
+  heroGlow: {
+    position: 'absolute',
+    top: -60,
+    right: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: NAVY_SOFT,
+    opacity: 0.6,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    gap: 16,
+  },
+  avatarRing: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 2,
+    borderColor: GOLD,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 3,
+  },
+  avatarWrap: {position: 'relative'},
+  avatarCircle: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    backgroundColor: '#4F5BD5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+  },
+  avatarInitial: {color: '#fff', fontSize: 26, fontWeight: '700', letterSpacing: 0.5},
+  avatarBadge: {
+    position: 'absolute',
+    right: -2,
+    bottom: -2,
+    width: 24,
+    height: 24,
     borderRadius: 12,
-    paddingVertical: 24,
+    backgroundColor: GREEN,
+    borderWidth: 2.5,
+    borderColor: NAVY,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarBadgeIcon: {color: '#fff', fontSize: 11, fontWeight: '800'},
+  heroTextCol: {flexShrink: 1},
+  name: {color: '#fff', fontSize: 20, fontWeight: '700', letterSpacing: 0.2},
+  email: {color: 'rgba(255,255,255,0.55)', fontSize: 13, marginTop: 3},
+  rolePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: ROLE_BG,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 12,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'rgba(74,222,128,0.25)',
+  },
+  rolePillText: {color: ROLE_TEXT, fontSize: 10.5, fontWeight: '800', letterSpacing: 0.8},
+  goldDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginTop: 20,
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: '#2563EB',
-    marginBottom: 12,
+  heroStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
-  name: {
-    fontSize: 17,
+  heroStatCol: {flex: 1},
+  heroStatLabel: {
+    color: 'rgba(255,255,255,0.4)',
+    fontSize: 10,
     fontWeight: '700',
-    color: '#111827',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
     marginBottom: 4,
   },
-  rolePill: {
-    backgroundColor: '#DCFCE7',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    marginTop: 6,
-  },
-  rolePillText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#16A34A',
-  },
+  heroStatValue: {color: '#fff', fontSize: 13.5, fontWeight: '700'},
 
-  // Account details card
+  // ---------- White info card ----------
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    backgroundColor: CARD_BG,
+    marginHorizontal: 16,
+    marginTop: 16,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: BORDER,
+    ...premiumShadow,
   },
-  cardHeader: {
+  cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
   },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
+  cardHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  editText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB',
+  cardHeaderIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 9,
+    backgroundColor: BLUE_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  label: {
+  cardHeaderIcon: {fontSize: 14, color: BLUE},
+  cardHeaderText: {fontSize: 15.5, fontWeight: '800', color: TEXT_DARK, letterSpacing: 0.1},
+  editBtn: {
+    backgroundColor: BLUE_LIGHT,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  editText: {color: BLUE, fontSize: 12.5, fontWeight: '700'},
+  divider: {height: 1, backgroundColor: BORDER, marginVertical: 16},
+
+  // ---------- Field rows ----------
+  fieldIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: BLUE_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldIconWrapGreen: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: GREEN_LIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldIconWrapGold: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: GOLD_SOFT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fieldIcon: {fontSize: 14},
+
+  infoRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+    marginBottom: 20,
+  },
+  infoTextCol: {flex: 1},
+  infoLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#9CA3AF',
-    marginTop: 12,
+    color: TEXT_MUTED,
     marginBottom: 4,
+    fontWeight: '700',
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  value: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-  },
+  infoValue: {fontSize: 15, fontWeight: '700', color: TEXT_DARK, letterSpacing: 0.1},
+  statusRow: {flexDirection: 'row', alignItems: 'center', gap: 7},
+  statusDot: {width: 8, height: 8, borderRadius: 4, backgroundColor: GREEN},
+
   input: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#111827',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    flex: 1,
+    borderWidth: 1.5,
+    borderColor: BLUE,
+    borderRadius: 10,
     paddingVertical: 8,
-  },
-
-  // Status pill (reused inside card)
-  statusPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#DCFCE7',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginTop: 2,
-  },
-  statusPillText: {
-    fontSize: 12,
+    paddingHorizontal: 12,
+    fontSize: 14.5,
     fontWeight: '600',
-    color: '#16A34A',
+    color: TEXT_DARK,
+    backgroundColor: BLUE_LIGHT,
   },
 
-  // Logout button
+  // ---------- Logout ----------
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#FEE2E2',
-    borderRadius: 10,
-    paddingVertical: 12,
-    marginTop: 4,
+    gap: 8,
+    backgroundColor: RED_LIGHT,
+    marginHorizontal: 16,
+    marginTop: 20,
+    paddingVertical: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(220,38,38,0.12)',
   },
-  logoutIcon: {
-    fontSize: 16,
-    color: '#DC2626',
-    marginRight: 8,
-  },
-  logoutText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
+  logoutIcon: {fontSize: 15, color: RED},
+  logoutText: {color: RED, fontSize: 14.5, fontWeight: '800', letterSpacing: 0.2},
 });

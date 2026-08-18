@@ -1,7 +1,7 @@
 import {StyleSheet} from 'react-native';
 
 const NAVY = '#0B1E45';
-const BG = '#F4F6FA';
+const BG = '#e6e8f3';
 const GRAY = '#6B7280';
 
 export const styles = StyleSheet.create({

@@ -3,7 +3,7 @@ import {StyleSheet} from 'react-native';
 export const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: '#e6e8f3',
   },
   container: {
     paddingHorizontal: 16,
@@ -16,7 +16,7 @@ export const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  // Stats grid
+  // Stats grid — premium 2-per-row cards with colored accent border
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -26,31 +26,101 @@ export const styles = StyleSheet.create({
   statCard: {
     width: '48%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 14,
+    borderLeftWidth: 4,
+    borderLeftColor: '#4F46E5', // overridden per-card via inline style
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.12,
+    shadowRadius: 14,
+    elevation: 5,
   },
-  statIcon: {
-    fontSize: 20,
-    marginBottom: 6,
-  },
-  statValue: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 2,
+  statCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 14,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8B95A5',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    flex: 1,
+    marginRight: 8,
+    lineHeight: 15,
+  },
+  statIconBadge: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statIcon: {
+    fontSize: 15,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 6,
+    letterSpacing: -0.5,
+  },
+  statSubRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statTrendUp: {
+    fontSize: 10,
+    color: '#16A34A',
+    marginRight: 3,
+  },
+  statTrendNeutral: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginRight: 3,
+  },
+  statSub: {
+    fontSize: 11.5,
+    color: '#64748B',
+    fontWeight: '500',
   },
 
-  // Section cards
+  // Chart cards — soft floating shadow, no border
+  chartCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 4,
+    alignItems: 'center',
+  },
+  chartTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+    alignSelf: 'flex-start',
+  },
+  chartSubtitle: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+  },
+  chartStyle: {
+    borderRadius: 8,
+    marginLeft: -16,
+  },
+
+  // Section cards (kept in case other parts of the app still reference these)
   sectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
@@ -93,8 +163,6 @@ export const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2563EB',
   },
-
-  // Actions grid
   actionsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -113,8 +181,6 @@ export const styles = StyleSheet.create({
     fontWeight: '500',
     color: '#374151',
   },
-
-  // Audit log rows
   viewAllText: {
     fontSize: 13,
     fontWeight: '600',
@@ -147,8 +213,6 @@ export const styles = StyleSheet.create({
     color: '#374151',
     marginTop: 2,
   },
-
-  // Status pill
   statusPill: {
     backgroundColor: '#DCFCE7',
     borderRadius: 12,

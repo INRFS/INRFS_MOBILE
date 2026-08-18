@@ -3,7 +3,7 @@ import {StyleSheet} from 'react-native';
 const NAVY = '#3c5381';
 const PRIMARY = '#2563EB';
 const PRIMARY_DARK = '#1D4ED8';
-const BG = '#F4F6FA';
+const BG = '#e6e8f3';
 const GRAY = '#6B7280';
 const BORDER = '#EEF0F4';
 

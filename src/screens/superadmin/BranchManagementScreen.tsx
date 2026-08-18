@@ -140,7 +140,12 @@ const [addAum, setAddAum] = useState('');
 
       <ScrollView contentContainerStyle={styles.container}>
         {filtered.map(branch => (
-          <View key={branch.id} style={styles.card}>
+          <View
+            key={branch.id}
+            style={[
+              styles.card,
+              {borderLeftColor: branch.status === 'Suspended' ? '#DC2626' : '#2b6d9a'},
+            ]}>
             <View style={styles.cardTopRow}>
               <Text style={styles.branchName}>{branch.name}</Text>
               <View style={[styles.statusPill, branch.status === 'Suspended' && styles.statusPillSuspended]}>
@@ -149,16 +154,26 @@ const [addAum, setAddAum] = useState('');
                 </Text>
               </View>
             </View>
-            <Text style={styles.cardMeta}>{branch.city} • Admin: {branch.adminName}</Text>
 
-            <View style={styles.statsRow}>
-              <View style={styles.statBlock}>
-                <Text style={styles.statBlockValue}>{branch.investors}</Text>
-                <Text style={styles.statBlockLabel}>Investors</Text>
+            <View style={styles.cardGrid}>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>CITY</Text>
+                <Text style={styles.cardValueSm}>{branch.city}</Text>
               </View>
-              <View style={styles.statBlock}>
-                <Text style={styles.statBlockValue}>{branch.aum}</Text>
-                <Text style={styles.statBlockLabel}>AUM</Text>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>ADMIN</Text>
+                <Text style={styles.cardValueSm}>{branch.adminName}</Text>
+              </View>
+            </View>
+
+            <View style={styles.cardGrid}>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>INVESTORS</Text>
+                <Text style={styles.cardValueSm}>{branch.investors}</Text>
+              </View>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>AUM</Text>
+                <Text style={styles.cardValueSm}>{branch.aum}</Text>
               </View>
             </View>
 
@@ -169,9 +184,9 @@ const [addAum, setAddAum] = useState('');
               <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(branch)}>
                 <Text style={styles.iconText}>✏️</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.iconBtn, styles.iconBtnDelete]} onPress={() => openDelete(branch)}>
+              {/* <TouchableOpacity style={[styles.iconBtn, styles.iconBtnDelete]} onPress={() => openDelete(branch)}>
                 <Text style={styles.iconText}>🗑️</Text>
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
           </View>
         ))}
