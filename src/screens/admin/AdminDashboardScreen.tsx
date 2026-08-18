@@ -3,6 +3,7 @@ import {View, Text, ScrollView,  TouchableOpacity, Alert, Modal, TextInput, Keyb
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminDashboardScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AdminBottomTabBar from './AdminBottomTabBar';
 const TENURE_OPTIONS = [
   {months: 6, rate: 11},
   {months: 12, rate: 12},
@@ -36,9 +37,14 @@ const kycBadgeStyle = (status: 'Approved' | 'Pending' | 'Rejected') => {
   return {bg: '#FEE2E2', text: '#DC2626'};
 };
 
-const statusBadgeStyle = (status: 'Active' | 'Pending') => {
+// Widened to match Investor['status'] ('Pending' | 'Active' | 'Suspended') —
+// previously only accepted 'Active' | 'Pending', which caused
+// TS2345 when called with inv.status below. 'Suspended' now gets its own
+// red badge instead of silently falling through to the amber "Pending" one.
+const statusBadgeStyle = (status: 'Active' | 'Pending' | 'Suspended') => {
   if (status === 'Active') return {bg: '#DCFCE7', text: '#16A34A'};
-  return {bg: '#FEF3C7', text: '#B45309'};
+  if (status === 'Pending') return {bg: '#FEF3C7', text: '#B45309'};
+  return {bg: '#FEE2E2', text: '#DC2626'};
 };
 
 const AdminDashboardScreen = ({navigation}: any) => {
@@ -114,9 +120,9 @@ const AdminDashboardScreen = ({navigation}: any) => {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>🏦  INRFS</Text>
         <View style={styles.headerIcons}>
-        <TouchableOpacity onPress={() => navigation.navigate('AdminNotifications')}>
+        {/* <TouchableOpacity onPress={() => navigation.navigate('AdminNotifications')}>
   <Text style={styles.bell}>🔔</Text>
-</TouchableOpacity>
+</TouchableOpacity> */}
         </View>
       </View>
 
@@ -270,7 +276,7 @@ const AdminDashboardScreen = ({navigation}: any) => {
             );
           })}
         </View>
-
+{/* 
         <TouchableOpacity style={styles.riskCard}>
           <Text style={styles.riskIcon}>🛡</Text>
           <View style={styles.riskTextWrap}>
@@ -278,31 +284,10 @@ const AdminDashboardScreen = ({navigation}: any) => {
             <Text style={styles.riskSubtitle}>Due in 4 days</Text>
           </View>
           <Text style={styles.riskArrow}>›</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </ScrollView>
 
-      <View style={styles.tabBar}>
-        <View style={styles.tabItem}>
-          <Text style={styles.tabIconActive}>🏠</Text>
-          <Text style={styles.tabLabelActive}>Home</Text>
-        </View>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InvestorRegistry')}>
-          <Text style={styles.tabIcon}>👥</Text>
-          <Text style={styles.tabLabel}>Investors</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('BondTracking')}>
-          <Text style={styles.tabIcon}>📁</Text>
-          <Text style={styles.tabLabel}>Portfolio</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
-          <Text style={styles.tabIcon}>💰</Text>
-          <Text style={styles.tabLabel}>Payouts</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminProfile')}>
-          <Text style={styles.tabIcon}>👤</Text>
-          <Text style={styles.tabLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <AdminBottomTabBar active="Home" navigation={navigation} />
 
       {/* ---- Add Investment / Generate Bond modal ---- */}
       <Modal

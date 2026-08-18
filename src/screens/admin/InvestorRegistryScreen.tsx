@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import {
   View,
   Text,
+  Image,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -13,6 +14,7 @@ import {
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AdminBottomTabBar from './AdminBottomTabBar';
 
 import XLSX from 'xlsx';
 import RNFS from 'react-native-fs';
@@ -177,9 +179,18 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
+      <View style={[styles.header, local.headerRow]}>
+        {/* Logo — same source/require as the Dashboard header
+            (src/assets/logo.jpeg), placed to the left of the title.
+            local.headerRow adds extra vertical padding so the row grows
+            to fit the bigger logo cleanly instead of clipping it. */}
+        <Image
+          source={require('../../assets/logo.jpeg')}
+          style={local.headerLogo}
+          resizeMode="contain"
+        />
         <Text style={styles.headerTitle}>INRFS</Text>
-        <Text style={styles.bell}>🔔</Text>
+        {/* <Text style={styles.bell}>🔔</Text> */}
       </View>
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -194,9 +205,9 @@ const InvestorRegistryScreen = ({navigation}: any) => {
             value={query}
             onChangeText={setQuery}
           />
-          <View style={styles.filterBtn}>
+          {/* <View style={styles.filterBtn}>
             <Text>⇅</Text>
-          </View>
+          </View> */}
           <TouchableOpacity style={styles.exportBtn} onPress={handleExport}>
             <Text style={styles.exportBtnText}>Export</Text>
           </TouchableOpacity>
@@ -302,28 +313,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminDashboard')}>
-          <Text style={styles.tabIcon}>🏠</Text>
-          <Text style={styles.tabLabel}>Home</Text>
-        </TouchableOpacity>
-        <View style={styles.tabItem}>
-          <Text style={styles.tabIconActive}>👥</Text>
-          <Text style={styles.tabLabelActive}>Investors</Text>
-        </View>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('BondTracking')}>
-          <Text style={styles.tabIcon}>📁</Text>
-          <Text style={styles.tabLabel}>Portfolio</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
-          <Text style={styles.tabIcon}>💰</Text>
-          <Text style={styles.tabLabel}>Payouts</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminProfile')}>
-          <Text style={styles.tabIcon}>👤</Text>
-          <Text style={styles.tabLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <AdminBottomTabBar active="Investors" navigation={navigation} />
 
       {/* ---- View details modal (read-only, includes bank/KYC fields) ---- */}
       <Modal
@@ -429,6 +419,25 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 // untouched — merge in later if you'd rather centralize them).
 // ---------------------------------------------------------------------------
 const local = StyleSheet.create({
+  // Overrides styles.header's paddingVertical (14) with a bit more room —
+  // header height is auto-derived from its content (the logo) plus this
+  // padding, so bumping both together is what makes the row grow cleanly
+  // instead of the logo just overflowing a too-tight box. Everything else
+  // (background, alignItems, justifyContent) still comes from styles.header.
+  headerRow: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  // Logo size — sized up from the original 28x28 so it reads clearly next
+  // to "INRFS" instead of looking cramped. Increasing width/height alone
+  // isn't enough because the header's height is derived from its tallest
+  // child + paddingVertical (see styles.header override below) — so the
+  // logo size and the header's breathing room need to scale together.
+  headerLogo: {
+    width: 40,
+    height: 40,
+    marginRight: 10,
+  },
   actionsRow: {
     flexDirection: 'row',
     gap: 8,

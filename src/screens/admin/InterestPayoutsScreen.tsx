@@ -11,6 +11,7 @@ import {
 import {useAppData, Payout} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InterestPayoutsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AdminBottomTabBar from './AdminBottomTabBar';
 
 const formatINR = (n: number) => '₹' + n.toLocaleString('en-IN', {minimumFractionDigits: 2});
 const formatINRWhole = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
@@ -358,28 +359,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
         <Text style={styles.securityText}>🛡  Security standard PCI-DSS Level 1 compliant</Text>
       </ScrollView>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminDashboard')}>
-          <Text style={styles.tabIcon}>🏠</Text>
-          <Text style={styles.tabLabel}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InvestorRegistry')}>
-          <Text style={styles.tabIcon}>👥</Text>
-          <Text style={styles.tabLabel}>Investors</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('BondTracking')}>
-          <Text style={styles.tabIcon}>📁</Text>
-          <Text style={styles.tabLabel}>Portfolio</Text>
-        </TouchableOpacity>
-        <View style={styles.tabItem}>
-          <Text style={styles.tabIconActive}>💰</Text>
-          <Text style={styles.tabLabelActive}>Payouts</Text>
-        </View>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminProfile')}>
-          <Text style={styles.tabIcon}>👤</Text>
-          <Text style={styles.tabLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <AdminBottomTabBar active="More" navigation={navigation} />
     </SafeAreaView>
   );
 };
@@ -387,7 +367,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
 // ---------------------------------------------------------------------------
 // Local styles — new date-group layout pieces not present in the shared
 // InterestPayoutsScreen.styles.ts sheet. Anything already covered by that
-// sheet (header, pendingCard, searchRow, tabBar, waitingText, doneText,
+// sheet (header, pendingCard, searchRow, waitingText, doneText,
 // emptyWrap/emptyText, securityText) is reused as-is above.
 // ---------------------------------------------------------------------------
 const local = StyleSheet.create({

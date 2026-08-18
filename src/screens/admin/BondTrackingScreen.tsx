@@ -17,6 +17,7 @@ import {
 } from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/BondTrackingScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AdminBottomTabBar from './AdminBottomTabBar';
 
 type TopTab = 'Pending Approval' | 'All Investments';
 // 'Pending Extension' / 'Pending Settlement' so a bond's status badge in
@@ -780,36 +781,7 @@ Alert.alert(
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation.navigate('AdminDashboard')}>
-          <Text style={styles.tabIcon}>🏠</Text>
-          <Text style={styles.tabLabel}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation.navigate('InvestorRegistry')}>
-          <Text style={styles.tabIcon}>👥</Text>
-          <Text style={styles.tabLabel}>Investors</Text>
-        </TouchableOpacity>
-        <View style={styles.tabItem}>
-          <Text style={styles.tabIconActive}>📁</Text>
-          <Text style={styles.tabLabelActive}>Investments</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation.navigate('InterestPayouts')}>
-          <Text style={styles.tabIcon}>💰</Text>
-          <Text style={styles.tabLabel}>Payouts</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.tabItem}
-          onPress={() => navigation.navigate('AdminProfile')}>
-          <Text style={styles.tabIcon}>👤</Text>
-          <Text style={styles.tabLabel}>Profile</Text>
-        </TouchableOpacity>
-      </View>
+      <AdminBottomTabBar active="Investments" navigation={navigation} />
 
       {/* ========== Review & Approve Modal ========== */}
       <Modal
