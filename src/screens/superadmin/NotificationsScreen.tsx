@@ -82,7 +82,7 @@ const NotificationsScreen = ({navigation}: any) => {
           );
         })}
       </ScrollView>
-      <SuperAdminBottomTabBar navigation={navigation} active="Notifications" />
+      {/* <SuperAdminBottomTabBar navigation={navigation} active="Notifications" /> */}
     </SafeAreaView>
   );
 };

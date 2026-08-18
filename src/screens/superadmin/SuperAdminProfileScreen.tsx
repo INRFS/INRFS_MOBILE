@@ -5,6 +5,7 @@ import {useAppData} from '../../navigation/AppNavigator';
 import SuperAdminHeader from './components/SuperAdminHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
+
 const SuperAdminProfileScreen = ({navigation}: any) => {
   const {adminProfile, setAdminProfile} = useAppData();
   const [editing, setEditing] = useState(false);
@@ -32,61 +33,155 @@ const SuperAdminProfileScreen = ({navigation}: any) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <SuperAdminHeader navigation={navigation} title="Profile" showBack={false} />
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.avatarSection}>
-          <Image source={{uri: adminProfile.avatarUri}} style={styles.avatar} />
-          <Text style={styles.name}>{adminProfile.name}</Text>
-          <View style={styles.rolePill}>
-            <Text style={styles.rolePillText}>{adminProfile.role}</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent}>
+        {/* ---------- Hero card ---------- */}
+        <View style={styles.heroCard}>
+          <View style={styles.heroGlow} pointerEvents="none" />
+
+          <View style={styles.heroTopRow}>
+            <View style={styles.avatarRing}>
+              <View style={styles.avatarWrap}>
+                <View style={styles.avatarCircle}>
+                  {adminProfile.avatarUri ? (
+                    <Image source={{uri: adminProfile.avatarUri}} style={styles.avatarImage} />
+                  ) : (
+                    <Text style={styles.avatarInitial}>
+                      {adminProfile.name?.charAt(0)?.toUpperCase()}
+                    </Text>
+                  )}
+                </View>
+                <View style={styles.avatarBadge}>
+                  <Text style={styles.avatarBadgeIcon}>✓</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.heroTextCol}>
+              <Text style={styles.name}>{adminProfile.name}</Text>
+              <Text style={styles.email}>{adminProfile.email}</Text>
+              <View style={styles.rolePill}>
+                <Text style={styles.rolePillText}>{adminProfile.role?.toUpperCase()}</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.goldDivider} />
+
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStatCol}>
+              <Text style={styles.heroStatLabel}>Branch</Text>
+              <Text style={styles.heroStatValue}>{adminProfile.branch}</Text>
+            </View>
+            <View style={styles.heroStatCol}>
+              <Text style={styles.heroStatLabel}>Status</Text>
+              <Text style={styles.heroStatValue}>{adminProfile.status}</Text>
+            </View>
           </View>
         </View>
 
+        {/* ---------- Account details card ---------- */}
         <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Account Details</Text>
-            <TouchableOpacity onPress={() => (editing ? handleSave() : setEditing(true))}>
+          <View style={styles.cardHeaderRow}>
+            <View style={styles.cardHeaderLeft}>
+              <View style={styles.cardHeaderIconWrap}>
+                <Text style={styles.cardHeaderIcon}>👤</Text>
+              </View>
+              <Text style={styles.cardHeaderText}>Account Details</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.editBtn}
+              onPress={() => (editing ? handleSave() : setEditing(true))}
+            >
               <Text style={styles.editText}>{editing ? 'Save' : 'Edit'}</Text>
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.label}>Full Name</Text>
-          {editing ? (
-            <TextInput style={styles.input} value={name} onChangeText={setName} />
-          ) : (
-            <Text style={styles.value}>{adminProfile.name}</Text>
-          )}
+          <View style={styles.divider} />
 
-          <Text style={styles.label}>Email</Text>
-          {editing ? (
-            <TextInput style={styles.input} value={email} onChangeText={setEmail} autoCapitalize="none" />
-          ) : (
-            <Text style={styles.value}>{adminProfile.email}</Text>
-          )}
+          <View style={styles.infoRow}>
+            <View style={styles.fieldIconWrap}>
+              <Text style={styles.fieldIcon}>🧑</Text>
+            </View>
+            <View style={styles.infoTextCol}>
+              <Text style={styles.infoLabel}>Full Name</Text>
+              {editing ? (
+                <TextInput style={styles.input} value={name} onChangeText={setName} />
+              ) : (
+                <Text style={styles.infoValue}>{adminProfile.name}</Text>
+              )}
+            </View>
+          </View>
 
-          <Text style={styles.label}>Mobile</Text>
-          {editing ? (
-            <TextInput style={styles.input} value={mobile} onChangeText={setMobile} keyboardType="phone-pad" />
-          ) : (
-            <Text style={styles.value}>{adminProfile.mobile}</Text>
-          )}
+          <View style={styles.infoRow}>
+            <View style={styles.fieldIconWrap}>
+              <Text style={styles.fieldIcon}>✉️</Text>
+            </View>
+            <View style={styles.infoTextCol}>
+              <Text style={styles.infoLabel}>Email</Text>
+              {editing ? (
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                />
+              ) : (
+                <Text style={styles.infoValue}>{adminProfile.email}</Text>
+              )}
+            </View>
+          </View>
 
-          <Text style={styles.label}>Branch / Office</Text>
-          {editing ? (
-            <TextInput style={styles.input} value={branch} onChangeText={setBranch} />
-          ) : (
-            <Text style={styles.value}>{adminProfile.branch}</Text>
-          )}
+          <View style={styles.infoRow}>
+            <View style={styles.fieldIconWrap}>
+              <Text style={styles.fieldIcon}>📱</Text>
+            </View>
+            <View style={styles.infoTextCol}>
+              <Text style={styles.infoLabel}>Mobile</Text>
+              {editing ? (
+                <TextInput
+                  style={styles.input}
+                  value={mobile}
+                  onChangeText={setMobile}
+                  keyboardType="phone-pad"
+                />
+              ) : (
+                <Text style={styles.infoValue}>{adminProfile.mobile}</Text>
+              )}
+            </View>
+          </View>
 
-          <Text style={styles.label}>Status</Text>
-          <View style={styles.statusPill}>
-            <Text style={styles.statusPillText}>{adminProfile.status}</Text>
+          <View style={styles.infoRow}>
+            <View style={styles.fieldIconWrapGold}>
+              <Text style={styles.fieldIcon}>🏢</Text>
+            </View>
+            <View style={styles.infoTextCol}>
+              <Text style={styles.infoLabel}>Branch / Office</Text>
+              {editing ? (
+                <TextInput style={styles.input} value={branch} onChangeText={setBranch} />
+              ) : (
+                <Text style={styles.infoValue}>{adminProfile.branch}</Text>
+              )}
+            </View>
+          </View>
+
+          <View style={[styles.infoRow, {marginBottom: 0}]}>
+            <View style={styles.fieldIconWrapGreen}>
+              <Text style={styles.fieldIcon}>●</Text>
+            </View>
+            <View style={styles.infoTextCol}>
+              <Text style={styles.infoLabel}>Status</Text>
+              <View style={styles.statusRow}>
+                <View style={styles.statusDot} />
+                <Text style={styles.infoValue}>{adminProfile.status}</Text>
+              </View>
+            </View>
           </View>
         </View>
 
-        <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+        {/* <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
           <Text style={styles.logoutIcon}>⏻</Text>
           <Text style={styles.logoutText}>Logout</Text>
-        </TouchableOpacity>
+        </TouchableOpacity> */}
       </ScrollView>
       <SuperAdminBottomTabBar navigation={navigation} active="Profile" />
     </SafeAreaView>

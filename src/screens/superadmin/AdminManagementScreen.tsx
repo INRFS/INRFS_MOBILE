@@ -1,5 +1,5 @@
 import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert} from 'react-native';
+import {View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, StyleSheet} from 'react-native';
 import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
 import {useAppData, SAAdmin} from '../../navigation/AppNavigator';
 import SuperAdminHeader from './components/SuperAdminHeader';
@@ -43,9 +43,13 @@ const AdminManagementScreen = ({navigation}: any) => {
       a.branch.toLowerCase().includes(search.toLowerCase()),
   );
 
+  // FIX: mobile number is now required, same as name/email/branch. Before,
+  // it was optional and silently fell back to '—' if left blank, so the
+  // value shown everywhere downstream (card list, View Details, Edit modal)
+  // wasn't guaranteed to be the number the person actually entered here.
   const handleAdd = () => {
-    if (!name.trim() || !email.trim() || !branch.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email and branch.');
+    if (!name.trim() || !email.trim() || !mobile.trim() || !branch.trim()) {
+      Alert.alert('Missing details', 'Please fill in name, email, mobile number and branch.');
       return;
     }
     addSAAdmin({name: name.trim(), email: email.trim(), mobile: mobile.trim(), branch: branch.trim(), role});
@@ -74,17 +78,20 @@ const AdminManagementScreen = ({navigation}: any) => {
     setEditModalVisible(true);
   };
 
+  // FIX: mobile is now required on Edit too, so a previously blank/'—'
+  // record can't be re-saved without a real number, and can't be cleared
+  // back out to '—' either.
   const handleSaveEdit = () => {
     if (!editingAdmin) return;
-    if (!editName.trim() || !editEmail.trim() || !editBranch.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email and branch.');
+    if (!editName.trim() || !editEmail.trim() || !editMobile.trim() || !editBranch.trim()) {
+      Alert.alert('Missing details', 'Please fill in name, email, mobile number and branch.');
       return;
     }
 
     updateSAAdmin(editingAdmin.id, {
       name: editName.trim(),
       email: editEmail.trim(),
-      mobile: editMobile.trim() || '—',
+      mobile: editMobile.trim(),
       branch: editBranch.trim(),
       role: editRole,
       status: editStatus,
@@ -125,7 +132,12 @@ const AdminManagementScreen = ({navigation}: any) => {
 
       <ScrollView contentContainerStyle={styles.container}>
         {filtered.map(admin => (
-          <View key={admin.id} style={styles.card}>
+          <View
+            key={admin.id}
+            style={[
+              styles.card,
+              {borderLeftColor: admin.status === 'Active' ? '#075370' : '#DC2626'},
+            ]}>
             <View style={styles.cardTopRow}>
               <Text style={styles.name}>{admin.name}</Text>
               <View style={[styles.statusPill, admin.status === 'Inactive' && styles.statusPillInactive]}>
@@ -134,14 +146,29 @@ const AdminManagementScreen = ({navigation}: any) => {
                 </Text>
               </View>
             </View>
-            <Text style={styles.email}>{admin.email}</Text>
-            <Text style={styles.mobile}>{admin.mobile}</Text>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>{admin.branch}</Text>
-              <View style={styles.roleTag}>
-                <Text style={styles.roleTagText}>{admin.role}</Text>
+
+            <View style={styles.cardGrid}>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>EMAIL</Text>
+                <Text style={styles.cardValueSm}>{admin.email}</Text>
+              </View>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>MOBILE</Text>
+                <Text style={styles.cardValueSm}>{admin.mobile}</Text>
               </View>
             </View>
+
+            <View style={styles.cardGrid}>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>BRANCH</Text>
+                <Text style={styles.cardValueSm}>{admin.branch}</Text>
+              </View>
+              <View style={styles.cardCol}>
+                <Text style={styles.cardLabel}>ROLE</Text>
+                <Text style={styles.cardValueSm}>{admin.role}</Text>
+              </View>
+            </View>
+
             <View style={styles.actionsRow}>
               <TouchableOpacity style={styles.iconBtn} onPress={() => openView(admin)}>
                 <Text style={styles.iconText}>👁️</Text>
@@ -159,50 +186,70 @@ const AdminManagementScreen = ({navigation}: any) => {
       </ScrollView>
 
       {/* ---- View Details modal ---- */}
+      {/* Restyled to match InvestorManagementScreen's details popup: a
+          2-column label/value grid (uppercase, letter-spaced label on top,
+          bold value below) instead of the old single-column detailRow list. */}
       <Modal visible={viewModalVisible} transparent animationType="fade" onRequestClose={() => setViewModalVisible(false)}>
-        <View style={styles.centeredOverlay}>
-          <View style={styles.centeredCard}>
-            <View style={styles.centeredHeaderRow}>
-              <Text style={styles.modalTitle}>Admin Details</Text>
-              <TouchableOpacity onPress={() => setViewModalVisible(false)}>
-                <Text style={styles.closeX}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
+        <TouchableOpacity style={modalStyles.overlay} activeOpacity={1} onPress={() => setViewModalVisible(false)}>
+          <TouchableOpacity activeOpacity={1} style={modalStyles.card} onPress={() => {}}>
             {viewingAdmin ? (
               <>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Name</Text>
-                  <Text style={styles.detailValue}>{viewingAdmin.name}</Text>
+                <View style={modalStyles.headerRow}>
+                  <Text style={modalStyles.headerTitle}>{viewingAdmin.name}</Text>
+                  <TouchableOpacity onPress={() => setViewModalVisible(false)} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                    <Text style={modalStyles.closeIcon}>✕</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Email</Text>
-                  <Text style={styles.detailValue}>{viewingAdmin.email}</Text>
+
+                <View style={modalStyles.grid}>
+                  <View style={modalStyles.col}>
+                    <Text style={modalStyles.label}>EMAIL</Text>
+                    <Text style={modalStyles.value}>{viewingAdmin.email}</Text>
+                  </View>
+                  <View style={modalStyles.col}>
+                    <Text style={modalStyles.label}>MOBILE</Text>
+                    <Text style={modalStyles.value}>{viewingAdmin.mobile}</Text>
+                  </View>
                 </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Mobile</Text>
-                  <Text style={styles.detailValue}>{viewingAdmin.mobile}</Text>
+
+                <View style={modalStyles.grid}>
+                  <View style={modalStyles.col}>
+                    <Text style={modalStyles.label}>BRANCH</Text>
+                    <Text style={modalStyles.value}>{viewingAdmin.branch}</Text>
+                  </View>
+                  <View style={modalStyles.col}>
+                    <Text style={modalStyles.label}>ROLE</Text>
+                    <Text style={modalStyles.value}>{viewingAdmin.role}</Text>
+                  </View>
                 </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Branch</Text>
-                  <Text style={styles.detailValue}>{viewingAdmin.branch}</Text>
+
+                <View style={modalStyles.grid}>
+                  <View style={modalStyles.col}>
+                    <Text style={modalStyles.label}>STATUS</Text>
+                    <View
+                      style={[
+                        modalStyles.pill,
+                        viewingAdmin.status === 'Active' ? modalStyles.pillActive : modalStyles.pillInactive,
+                        modalStyles.pillSpacing,
+                      ]}>
+                      <Text
+                        style={[
+                          modalStyles.pillText,
+                          viewingAdmin.status === 'Active' ? modalStyles.pillTextActive : modalStyles.pillTextInactive,
+                        ]}>
+                        {viewingAdmin.status}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-                <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>Role</Text>
-                  <Text style={styles.detailValue}>{viewingAdmin.role}</Text>
-                </View>
-                <View style={[styles.detailRow, {borderBottomWidth: 0}]}>
-                  <Text style={styles.detailLabel}>Status</Text>
-                  <Text style={styles.detailValue}>{viewingAdmin.status}</Text>
-                </View>
+
+                <TouchableOpacity style={styles.closeBtn} onPress={() => setViewModalVisible(false)}>
+                  <Text style={styles.closeBtnText}>Close</Text>
+                </TouchableOpacity>
               </>
             ) : null}
-
-            <TouchableOpacity style={styles.closeBtn} onPress={() => setViewModalVisible(false)}>
-              <Text style={styles.closeBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
 
       {/* ---- Edit Admin modal ---- */}
@@ -404,5 +451,81 @@ const AdminManagementScreen = ({navigation}: any) => {
     </SafeAreaView>
   );
 };
+
+// Same label/value grid pattern as InvestorManagementScreen's details
+// popup, so both "View Details" modals across Admin Management and
+// Investor Management look and align the same way.
+const modalStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  closeIcon: {
+    fontSize: 18,
+    color: '#6B7280',
+  },
+  grid: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  col: {
+    flex: 1,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  value: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  pillSpacing: {
+    alignSelf: 'flex-start',
+    marginTop: 2,
+  },
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  pillActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  pillInactive: {
+    backgroundColor: '#FEE2E2',
+  },
+  pillText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  pillTextActive: {
+    color: '#16A34A',
+  },
+  pillTextInactive: {
+    color: '#DC2626',
+  },
+});
 
 export default AdminManagementScreen;

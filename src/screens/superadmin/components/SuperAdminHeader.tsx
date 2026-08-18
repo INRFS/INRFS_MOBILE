@@ -1,5 +1,5 @@
 import React from 'react';
-import {View, Text, TouchableOpacity} from 'react-native';
+import {View, Text, TouchableOpacity, StyleSheet} from 'react-native';
 import {styles} from '../../../styles/superadmin/components/SuperAdminHeader.styles';
 import {useAppData} from '../../../navigation/AppNavigator';
 
@@ -7,9 +7,13 @@ type Props = {
   navigation: any;
   title: string;
   showBack?: boolean;
+  // NEW: when true, renders a bold, large "INRFS" logo in place of the
+  // title text. Only the Dashboard screen passes this — every other
+  // screen keeps rendering its `title` exactly as before.
+  showLogo?: boolean;
 };
 
-const SuperAdminHeader = ({navigation, title, showBack = true}: Props) => {
+const SuperAdminHeader = ({navigation, title, showBack = true, showLogo = false}: Props) => {
   const {adminProfile, saNotifications} = useAppData();
   const unreadCount = saNotifications.filter(n => n.isNew).length;
   const initial = adminProfile.name?.trim()?.[0]?.toUpperCase() || 'S';
@@ -22,9 +26,15 @@ const SuperAdminHeader = ({navigation, title, showBack = true}: Props) => {
             <Text style={styles.backArrow}>←</Text>
           </TouchableOpacity>
         ) : null}
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
+        {showLogo ? (
+          <Text style={localStyles.logoText} numberOfLines={1}>
+            INRFS
+          </Text>
+        ) : (
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
+        )}
       </View>
       <View style={styles.right}>
         {/* <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('Notifications')}>
@@ -42,5 +52,16 @@ const SuperAdminHeader = ({navigation, title, showBack = true}: Props) => {
     </View>
   );
 };
+
+// Kept local (rather than added to SuperAdminHeader.styles.ts, which
+// wasn't shared) so this change is self-contained to this file.
+const localStyles = StyleSheet.create({
+  logoText: {
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#0B1E45',
+    letterSpacing: -0.5,
+  },
+});
 
 export default SuperAdminHeader;

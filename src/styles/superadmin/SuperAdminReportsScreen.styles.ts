@@ -3,7 +3,7 @@ import {StyleSheet} from 'react-native';
 export const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F5F6FA',
+    backgroundColor: '#e6e8f3',
   },
   container: {
     paddingHorizontal: 16,
@@ -22,9 +22,9 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#2563EB',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
     marginLeft: 10,
   },
   exportBtnText: {
@@ -34,122 +34,334 @@ export const styles = StyleSheet.create({
   },
   exportBtnPrimary: {
     backgroundColor: '#2563EB',
+    shadowColor: '#2563EB',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   exportBtnTextPrimary: {
     color: '#FFFFFF',
   },
 
-  // Stat cards
-  statsRow: {
+  // Stat cards — premium 2-per-row
+  statsGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginBottom: 16,
+    marginBottom: 8,
   },
   statCard: {
-    flex: 1,
+    width: '48%',
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
+     borderLeftColor: '#0f4f5a',
+      // borderRadius: 16,
+    borderLeftWidth: 4,
     padding: 14,
-    marginHorizontal: 4,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
+    marginBottom: 12,
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
     elevation: 2,
+  },
+  statCardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
   statLabel: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#9CA3AF',
-    marginBottom: 8,
+    color: '#8B95A5',
     textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    flex: 1,
+    marginRight: 6,
+    lineHeight: 13,
+  },
+  statIconBadge: {
+    width: 26,
+    height: 26,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statIcon: {
+    fontSize: 12,
   },
   statValue: {
     fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 6,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 4,
+    letterSpacing: -0.3,
   },
-  statChangeUp: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#16A34A',
-  },
-  statChangeDown: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#DC2626',
+  statSub: {
+    fontSize: 10.5,
+    color: '#64748B',
+    fontWeight: '500',
   },
 
-  // Chart card
-  chartCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
+  // Total Portfolio Value banner
+  portfolioBanner: {
+    backgroundColor: '#6881c5',
+    borderRadius: 18,
+    padding: 18,
+    marginBottom: 16,
+    shadowColor: '#6b84c7',
+    shadowOffset: {width: 0, height: 8},
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 5,
   },
-  chartTitle: {
-    fontSize: 15,
+  portfolioLabel: {
+    fontSize: 11,
     fontWeight: '700',
-    color: '#111827',
+    color: 'rgba(255,255,255,0.75)',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+  },
+  portfolioValue: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.6,
+    marginBottom: 4,
+  },
+  portfolioSub: {
+    fontSize: 12,
+    color: 'rgba(255,255,255,0.75)',
     marginBottom: 16,
   },
-  chartArea: {
+  portfolioStatsRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 160,
-    paddingHorizontal: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.2)',
+    paddingTop: 14,
+    gap: 24,
   },
-  barGroup: {
-    alignItems: 'center',
-    flex: 1,
+  portfolioStatBlock: {},
+  portfolioStatLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.65)',
+    letterSpacing: 0.4,
+    marginBottom: 4,
   },
-  barsWrap: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    height: 140,
-  },
-  bar: {
-    width: 10,
-    borderRadius: 3,
-    marginHorizontal: 2,
-  },
-  barInvested: {
-    backgroundColor: '#1E3A8A',
-  },
-  barInterest: {
-    backgroundColor: '#16A34A',
-  },
-  barMonthLabel: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 8,
+  portfolioStatValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
   },
 
-  // Legend
-  legendRow: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 16,
+  // Search + actions
+  searchInput: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#EEF0F4',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 13,
+    color: '#111827',
+    marginBottom: 12,
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  legendItem: {
+  actionsRow: {
     flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16,
+  },
+  downloadAllBtn: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingVertical: 11,
     alignItems: 'center',
-    marginHorizontal: 10,
   },
-  legendDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 6,
-  },
-  legendText: {
+  downloadAllBtnText: {
     fontSize: 12,
+    fontWeight: '600',
+    color: '#374151',
+  },
+  refreshBtn: {
+    flex: 1,
+    backgroundColor: '#1D4ED8',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    shadowColor: '#1D4ED8',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  refreshBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  // Error banner
+  errorBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginBottom: 16,
+  },
+  errorBannerText: {
+    fontSize: 12.5,
+    color: '#DC2626',
+    fontWeight: '500',
+    flex: 1,
+    marginRight: 8,
+  },
+  errorBannerAction: {
+    fontSize: 12.5,
+    color: '#1D4ED8',
+    fontWeight: '700',
+  },
+
+  // Grouped summary row
+  summaryRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 14,
+  },
+  summaryBlock: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 12,
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  summaryLabel: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 0.4,
+    marginBottom: 5,
+    textTransform: 'uppercase',
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
+  },
+
+  emptyWrap: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  emptyText: {
+    color: '#9CA3AF',
+    fontSize: 13,
+    textAlign: 'center',
+  },
+
+  // Investor grouped card (mobile version of the web table row)
+  investorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#7288c4',
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  investorCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  investorCardName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  investorCardId: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#2563EB',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  investorCardGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F6FA',
+  },
+  investorCardCol: {
+    flex: 1,
+  },
+  investorCardLabel: {
+    fontSize: 9.5,
+    color: '#9CA3AF',
+    fontWeight: '700',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
+  },
+  investorCardValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 4,
+  },
+  statusChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 4,
+  },
+  statusChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  statusChipActive: {
+    backgroundColor: '#DCFCE7',
+  },
+  statusChipPending: {
+    backgroundColor: '#FEF3C7',
+  },
+  statusChipRejected: {
+    backgroundColor: '#FEE2E2',
+  },
+  statusChipClosed: {
+    backgroundColor: '#E5E7EB',
+  },
+  statusChipText: {
+    fontSize: 10,
+    fontWeight: '700',
     color: '#374151',
   },
 });

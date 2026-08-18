@@ -3,7 +3,7 @@ import {StyleSheet} from 'react-native';
 export const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#e6e8f3',
   },
   topBar: {
     flexDirection: 'row',
@@ -12,13 +12,13 @@ export const styles = StyleSheet.create({
     paddingVertical: 12,
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#E5E7EB',
+    borderBottomColor: '#EEF0F4',
   },
   searchInput: {
     flex: 1,
-    height: 42,
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
+    height: 44,
+    backgroundColor: '#F5F6FA',
+    borderRadius: 12,
     paddingHorizontal: 14,
     fontSize: 14,
     color: '#111827',
@@ -26,40 +26,51 @@ export const styles = StyleSheet.create({
   },
   addBtn: {
     backgroundColor: '#2563EB',
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    shadowColor: '#2563EB',
+    shadowOffset: {width: 0, height: 3},
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
   },
   addBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   container: {
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 100,
   },
+
+  // Card — premium floating shadow + status-based left accent
+  // (set borderLeftColor per-card inline, e.g.
+  // {borderLeftColor: branch.status === 'Suspended' ? '#DC2626' : '#16A34A'})
   card: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 14,
+    borderRadius: 16,
+    borderLeftWidth: 4,
     padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: {width: 0, height: 2},
-    elevation: 2,
+    marginBottom: 14,
+    shadowColor: '#1E293B',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.1,
+    shadowRadius: 14,
+    elevation: 4,
   },
   cardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 6,
   },
   branchName: {
     fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: '800',
+    color: '#0F172A',
+    letterSpacing: -0.2,
   },
   statusPill: {
     backgroundColor: '#DCFCE7',
@@ -81,32 +92,63 @@ export const styles = StyleSheet.create({
   cardMeta: {
     fontSize: 13,
     color: '#6B7280',
-    marginBottom: 12,
+    marginBottom: 14,
   },
   statsRow: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   statBlock: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    paddingVertical: 10,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingVertical: 12,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#F1F2F6',
   },
   statBlockValue: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#111827',
+    fontWeight: '800',
+    color: '#0F172A',
   },
   statBlockLabel: {
     fontSize: 11,
     color: '#6B7280',
-    marginTop: 2,
+    marginTop: 3,
+    fontWeight: '500',
   },
 
-  // ---- Actions row: now 3 icon buttons instead of text chips ----
+  // ---- Field label/value grid, matches AdminManagementScreen and
+  // InvestorManagementScreen's card layout: uppercase, letter-spaced label
+  // on top, bold value below, two columns per row, divider under each row.
+  // Used here for City/Admin and Investors/AUM — mirrors the web table's
+  // BRANCH | CITY | ADMIN | INVESTORS | AUM | STATUS columns.
+  cardGrid: {
+    flexDirection: 'row',
+    marginBottom: 10,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F5F6FA',
+  },
+  cardCol: {
+    flex: 1,
+  },
+  cardLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    marginBottom: 4,
+    letterSpacing: 0.5,
+  },
+  cardValueSm: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+
+  // ---- Actions row: 3 icon buttons ----
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -115,13 +157,16 @@ export const styles = StyleSheet.create({
   iconBtn: {
     width: 38,
     height: 38,
-    borderRadius: 9,
-    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#EEF0F4',
     alignItems: 'center',
     justifyContent: 'center',
   },
   iconBtnDelete: {
     backgroundColor: '#FEE2E2',
+    borderColor: '#FEE2E2',
   },
   iconText: {
     fontSize: 15,

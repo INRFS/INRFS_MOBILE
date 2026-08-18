@@ -692,7 +692,7 @@ const InvestorManagementScreen = ({navigation}: any) => {
         </TouchableOpacity>
       </Modal>
 
-      <SuperAdminBottomTabBar navigation={navigation} active="Dashboard" />
+      <SuperAdminBottomTabBar navigation={navigation} active="Investors" />
     </SafeAreaView>
   );
 };

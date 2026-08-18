@@ -1,50 +1,161 @@
-import {StyleSheet} from 'react-native';
+import {StyleSheet, Platform} from 'react-native';
 
 export const styles = StyleSheet.create({
-  container: {
+  tabBar: {
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    paddingVertical: 8,
-    paddingBottom: 12,
+    borderTopColor: '#F0F1F3',
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 24 : 10,
+    paddingHorizontal: 8,
   },
   tabItem: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  icon: {
-    fontSize: 20,
-    opacity: 0.5,
-  },
-  iconActive: {
-    opacity: 1,
-  },
-  badge: {
-    position: 'absolute',
-    top: -4,
-    right: -8,
-    backgroundColor: '#DC2626',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
+  iconWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 3,
   },
-  badgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
+  iconWrapActive: {
+    backgroundColor: '#EAF0FE',
   },
   label: {
     fontSize: 11,
     color: '#9CA3AF',
-    marginTop: 2,
+    marginTop: 4,
+    fontWeight: '500',
   },
   labelActive: {
-    color: '#2563EB',
+    color: '#1955F0',
+    fontWeight: '600',
+  },
+  dot: {
+    position: 'absolute',
+    top: -2,
+    right: -6,
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  dotText: {
+    color: '#FFFFFF',
+    fontSize: 9,
     fontWeight: '700',
+  },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 20,
+    maxHeight: '80%',
+  },
+  grabber: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#E5E7EB',
+    alignSelf: 'center',
+    marginBottom: 12,
+  },
+  sheetHeader: {
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+ sheetLogoWrap: {
+    width: 100,
+    height: 40,
+    borderRadius: 8,
+    marginRight: 280,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    backgroundColor: '#fff',
+  },
+  sheetLogo: {
+    width: '100%',
+    height: '100%',
+  },
+  sheetItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+  },
+  sheetItemActive: {
+    backgroundColor: '#EAF0FE',
+  },
+  sheetItemIcon: {
+    marginRight: 12,
+  },
+  sheetItemText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#4B5563',
+    fontWeight: '500',
+  },
+  sheetItemTextActive: {
+    color: '#1955F0',
+    fontWeight: '600',
+  },
+  sheetItemTextDisabled: {
+    color: '#D1D5DB',
+  },
+  sheetFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F1F3',
+  },
+  sheetUserRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sheetAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#1955F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  sheetAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  sheetUserName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  sheetUserSub: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 1,
   },
 });
