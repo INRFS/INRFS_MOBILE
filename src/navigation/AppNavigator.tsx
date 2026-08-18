@@ -24,8 +24,9 @@ import SettlementCalculatorScreen from '../screens/admin/SettlementCalculatorScr
 import AdminProfileScreen from '../screens/admin/AdminProfileScreen';
 import KycApprovalsScreen from '../screens/admin/KycApprovalsScreen';
 import ReportsScreen from '../screens/admin/ReportsScreen';
-import AdminNotificationsScreen from '../screens/admin/NotificationsScreen';
-import AdminSettingsScreen from '../screens/admin/SettingsScreen';
+// import AdminNotificationsScreen from '../screens/admin/NotificationsScreen';
+// import AdminSettingsScreen from '../screens/admin/SettingsScreen';
+// import AdminMoreScreen from '../screens/admin/AdminMoreScreen';
 // NEW: Admin > Investments — reviews investor-submitted investment requests
 // import AdminInvestmentsScreen from '../screens/admin/AdminInvestmentsScreen';
 // ---- SUPER ADMIN SCREENS (new, own subfolder, mirrors the web Super Admin portal) ----
@@ -41,6 +42,7 @@ import PaymentQueueScreen from '../screens/superadmin/PaymentQueueScreen';
 import SuperAdminProfileScreen from '../screens/superadmin/SuperAdminProfileScreen';
 import InvestorManagementScreen from '../screens/superadmin/InvestorManagementScreen';
 import InvestmentManagementScreen from '../screens/superadmin/InvestmentManagementScreen';
+// import AppHeader from '../components/AppHeader';
 const Stack = createNativeStackNavigator();
 
 
@@ -2259,6 +2261,7 @@ updateInvestorBranch,
             {/* <Stack.Screen name="InvestorSettings" component={InvestorSettingsScreen} /> */}
    
             <Stack.Screen name="AdminDashboard" component={AdminDashboardScreen} />
+            {/* <Stack.Screen name="AdminMore" component={AdminMoreScreen} /> */}
             <Stack.Screen name="InvestorRegistry" component={InvestorRegistryScreen} />
             <Stack.Screen name="BondTracking" component={BondTrackingScreen} />
             <Stack.Screen name="InterestPayouts" component={InterestPayoutsScreen} />
@@ -2266,8 +2269,8 @@ updateInvestorBranch,
             <Stack.Screen name="AdminProfile" component={AdminProfileScreen} />
             <Stack.Screen name="KycApprovals" component={KycApprovalsScreen} />
             <Stack.Screen name="AdminReports" component={ReportsScreen} />
-            <Stack.Screen name="AdminNotifications" component={AdminNotificationsScreen} />
-            <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} />
+            {/* <Stack.Screen name="AdminNotifications" component={AdminNotificationsScreen} /> */}
+            {/* <Stack.Screen name="AdminSettings" component={AdminSettingsScreen} /> */}
             {/* <Stack.Screen name="AdminInvestments" component={AdminInvestmentsScreen} /> */}
             
             <Stack.Screen name="SuperAdminDashboard" component={SuperAdminDashboardScreen} />

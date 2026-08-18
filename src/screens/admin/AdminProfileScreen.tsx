@@ -3,6 +3,8 @@ import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-nat
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminProfileScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AdminBottomTabBar from './AdminBottomTabBar';
+
 const AdminProfileScreen = ({navigation}: any) => {
   const {adminProfile} = useAppData();
 
@@ -130,28 +132,7 @@ const AdminProfileScreen = ({navigation}: any) => {
         <Text style={styles.versionText}>Version 2.4.0 (Enterprise Build)</Text>
       </ScrollView>
 
-      <View style={styles.tabBar}>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('AdminDashboard')}>
-          <Text style={styles.tabIcon}>🏠</Text>
-          <Text style={styles.tabLabel}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InvestorRegistry')}>
-          <Text style={styles.tabIcon}>👥</Text>
-          <Text style={styles.tabLabel}>Investors</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('BondTracking')}>
-          <Text style={styles.tabIcon}>📁</Text>
-          <Text style={styles.tabLabel}>Portfolio</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.tabItem} onPress={() => navigation.navigate('InterestPayouts')}>
-          <Text style={styles.tabIcon}>💰</Text>
-          <Text style={styles.tabLabel}>Payouts</Text>
-        </TouchableOpacity>
-        <View style={styles.tabItem}>
-          <Text style={styles.tabIconActive}>👤</Text>
-          <Text style={styles.tabLabelActive}>Profile</Text>
-        </View>
-      </View>
+      <AdminBottomTabBar active="More" navigation={navigation} />
     </SafeAreaView>
   );
 };

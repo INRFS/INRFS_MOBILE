@@ -3,6 +3,7 @@ import {View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet} from 'react
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/SettlementCalculatorScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AdminBottomTabBar from './AdminBottomTabBar';
 
 // ---------------------------------------------------------------------------
 // This screen is a queue of REAL pending settlement work, split into the
@@ -346,6 +347,8 @@ const handleApproveTimeout = (row: (typeof timeoutRows)[number]) => {
           </>
         )}
       </ScrollView>
+
+      <AdminBottomTabBar active="More" navigation={navigation} />
     </SafeAreaView>
   );
 };
