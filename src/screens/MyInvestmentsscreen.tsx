@@ -16,6 +16,7 @@ import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/MyInvestmentsScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AppHeader from '../components/AppHeader';
 
 import XLSX from 'xlsx';
 import RNFS from 'react-native-fs';
@@ -449,15 +450,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View style={styles.headerBrand}>
-          <Image source={{uri: 'https://i.pravatar.cc/64?img=5'}} style={styles.avatar} />
-          <Text style={styles.headerTitle}>My Investments</Text>
-        </View>
-        <TouchableOpacity>
-          <Icon name="bell-outline" size={20} color="#1A1A18" />
-        </TouchableOpacity>
-      </View>
+     <AppHeader subtitle="Investment Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.heroCard}>

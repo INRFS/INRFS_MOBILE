@@ -14,6 +14,7 @@ import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/InvestNowScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AppHeader from '../components/AppHeader';
 
 // 'review' is a sub-step shown after the UTR is entered and before final
 // submit — mirrors the web portal's "Review Your Investment" screen.
@@ -659,16 +660,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View style={styles.headerBrand}>
-          <Image source={{uri: 'https://i.pravatar.cc/64?img=5'}} style={styles.avatar} />
-          <Text style={styles.headerTitle}>INRFS</Text>
-        </View>
-        <TouchableOpacity>
-          <Icon name="bell-outline" size={20} color="#111827" />
-        </TouchableOpacity>
-      </View>
-
+     <AppHeader subtitle="Investment Portal" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.titleRow}>
           <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backIconBtn}>
@@ -685,7 +677,11 @@ const InvestNowScreen = ({navigation, route}: any) => {
         {step === 'confirmation' && renderConfirmationStep()}
       </ScrollView>
 
-      <BottomTabBar active="Invest" navigation={navigation} investorId={investorId} />
+     <BottomTabBar
+  active="Invest"
+  navigation={navigation}
+  investorId={investorId}
+/>
 
       {renderBankDetailsModal()}
     </SafeAreaView>

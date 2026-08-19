@@ -3,6 +3,7 @@ import {View, Text, TouchableOpacity, ScrollView, Image, Alert} from 'react-nati
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, {Circle, Polyline} from 'react-native-svg'; // npm install react-native-svg
 import BottomTabBar from '../components/BottomTabBar';
+import AppHeader from '../components/AppHeader';
 import {
   styles,
   PRIMARY,
@@ -173,28 +174,7 @@ const InvestorDashboardScreen = ({navigation, route}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <View style={styles.headerBrand}>
-          <View style={styles.brandIconWrap}>
-            <Icon name="bank" size={18} color="#fff" />
-          </View>
-          <View style={styles.headerTitleWrap}>
-            <Text style={styles.headerTitle}>INRFS</Text>
-            <Text style={styles.headerSubtitle}>Financer Platform</Text>
-          </View>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.bellWrap} onPress={() => navigation.navigate('InvestorNotifications')}>
-            <Icon name="bell-outline" size={22} color="#111827" />
-            {notificationCount > 0 && (
-              <View style={styles.bellBadge}>
-                <Text style={styles.bellBadgeText}>{notificationCount}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          {/* <Image source={{uri: 'https://i.pravatar.cc/64'}} style={styles.avatar} /> */}
-        </View>
-      </View>
+     <AppHeader subtitle="Investment Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Hero: greeting + total portfolio value */}
