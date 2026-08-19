@@ -376,6 +376,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
     if (!tenureRow) return;
     const months = parseInt(extendMonths, 10) || 0;
     const rate = parseFloat(newRate);
+    const newMaturity = calcNewMaturity();
 
     approveTenureExtension(
       tenureRow.bondNumber,
@@ -383,9 +384,10 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
       !Number.isNaN(rate) ? rate : undefined,
       linkedTenureRequest?.id,
     );
-Alert.alert(
-      'Sent to Super Admin',
-      `${tenureRow.bondNumber}'s ${months}-month extension has been sent to the Super Admin for final approval. New maturity will be ${calcNewMaturity()} once approved.`,
+
+    Alert.alert(
+      'Tenure Extension Approved',
+      `${tenureRow.bondNumber} has been extended by ${months} months. New maturity is ${newMaturity}. The investor has been notified.`,
     );
     setTenureRow(null);
     setLinkedTenureRequest(null);

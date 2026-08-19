@@ -398,72 +398,13 @@ const {
           ))}
         </ScrollView>
 
-      {activeTab === 'Tenure Settlement' && (
+           {activeTab === 'Tenure Settlement' && (
           <>
-            {tenureExtensionRows.length === 0 && maturitySettlementRows.length === 0 && (
+            {maturitySettlementRows.length === 0 && (
               <View style={styles.emptyWrap}>
                 <Text style={styles.emptyText}>No tenure settlements awaiting approval.</Text>
               </View>
             )}
-
-            {tenureExtensionRows.map(r => {
-              const statusInfo = settlementStatusInfo(r.status as 'PendingSuperAdmin' | 'Approved' | 'Rejected');
-              return (
-              <View key={r.id} style={styles.card}>
-                <View style={styles.cardTopRow}>
-                  <Text style={styles.investorName}>{r.investorName}</Text>
-                  <View style={[styles.pill, statusInfo.pill]}>
-                    <Text style={[styles.pillText, statusInfo.text]}>{statusInfo.label}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.typePillRow}>
-                  <View style={styles.typePill}>
-                    <Text style={styles.typePillText}>Tenure Extension</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardGrid}>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>BOND</Text>
-                    <Text style={styles.cardValueLink}>{r.bondSeriesId}</Text>
-                  </View>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>EXTEND BY</Text>
-                    <Text style={styles.cardValue}>{r.extensionMonths} months</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardGrid}>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>CURRENT TENURE</Text>
-                    <Text style={styles.cardValueSm}>{r.currentTenureMonths} months</Text>
-                  </View>
-                  {r.decidedRate !== undefined && (
-                    <View style={styles.cardCol}>
-                      <Text style={styles.cardLabel}>NEW RATE</Text>
-                      <Text style={styles.cardValueSm}>{r.decidedRate}% p.a.</Text>
-                    </View>
-                  )}
-                </View>
-
-                {r.status === 'PendingSuperAdmin' && (
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={styles.rejectBtn}
-                      onPress={() => openTenureExtensionRejectConfirm(r)}>
-                      <Text style={styles.rejectBtnText}>Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.markPaidBtn}
-                      onPress={() => openTenureExtensionApproveConfirm(r)}>
-                      <Text style={styles.markPaidBtnText}>Approve Extension</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-              );
-            })}
 
             {maturitySettlementRows.map(r => {
               const statusInfo = settlementStatusInfo(r.status as 'PendingSuperAdmin' | 'Approved' | 'Rejected', 'Paid');
@@ -523,6 +464,8 @@ const {
             })}
           </>
         )}
+
+         
 
         {activeTab === 'Pre-Close Settlement' && (
           <>
