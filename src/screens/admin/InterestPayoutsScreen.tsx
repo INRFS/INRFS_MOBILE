@@ -248,7 +248,15 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     return <Text style={styles.doneText}>✓ Done</Text>;
   };
 
-  const renderRow = (p: Payout) => (
+const renderRow = (p: Payout) => {
+  // Display-only computation — GST/Net Payable are derived from the
+  // existing p.amount for presentation, matching the web Admin Portal's
+  // "GST (18%)" / "NET PAYABLE" columns. Nothing here touches state or
+  // any existing payout logic.
+  const gstAmount = Math.round(p.amount * 0.18);
+  const netPayable = p.amount - gstAmount;
+
+  return (
     <View key={p.id} style={local.row}>
       <View style={local.rowTopLine}>
         <Text style={local.investorName}>{p.investorName}</Text>
@@ -264,12 +272,29 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           <Text style={local.rowValue}>{formatINRWhole(p.amount)}</Text>
         </View>
       </View>
+      <View style={local.rowGrid}>
+        <View style={local.rowCol}>
+          <Text style={local.rowLabel}>GST (18%)</Text>
+          <Text style={local.rowValueRed}>-{formatINRWhole(gstAmount)}</Text>
+        </View>
+        <View style={local.rowCol}>
+          <Text style={local.rowLabel}>NET PAYABLE</Text>
+          <Text style={local.rowValueGreen}>{formatINRWhole(netPayable)}</Text>
+        </View>
+      </View>
+      <View style={local.rowGrid}>
+        <View style={local.rowCol}>
+          <Text style={local.rowLabel}>DUE DATE</Text>
+          <Text style={local.rowValue}>{p.dueDate}</Text>
+        </View>
+      </View>
       {p.reference !== '–' && <Text style={local.refText}>Ref: {p.reference}</Text>}
       <View style={local.rowActionRow}>
         <RowAction p={p} />
       </View>
     </View>
   );
+};
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -471,6 +496,18 @@ const local = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#1D4ED8',
+    marginTop: 2,
+  },
+    rowValueRed: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginTop: 2,
+  },
+  rowValueGreen: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#16A34A',
     marginTop: 2,
   },
   refText: {
