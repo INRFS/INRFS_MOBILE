@@ -3,6 +3,7 @@ import {View, Text, ScrollView, TouchableOpacity, Alert, TextInput} from 'react-
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/ProfileScreen.styles';
+import AppHeader from '../components/AppHeader';
 
 // Replace this with real investor data (from context/API) once available.
 const DEFAULT_INVESTOR = {
@@ -78,28 +79,63 @@ const ProfileScreen = ({navigation, route}: {navigation: any; route?: any}) => {
     <View style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconBtn}>
-            <Icon name="arrow-left" size={20} color="#111827" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>My Profile</Text>
-          <View style={styles.headerActionsRow}>
-            {isEditing ? (
-              <>
-                <TouchableOpacity onPress={handleCancelEdit} style={styles.iconBtn}>
-                  <Icon name="close" size={20} color="#DC2626" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={handleSaveChanges} style={styles.iconBtn}>
-                  <Icon name="check" size={20} color="#059669" />
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity onPress={handleStartEdit} style={styles.iconBtn}>
-                <Icon name="pencil-outline" size={18} color="#2563EB" />
-              </TouchableOpacity>
-            )}
-          </View>
-        </View>
+   <AppHeader subtitle="Investment Portal" />
+
+<View style={styles.profileToolbar}>
+  <TouchableOpacity
+    onPress={() => navigation.goBack()}
+    style={styles.profileBackButton}
+  >
+    <Icon
+      name="arrow-left"
+      size={20}
+      color="#102A56"
+    />
+  </TouchableOpacity>
+
+  <Text style={styles.profileToolbarTitle}>
+    My Profile
+  </Text>
+
+  <View style={styles.profileToolbarActions}>
+    {isEditing ? (
+      <>
+        <TouchableOpacity
+          onPress={handleCancelEdit}
+          style={styles.profileActionButton}
+        >
+          <Icon
+            name="close"
+            size={20}
+            color="#DC2626"
+          />
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={handleSaveChanges}
+          style={styles.profileActionButton}
+        >
+          <Icon
+            name="check"
+            size={20}
+            color="#059669"
+          />
+        </TouchableOpacity>
+      </>
+    ) : (
+      <TouchableOpacity
+        onPress={handleStartEdit}
+        style={styles.profileActionButton}
+      >
+        <Icon
+          name="pencil-outline"
+          size={19}
+          color="#1955F0"
+        />
+      </TouchableOpacity>
+    )}
+  </View>
+</View>
 
         {/* Hero card */}
         <View style={styles.heroCard}>

@@ -47,7 +47,7 @@ export const styles = StyleSheet.create({
   headerSubtitle: {fontSize: 11, color: GRAY, fontWeight: '500', marginTop: 1},
   headerActions: {flexDirection: 'row', alignItems: 'center', gap: 16},
 
-  bellWrap: {position: 'relative', padding: 2},
+  // bellWrap: {position: 'relative', padding: 2},
   bellBadge: {
     position: 'absolute',
     top: -6,

@@ -12,22 +12,23 @@ export const GREEN = '#16A34A';
 export const GREEN_BG = '#DCFCE7';
 
 export const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: BG},
-  scrollContent: {paddingBottom: 110, paddingTop: 54},
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-  },
-  headerBrand: {flexDirection: 'row', alignItems: 'center', gap: 10},
-  avatar: {width: 34, height: 34, borderRadius: 17},
-  headerTitle: {fontSize: 18, fontWeight: '800', color: NAVY, letterSpacing: 0.3},
-
+  safeArea: {
+  flex: 1,
+  backgroundColor: '#F5F6FA',
+},
+  scrollContent: {paddingBottom: 0, paddingTop: 90},
+header: {
+  height: 64,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  paddingHorizontal: 18,
+  backgroundColor: '#FFFFFF',
+  borderBottomWidth: 1,
+  borderBottomColor: '#EEF0F4',
+  zIndex: 50,
+  elevation: 3,
+},
 container: {padding: 16, paddingBottom: 110},
 
   titleRow: {flexDirection: 'row', alignItems: 'center', marginBottom: 18, gap: 10},

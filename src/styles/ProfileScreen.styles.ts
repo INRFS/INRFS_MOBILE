@@ -190,4 +190,48 @@ export const styles = StyleSheet.create({
     borderRadius: 14,
   },
   logoutBtnText: {color: RED, fontSize: 14, fontWeight: '700'},
+  profileToolbar: {
+  height: 58,
+  paddingHorizontal: 18,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  backgroundColor: '#F5F6FA',
+},
+
+profileBackButton: {
+  width: 38,
+  height: 38,
+  borderRadius: 12,
+  backgroundColor: '#FFFFFF',
+  borderWidth: 1,
+  borderColor: '#E5EAF1',
+  alignItems: 'center',
+  justifyContent: 'center',
+},
+
+profileToolbarTitle: {
+  flex: 1,
+  marginLeft: 12,
+  fontSize: 19,
+  fontWeight: '800',
+  color: '#102A56',
+},
+
+profileToolbarActions: {
+  flexDirection: 'row',
+  alignItems: 'center',
+},
+
+profileActionButton: {
+  width: 38,
+  height: 38,
+  borderRadius: 12,
+  backgroundColor: '#FFFFFF',
+  borderWidth: 1,
+  borderColor: '#E5EAF1',
+  alignItems: 'center',
+  justifyContent: 'center',
+  marginLeft: 8,
+},
 });
