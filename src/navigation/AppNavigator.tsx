@@ -1800,19 +1800,27 @@ const rejectKyc = (id: string) => {
   };
 
   // ---------------------------------------------------------------------
-  // NEW: approveTenureExtension
+  // approveTenureExtension
   // Called from BondTrackingScreen's "Renew / Increase Tenure" modal. Takes
   // the bond series id directly (not just a request id) so it also works
   // for a manual renewal the admin initiates with no investor request
   // behind it — linkedRequestId is optional and only gets marked Approved
   // when there actually is a matching pending investor request.
+  //
+  // CHANGED (per new flow): Tenure Extension is now a SINGLE-STAGE flow —
+  // Admin approval is FINAL. There is no more Super Admin step for tenure
+  // extension. Approving here directly extends the bond's tenure,
+  // maturity date, and (optionally) rate, and marks the linked investor
+  // request 'Approved' immediately — which flips the investor's
+  // MyInvestments screen straight back to 'Active' with the new maturity
+  // date, and Admin > "All Investments" back to a normal 'Active' row.
+  //
+  // NOTE: This does NOT affect Tenure Out (maturity settlement) or
+  // Pre-Close flows — those still go through
+  // requestMaturitySettlement/superAdminApproveMaturitySettlement and
+  // approvePreSettlement/superAdminApprovePreSettlement exactly as before,
+  // untouched.
   // ---------------------------------------------------------------------
-// CHANGED: Admin "approving" a tenure extension in the Tenure modal no
-  // longer applies it to the bond directly. It now forwards the
-  // (possibly admin-adjusted) months/rate to the Super Admin for final
-  // approval — mirrors the pre-close flow. The bond's tenure, maturity
-  // date, and rate stay unchanged until superAdminApproveTenureExtension
-  // runs.
   const approveTenureExtension = (
     bondSeriesId: string,
     extensionMonths: number,
@@ -1821,36 +1829,8 @@ const rejectKyc = (id: string) => {
   ) => {
     const bond = bonds.find(b => b.seriesId === bondSeriesId);
 
-    if (linkedRequestId) {
-      setTenureExtensionRequests(prev =>
-        prev.map(r =>
-          r.id === linkedRequestId
-            ? {...r, extensionMonths, decidedRate: newRate, status: 'PendingSuperAdmin'}
-            : r,
-        ),
-      );
-
-      setSaNotifications(prev => [
-        {
-          id: `sn-${Date.now()}`,
-          title: 'Tenure Extension Requested',
-          isNew: true,
-          message: `Admin approved a ${extensionMonths}-month extension on ${bondSeriesId}${
-            bond ? ` for ${bond.investorName}` : ''
-          }. Please review and approve.`,
-          time: 'Just now',
-          icon: 'bond',
-        },
-        ...prev,
-      ]);
-
-      pushAuditLog('Admin', 'Admin', `Tenure Extension Approved — sent to Super Admin — ${bondSeriesId}`);
-      return;
-    }
-
-    // Manual renewal with no investor request behind it — not currently
-    // reachable from the UI (Tenure button is only enabled when a request
-    // exists), kept as a safe fallback that applies immediately.
+    // Apply the extension to the bond immediately — admin approval is
+    // final for tenure extension, no Super Admin stage.
     setBonds(prev =>
       prev.map(b => {
         if (b.seriesId !== bondSeriesId) return b;
@@ -1865,6 +1845,16 @@ const rejectKyc = (id: string) => {
         };
       }),
     );
+
+    if (linkedRequestId) {
+      setTenureExtensionRequests(prev =>
+        prev.map(r =>
+          r.id === linkedRequestId
+            ? {...r, extensionMonths, decidedRate: newRate, status: 'Approved'}
+            : r,
+        ),
+      );
+    }
 
     setAdminNotifications(prev => [
       {
@@ -1883,9 +1873,10 @@ const rejectKyc = (id: string) => {
     pushAuditLog('Admin', 'Admin', `Tenure Extension Approved — ${bondSeriesId} (+${extensionMonths}M)`);
   };
 
-  // NEW: Super Admin's final settlement action for a forwarded tenure
-  // extension — this now does what approveTenureExtension used to do:
-  // actually extends the bond's tenure, maturity date, and rate.
+  // Kept as-is for backward compatibility / any lingering references, but
+  // is no longer reachable from the UI since tenure extension requests
+  // never reach 'PendingSuperAdmin' status anymore (approveTenureExtension
+  // above now settles them as 'Approved' directly).
   const superAdminApproveTenureExtension = (requestId: string) => {
     const req = tenureExtensionRequests.find(r => r.id === requestId);
     if (!req || req.status !== 'PendingSuperAdmin') return;
@@ -1969,6 +1960,9 @@ const rejectKyc = (id: string) => {
   // settlement — mirrors the existing monthly-payout admin -> super admin
   // flow (requestPayoutApproval). The bond stays 'Active' until
   // superAdminApprovePreSettlement runs.
+  //
+  // UNTOUCHED per new flow — Pre-Close remains a two-stage
+  // Admin -> Super Admin flow exactly as before.
   const approvePreSettlement = (requestId: string) => {
     const req = preSettlementRequests.find(r => r.id === requestId);
     if (!req || req.status !== 'Pending') return;
@@ -2066,6 +2060,9 @@ const rejectPreSettlement = (requestId: string) => {
   // Admin's "Tenure Settlement" queue for final approval — mirrors the
   // pre-close flow. The bond stays 'Active' until
   // superAdminApproveMaturitySettlement runs.
+  //
+  // UNTOUCHED per new flow — Tenure Out (maturity settlement) remains a
+  // two-stage Admin -> Super Admin flow exactly as before.
   const requestMaturitySettlement = (params: {
     bondSeriesId: string;
     investorId: string;
