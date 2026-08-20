@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert} from 'react-native';
 import {styles} from '../../styles/superadmin/BranchManagementScreen.styles';
 import {useAppData, Branch} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
 const BranchManagementScreen = ({navigation}: any) => {
@@ -124,7 +124,7 @@ const [addAum, setAddAum] = useState('');
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Branch Management" />
+      <AppHeader subtitle="Branch Management" />
       <View style={styles.topBar}>
         <TextInput
           style={styles.searchInput}

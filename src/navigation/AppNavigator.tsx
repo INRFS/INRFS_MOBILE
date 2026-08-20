@@ -34,8 +34,8 @@ import SuperAdminDashboardScreen from '../screens/superadmin/SuperAdminDashboard
 import BranchManagementScreen from '../screens/superadmin/BranchManagementScreen';
 import AdminManagementScreen from '../screens/superadmin/AdminManagementScreen';
 import UserManagementScreen from '../screens/superadmin/UserManagementScreen';
-import RolesPermissionsScreen from '../screens/superadmin/RolesPermissionsScreen';
-import AuditLogsScreen from '../screens/superadmin/AuditLogsScreen';
+// import RolesPermissionsScreen from '../screens/superadmin/RolesPermissionsScreen';
+// import AuditLogsScreen from '../screens/superadmin/AuditLogsScreen';
 import SuperAdminReportsScreen from '../screens/superadmin/SuperAdminReportsScreen';
 import SystemSettingsScreen from '../screens/superadmin/SystemSettingsScreen';
 import PaymentQueueScreen from '../screens/superadmin/PaymentQueueScreen';
@@ -2274,8 +2274,8 @@ updateInvestorBranch,
             <Stack.Screen name="BranchManagement" component={BranchManagementScreen} />
             <Stack.Screen name="AdminManagement" component={AdminManagementScreen} />
             <Stack.Screen name="UserManagement" component={UserManagementScreen} />
-            <Stack.Screen name="RolesPermissions" component={RolesPermissionsScreen} />
-            <Stack.Screen name="AuditLogs" component={AuditLogsScreen} />
+            {/* <Stack.Screen name="RolesPermissions" component={RolesPermissionsScreen} /> */}
+            {/* <Stack.Screen name="AuditLogs" component={AuditLogsScreen} /> */}
             <Stack.Screen name="SuperAdminReports" component={SuperAdminReportsScreen} />
             <Stack.Screen name="SystemSettings" component={SystemSettingsScreen} />
            <Stack.Screen name="Notifications" component={PaymentQueueScreen} />

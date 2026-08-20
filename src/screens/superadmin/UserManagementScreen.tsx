@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity,  TextInput, Modal, Alert} from 'react-native';
 import {styles} from '../../styles/superadmin/UserManagementScreen.styles';
 import {useAppData, SystemUser} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import {SafeAreaView} from 'react-native-safe-area-context';
 const roleOptions: SystemUser['role'][] = ['Investor', 'Admin', 'Branch Manager', 'Super Admin'];
 
@@ -44,7 +44,7 @@ const UserManagementScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="User Management" />
+      <AppHeader subtitle="User Management" />
       <View style={styles.topBar}>
         <TextInput
           style={styles.searchInput}

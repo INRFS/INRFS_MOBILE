@@ -626,7 +626,7 @@
 import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, TextInput, Modal, StyleSheet} from 'react-native';
 import {styles} from '../../styles/superadmin/InvestmentManagementScreen.styles';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useAppData, Bond, InvestmentRequest, Investor} from '../../navigation/AppNavigator';
@@ -725,7 +725,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Investments" showBack={false} />
+      <AppHeader subtitle="Investment Management" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.headerRow}>

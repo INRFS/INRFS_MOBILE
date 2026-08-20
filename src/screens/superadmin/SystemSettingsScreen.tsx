@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, TextInput, Alert} from 'react-native';
 import {styles} from '../../styles/superadmin/SystemSettingsScreen.styles';
 import {useAppData} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import {SafeAreaView} from 'react-native-safe-area-context';
 type Tab = 'System' | 'Email' | 'SMS' | 'Backup';
 
@@ -59,7 +59,7 @@ const SystemSettingsScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="System Settings" />
+      <AppHeader subtitle="System Settings" />
 
       <View style={styles.tabBar}>
         {tabs.map(tab => (

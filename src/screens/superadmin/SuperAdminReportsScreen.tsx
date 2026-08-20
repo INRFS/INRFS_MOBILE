@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, TextInput, Alert} from 'react-native';
 const {styles} = require('../../styles/superadmin/SuperAdminReportsScreen.styles');
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useAppData} from '../../navigation/AppNavigator';
@@ -74,7 +74,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Reports" showBack={false} />
+      <AppHeader subtitle="Reports" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Export buttons */}
         {/* <View style={styles.exportRow}>

@@ -1,42 +1,142 @@
-import React, {useState} from 'react';
-import {View, Text, TouchableOpacity, Modal, Pressable, Animated, Image} from 'react-native';
+import React, {
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  Modal,
+  Pressable,
+  Animated,
+  Image,
+  Dimensions,
+  StyleSheet,
+  Platform,
+} from 'react-native';
+
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {styles} from '../../../styles/superadmin/components/SuperAdminBottomTabBar.styles';
-import {useAppData} from '../../../navigation/AppNavigator';
 
-export type SuperAdminTabKey = 'Dashboard' | 'Investors' | 'Investments' | 'More' | 'Profile';
+const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-// The 3 tabs that get their own slot in the bar. "More" opens a sheet
-// instead of navigating directly, same as the admin side.
-const tabs: {key: SuperAdminTabKey; label: string; icon: string; route: string}[] = [
-  {key: 'Dashboard', label: 'Dashboard', icon: 'view-dashboard-outline', route: 'SuperAdminDashboard'},
-  {key: 'Investors', label: 'Investors', icon: 'account-group-outline', route: 'InvestorManagement'},
-  {key: 'Investments', label: 'Investments', icon: 'chart-donut', route: 'InvestmentManagement'},
-];
+const BLUE = '#155EEF';
+const MUTED = '#98A2B3';
 
-// Everything on the superadmin surface lives in this sheet — the 3
-// primary tabs again, plus every other superadmin screen, plus Profile.
-const moreItems: {
-  key: SuperAdminTabKey | 'AdminManagement' | 'AuditLogs' | 'BranchManagement' | 'PaymentQueue' | 'RolesPermissions' | 'Reports' | 'Notifications' | 'SystemSettings' | 'UserManagement';
+export type SuperAdminTabKey =
+  | 'Dashboard'
+  | 'Investors'
+  | 'Investments'
+  | 'More'
+  | 'Profile';
+
+/*
+ * ============================================================
+ * PRIMARY TABS
+ * ============================================================
+ */
+
+const tabs: {
+  key: SuperAdminTabKey;
   label: string;
   icon: string;
   route: string | null;
-  disabled?: boolean;
 }[] = [
-  {key: 'Dashboard', label: 'Dashboard', icon: 'view-dashboard-outline', route: 'SuperAdminDashboard'},
-  {key: 'Investors', label: 'Investors', icon: 'account-group-outline', route: 'InvestorManagement'},
-  {key: 'Investments', label: 'Investments', icon: 'chart-donut', route: 'InvestmentManagement'},
-  // {key: 'UserManagement', label: 'User Management', icon: 'account-multiple-outline', route: 'UserManagement'},
-  {key: 'AdminManagement', label: 'Admin Management', icon: 'account-tie-outline', route: 'AdminManagement'},
-  // {key: 'RolesPermissions', label: 'Roles & Permissions', icon: 'shield-key-outline', route: 'RolesPermissions'},
-  {key: 'BranchManagement', label: 'Branch Management', icon: 'office-building-outline', route: 'BranchManagement'},
-  // {key: 'PaymentQueue', label: 'Payment Queue', icon: 'cash-multiple', route: 'PaymentQueue'},
-  // {key: 'AuditLogs', label: 'Audit Logs', icon: 'file-document-outline', route: 'AuditLogs'},
-  {key: 'Reports', label: 'Reports', icon: 'file-chart-outline', route: 'SuperAdminReports'},
-  {key: 'Notifications', label: 'Payments', icon: 'bell-outline', route: 'Notifications'},
-  // {key: 'SystemSettings', label: 'System Settings', icon: 'cog-outline', route: 'SystemSettings'},
-  {key: 'Profile', label: 'Profile', icon: 'account-outline', route: 'SuperAdminProfile'},
+  {
+    key: 'Dashboard',
+    label: 'Dashboard',
+    icon: 'view-dashboard-outline',
+    route: 'SuperAdminDashboard',
+  },
+  {
+    key: 'Investors',
+    label: 'Investors',
+    icon: 'account-group-outline',
+    route: 'InvestorManagement',
+  },
+  {
+    key: 'Investments',
+    label: 'Investments',
+    icon: 'chart-donut',
+    route: 'InvestmentManagement',
+  },
 ];
+
+/*
+ * ============================================================
+ * MORE MENU
+ * ============================================================
+ */
+
+const moreItems: {
+  key: string;
+  label: string;
+  icon: string;
+  route: string | null;
+}[] = [
+  {
+    key: 'Dashboard',
+    label: 'Dashboard',
+    icon: 'view-dashboard-outline',
+    route: 'SuperAdminDashboard',
+  },
+
+  {
+    key: 'Investors',
+    label: 'Investors',
+    icon: 'account-group-outline',
+    route: 'InvestorManagement',
+  },
+
+  {
+    key: 'Investments',
+    label: 'Investments',
+    icon: 'chart-donut',
+    route: 'InvestmentManagement',
+  },
+
+  {
+    key: 'AdminManagement',
+    label: 'Admin Management',
+    icon: 'account-tie-outline',
+    route: 'AdminManagement',
+  },
+
+  {
+    key: 'BranchManagement',
+    label: 'Branch Management',
+    icon: 'office-building-outline',
+    route: 'BranchManagement',
+  },
+
+  {
+    key: 'Reports',
+    label: 'Reports',
+    icon: 'file-chart-outline',
+    route: 'SuperAdminReports',
+  },
+
+  {
+    key: 'Notifications',
+    label: 'Payments',
+    icon: 'bell-outline',
+    route: 'Notifications',
+  },
+
+  {
+    key: 'Profile',
+    label: 'Profile',
+    icon: 'account-outline',
+    route: 'SuperAdminProfile',
+  },
+];
+
+/*
+ * ============================================================
+ * COMPONENT
+ * ============================================================
+ */
 
 const SuperAdminBottomTabBar = ({
   active,
@@ -47,134 +147,1080 @@ const SuperAdminBottomTabBar = ({
   navigation: any;
   superAdminName?: string;
 }) => {
-  const {saNotifications} = useAppData();
-  const unreadCount = saNotifications.filter(n => n.isNew).length;
+  const [moreVisible, setMoreVisible] =
+    useState(false);
 
-  const [moreVisible, setMoreVisible] = useState(false);
-  const slideAnim = React.useRef(new Animated.Value(300)).current;
+  /*
+   * Same animation pattern as Admin.
+   */
 
-  // "More" lights up whenever the active screen is one of the items that
-  // only live inside the sheet — anything that isn't one of the 3 primary tabs.
-  const isMoreActive = active === 'More' || active === 'Profile';
+  const slideAnim = useRef(
+    new Animated.Value(500),
+  ).current;
+
+  const indicatorAnim = useRef(
+    new Animated.Value(0),
+  ).current;
+
+  const activeScale = useRef(
+    new Animated.Value(1),
+  ).current;
+
+  /*
+   * ============================================================
+   * MORE ACTIVE
+   * ============================================================
+   */
+
+  const isMoreActive =
+    active === 'More' ||
+    active === 'Profile';
+
+  /*
+   * ============================================================
+   * ACTIVE INDEX
+   * ============================================================
+   */
+
+  const activeIndex =
+    active === 'Dashboard'
+      ? 0
+      : active === 'Investors'
+      ? 1
+      : active === 'Investments'
+      ? 2
+      : 3;
+
+  /*
+   * ============================================================
+   * ACTIVE TAB ANIMATION
+   * ============================================================
+   */
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(
+        indicatorAnim,
+        {
+          toValue: activeIndex,
+
+          useNativeDriver: true,
+
+          damping: 18,
+
+          stiffness: 180,
+
+          mass: 0.7,
+        },
+      ),
+
+      Animated.sequence([
+        Animated.timing(
+          activeScale,
+          {
+            toValue: 0.94,
+
+            duration: 80,
+
+            useNativeDriver: true,
+          },
+        ),
+
+        Animated.spring(
+          activeScale,
+          {
+            toValue: 1,
+
+            useNativeDriver: true,
+
+            damping: 14,
+
+            stiffness: 180,
+          },
+        ),
+      ]),
+    ]).start();
+  }, [
+    activeIndex,
+    indicatorAnim,
+    activeScale,
+  ]);
+
+  /*
+   * ============================================================
+   * OPEN MORE
+   * ============================================================
+   */
 
   const openMore = () => {
     setMoreVisible(true);
-    Animated.timing(slideAnim, {toValue: 0, duration: 250, useNativeDriver: true}).start();
+
+    slideAnim.setValue(500);
+
+    Animated.spring(
+      slideAnim,
+      {
+        toValue: 0,
+
+        damping: 24,
+
+        stiffness: 190,
+
+        mass: 0.8,
+
+        useNativeDriver: true,
+      },
+    ).start();
   };
+
+  /*
+   * ============================================================
+   * CLOSE MORE
+   * ============================================================
+   */
 
   const closeMore = () => {
-    Animated.timing(slideAnim, {toValue: 300, duration: 200, useNativeDriver: true}).start(() => {
-      setMoreVisible(false);
-    });
+    Animated.timing(
+      slideAnim,
+      {
+        toValue: 500,
+
+        duration: 220,
+
+        useNativeDriver: true,
+      },
+    ).start(() =>
+      setMoreVisible(false),
+    );
   };
 
-  const goTo = (route: string | null) => {
-    if (!route) return;
+  /*
+   * ============================================================
+   * NAVIGATION
+   * ============================================================
+   */
+
+  const goTo = (
+    route: string | null,
+  ) => {
+    if (!route) {
+      return;
+    }
+
     closeMore();
+
     navigation.navigate(route);
   };
 
-  const handleLogout = () => {
-    closeMore();
-    navigation.reset({index: 0, routes: [{name: 'Login'}]});
+  const handleMainTab = (
+    route: string | null,
+  ) => {
+    if (!route) {
+      return;
+    }
+
+    navigation.navigate(route);
   };
 
+  /*
+   * ============================================================
+   * LOGOUT
+   * ============================================================
+   */
+
+  const handleLogout = () => {
+    closeMore();
+
+    navigation.reset({
+      index: 0,
+
+      routes: [
+        {
+          name: 'Login',
+        },
+      ],
+    });
+  };
+
+  /*
+   * ============================================================
+   * INDICATOR
+   *
+   * Dashboard | Investors | Investments | More
+   * ============================================================
+   */
+
+  const tabWidth =
+    SCREEN_WIDTH / 4;
+
+  const indicatorTranslateX =
+    indicatorAnim.interpolate({
+      inputRange: [
+        0,
+        1,
+        2,
+        3,
+      ],
+
+      outputRange: [
+        -tabWidth * 1.5,
+        -tabWidth * 0.5,
+        tabWidth * 0.5,
+        tabWidth * 1.5,
+      ],
+    });
+
+  /*
+   * ============================================================
+   * RENDER
+   * ============================================================
+   */
+
   return (
-    <View style={styles.tabBar}>
-      {tabs.map(tab => {
-        const isActive = tab.key === active;
-        return (
-          <TouchableOpacity
-            key={tab.key}
-            style={styles.tabItem}
-            activeOpacity={0.7}
-            onPress={() => navigation.navigate(tab.route)}>
-            <View style={[styles.iconWrap, isActive && styles.iconWrapActive]}>
-              <Icon name={tab.icon} size={20} color={isActive ? '#1955F0' : '#9CA3AF'} />
-            </View>
-            <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
-          </TouchableOpacity>
-        );
-      })}
+    <>
+      {/* ====================================================== */}
+      {/* BOTTOM BAR                                             */}
+      {/* ====================================================== */}
 
-      <TouchableOpacity style={styles.tabItem} activeOpacity={0.7} onPress={openMore}>
-        <View style={[styles.iconWrap, isMoreActive && styles.iconWrapActive]}>
-          <Icon name="dots-horizontal" size={20} color={isMoreActive ? '#1955F0' : '#9CA3AF'} />
-          {/* {unreadCount > 0 ? (
-            <View style={styles.dot}>
-              <Text style={styles.dotText}>{unreadCount}</Text>
-            </View>
-          ) : null} */}
-        </View>
-        <Text style={[styles.label, isMoreActive && styles.labelActive]}>More</Text>
-      </TouchableOpacity>
+      <View
+        style={styles.container}>
 
-      <Modal visible={moreVisible} transparent animationType="fade" onRequestClose={closeMore}>
-        <Pressable style={styles.backdrop} onPress={closeMore} />
-        <Animated.View style={[styles.sheet, {transform: [{translateY: slideAnim}]}]}>
-          <View style={styles.grabber} />
+        {/* Active indicator */}
 
-          <View style={styles.sheetHeader}>
-            <View style={styles.sheetLogoWrap}>
-              <Image
-                source={require('../../../assets/logo.jpeg')}
-                style={styles.sheetLogo}
-                resizeMode="contain"
-              />
-            </View>
-          </View>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.activeIndicator,
 
-          {moreItems.map(item => {
-            const isActive = item.key === active;
-            return (
-              <TouchableOpacity
-                key={item.key}
-                style={[styles.sheetItem, isActive && styles.sheetItemActive]}
-                disabled={item.disabled}
-                onPress={() => goTo(item.route)}>
+            {
+              width: Math.max(
+                54,
+                tabWidth - 28,
+              ),
+
+              transform: [
+                {
+                  translateX:
+                    indicatorTranslateX,
+                },
+              ],
+            },
+          ]}
+        />
+
+        {/* ================================================== */}
+        {/* PRIMARY TABS                                        */}
+        {/* ================================================== */}
+
+        {tabs.map(tab => {
+          const isActive =
+            tab.key === active;
+
+          return (
+            <TouchableOpacity
+              key={tab.key}
+              style={styles.tabItem}
+              activeOpacity={0.82}
+              onPress={() =>
+                handleMainTab(
+                  tab.route,
+                )
+              }>
+
+              <Animated.View
+                style={[
+                  styles.iconWrap,
+
+                  isActive &&
+                    styles.iconWrapActive,
+
+                  isActive && {
+                    transform: [
+                      {
+                        scale:
+                          activeScale,
+                      },
+                    ],
+                  },
+                ]}>
+
                 <Icon
-                  name={item.icon}
-                  size={20}
-                  color={item.disabled ? '#D1D5DB' : isActive ? '#1955F0' : '#4B5563'}
-                  style={styles.sheetItemIcon}
+                  name={tab.icon}
+                  size={22}
+                  color={
+                    isActive
+                      ? BLUE
+                      : MUTED
+                  }
                 />
-                <Text
-                  style={[
-                    styles.sheetItemText,
-                    isActive && styles.sheetItemTextActive,
-                    item.disabled && styles.sheetItemTextDisabled,
-                  ]}>
-                  {item.label}
-                </Text>
-                {/* {item.key === 'Notifications' && unreadCount > 0 ? (
-                  <View style={styles.dot}>
-                    <Text style={styles.dotText}>{unreadCount}</Text>
-                  </View>
-                ) : null} */}
-              </TouchableOpacity>
-            );
-          })}
+              </Animated.View>
 
-          <View style={styles.sheetFooter}>
-            <View style={styles.sheetUserRow}>
-              <View style={styles.sheetAvatar}>
-                <Text style={styles.sheetAvatarText}>
-                  {(superAdminName || 'SA').slice(0, 2).toUpperCase()}
-                </Text>
-              </View>
-              <View>
-                <Text style={styles.sheetUserName}>{superAdminName || 'Super Admin'}</Text>
-                <Text style={styles.sheetUserSub}>Super Admin Account</Text>
-              </View>
-            </View>
-            <TouchableOpacity onPress={handleLogout}>
-              <Icon name="logout" size={20} color="#1955F0" />
+              <Text
+                numberOfLines={1}
+                style={[
+                  styles.label,
+
+                  isActive &&
+                    styles.labelActive,
+                ]}>
+                {tab.label}
+              </Text>
             </TouchableOpacity>
-          </View>
-        </Animated.View>
+          );
+        })}
+
+        {/* ================================================== */}
+        {/* MORE                                               */}
+        {/* ================================================== */}
+
+        <TouchableOpacity
+          style={styles.tabItem}
+          activeOpacity={0.82}
+          onPress={openMore}>
+
+          <Animated.View
+            style={[
+              styles.iconWrap,
+
+              isMoreActive &&
+                styles.iconWrapActive,
+
+              isMoreActive && {
+                transform: [
+                  {
+                    scale:
+                      activeScale,
+                  },
+                ],
+              },
+            ]}>
+
+            <Icon
+              name="dots-horizontal"
+              size={23}
+              color={
+                isMoreActive
+                  ? BLUE
+                  : MUTED
+              }
+            />
+          </Animated.View>
+
+          <Text
+            style={[
+              styles.label,
+
+              isMoreActive &&
+                styles.labelActive,
+            ]}>
+            More
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* ====================================================== */}
+      {/* MORE MODAL                                            */}
+      {/* ====================================================== */}
+
+      <Modal
+        visible={moreVisible}
+        transparent
+        animationType="none"
+        onRequestClose={
+          closeMore
+        }>
+
+        <View
+          style={styles.modalRoot}>
+
+          <Pressable
+            style={styles.backdrop}
+            onPress={closeMore}
+          />
+
+          <Animated.View
+            style={[
+              styles.sheet,
+
+              {
+                transform: [
+                  {
+                    translateY:
+                      slideAnim,
+                  },
+                ],
+              },
+            ]}>
+
+            <View
+              style={styles.grabber}
+            />
+
+            {/* ================================================= */}
+            {/* SHEET HEADER                                      */}
+            {/* ================================================= */}
+
+            <View
+              style={
+                styles.sheetHeader
+              }>
+
+              <View
+                style={
+                  styles.sheetBrandRow
+                }>
+
+                <View
+                  style={
+                    styles.sheetLogoWrap
+                  }>
+
+                  <Image
+                    source={require('../../../assets/logo.jpeg')}
+                    style={
+                      styles.sheetLogo
+                    }
+                    resizeMode="contain"
+                  />
+                </View>
+
+                <View
+                  style={
+                    styles.sheetBrandText
+                  }>
+{/* 
+                  <Text
+                    style={
+                      styles.sheetHeaderTitle
+                    }>
+                    INRFS
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.sheetHeaderSubtitle
+                    }>
+                    Super Admin Portal
+                  </Text> */}
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={
+                  styles.closeButton
+                }
+                onPress={
+                  closeMore
+                }
+                activeOpacity={0.7}>
+
+                <Icon
+                  name="close"
+                  size={20}
+                  color="#667085"
+                />
+              </TouchableOpacity>
+            </View>
+
+            <View
+              style={
+                styles.sheetDivider
+              }
+            />
+
+            {/* ================================================= */}
+            {/* MENU ITEMS                                        */}
+            {/* ================================================= */}
+
+            {moreItems.map(item => {
+              const isActive =
+                item.key === active;
+
+              return (
+                <TouchableOpacity
+                  key={item.key}
+                  style={[
+                    styles.sheetItem,
+
+                    isActive &&
+                      styles.sheetItemActive,
+                  ]}
+                  activeOpacity={0.75}
+                  onPress={() =>
+                    goTo(
+                      item.route,
+                    )
+                  }>
+
+                  <View
+                    style={[
+                      styles.sheetItemIconWrap,
+
+                      isActive &&
+                        styles.sheetItemIconWrapActive,
+                    ]}>
+
+                    <Icon
+                      name={
+                        item.icon
+                      }
+                      size={21}
+                      color={
+                        isActive
+                          ? BLUE
+                          : '#475467'
+                      }
+                    />
+                  </View>
+
+                  <Text
+                    style={[
+                      styles.sheetItemText,
+
+                      isActive &&
+                        styles.sheetItemTextActive,
+                    ]}>
+                    {item.label}
+                  </Text>
+
+                  <Icon
+                    name="chevron-right"
+                    size={20}
+                    color={
+                      isActive
+                        ? BLUE
+                        : '#98A2B3'
+                    }
+                  />
+                </TouchableOpacity>
+              );
+            })}
+
+            {/* ================================================= */}
+            {/* FOOTER                                            */}
+            {/* ================================================= */}
+
+            <View
+              style={
+                styles.sheetFooter
+              }>
+
+              <View
+                style={
+                  styles.sheetUserRow
+                }>
+
+                <View
+                  style={
+                    styles.sheetAvatar
+                  }>
+
+                  <Text
+                    style={
+                      styles.sheetAvatarText
+                    }>
+                    {(
+                      superAdminName ||
+                      'SA'
+                    )
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </Text>
+                </View>
+
+                <View
+                  style={
+                    styles.sheetUserInfo
+                  }>
+
+                  <Text
+                    style={
+                      styles.sheetUserName
+                    }>
+                    {superAdminName ||
+                      'Super Admin'}
+                  </Text>
+
+                  <Text
+                    style={
+                      styles.sheetUserSub
+                    }>
+                    Super Admin Account
+                  </Text>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={
+                  styles.logoutButton
+                }
+                onPress={
+                  handleLogout
+                }
+                activeOpacity={0.7}>
+
+                <Icon
+                  name="logout"
+                  size={20}
+                  color={BLUE}
+                />
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        </View>
       </Modal>
-    </View>
+    </>
   );
 };
+
+/*
+ * =============================================================
+ * STYLES
+ * =============================================================
+ */
+
+const styles = StyleSheet.create({
+  /*
+   * ============================================================
+   * BOTTOM BAR
+   * ============================================================
+   */
+
+  container: {
+    position: 'absolute',
+
+    left: 0,
+    right: 0,
+    bottom: 0,
+
+    height:
+      Platform.OS === 'ios'
+        ? 82
+        : 68,
+
+    backgroundColor: '#FFFFFF',
+
+    borderTopWidth: 1,
+
+    borderTopColor: '#E7EAF0',
+
+    flexDirection: 'row',
+
+    alignItems: 'flex-start',
+
+    justifyContent: 'space-around',
+
+    paddingTop: 7,
+
+    paddingBottom:
+      Platform.OS === 'ios'
+        ? 8
+        : 5,
+
+    elevation: 14,
+
+    shadowColor: '#101828',
+
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+
+    shadowOpacity: 0.08,
+
+    shadowRadius: 12,
+
+    zIndex: 100,
+  },
+
+  /*
+   * Same active indicator as Admin.
+   */
+
+  activeIndicator: {
+    position: 'absolute',
+
+    top: 0,
+
+    left: 0,
+
+    height: 3,
+
+    borderRadius: 3,
+
+    backgroundColor: BLUE,
+
+    zIndex: 2,
+  },
+
+  /*
+   * Four equal slots.
+   */
+
+  tabItem: {
+    width: '25%',
+
+    height: '100%',
+
+    alignItems: 'center',
+
+    justifyContent: 'flex-start',
+
+    paddingTop: 2,
+
+    paddingHorizontal: 3,
+  },
+
+  iconWrap: {
+    width: 42,
+
+    height: 34,
+
+    borderRadius: 11,
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    backgroundColor:
+      'transparent',
+  },
+
+  iconWrapActive: {
+    backgroundColor:
+      '#EEF4FF',
+  },
+
+  label: {
+    marginTop: 4,
+
+    maxWidth: 88,
+
+    textAlign: 'center',
+
+    fontSize: 10.5,
+
+    lineHeight: 14,
+
+    fontWeight: '600',
+
+    color: MUTED,
+  },
+
+  labelActive: {
+    color: BLUE,
+
+    fontWeight: '800',
+  },
+
+  /*
+   * ============================================================
+   * MODAL
+   * ============================================================
+   */
+
+  modalRoot: {
+    flex: 1,
+
+    justifyContent: 'flex-end',
+  },
+
+  backdrop: {
+    ...StyleSheet.absoluteFill,
+
+    backgroundColor:
+      'rgba(15,23,42,0.42)',
+  },
+
+  /*
+   * ============================================================
+   * SHEET
+   * ============================================================
+   */
+
+  sheet: {
+    width: '100%',
+
+    backgroundColor: '#FFFFFF',
+
+    borderTopLeftRadius: 26,
+
+    borderTopRightRadius: 26,
+
+    paddingHorizontal: 18,
+
+    paddingTop: 9,
+
+    paddingBottom:
+      Platform.OS === 'ios'
+        ? 28
+        : 18,
+
+    elevation: 24,
+
+    shadowColor: '#101828',
+
+    shadowOffset: {
+      width: 0,
+      height: -6,
+    },
+
+    shadowOpacity: 0.16,
+
+    shadowRadius: 18,
+  },
+
+  grabber: {
+    alignSelf: 'center',
+
+    width: 42,
+
+    height: 4,
+
+    borderRadius: 4,
+
+    backgroundColor: '#D0D5DD',
+
+    marginBottom: 18,
+  },
+
+  /*
+   * ============================================================
+   * SHEET HEADER
+   * ============================================================
+   */
+
+  sheetHeader: {
+    flexDirection: 'row',
+
+    alignItems: 'center',
+
+    justifyContent:
+      'space-between',
+
+    marginBottom: 12,
+  },
+
+  sheetBrandRow: {
+    flexDirection: 'row',
+
+    alignItems: 'center',
+  },
+
+  sheetLogoWrap: {
+    width: 100,
+
+    height: 40,
+
+    borderRadius: 8,
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    overflow: 'hidden',
+
+    backgroundColor: '#FFFFFF',
+
+    marginRight: 10,
+  },
+
+  sheetLogo: {
+    width: '100%',
+
+    height: '100%',
+  },
+
+  sheetBrandText: {
+    justifyContent: 'center',
+  },
+
+  sheetHeaderTitle: {
+    fontSize: 16,
+
+    fontWeight: '900',
+
+    color: '#101828',
+
+    letterSpacing: 0.2,
+  },
+
+  sheetHeaderSubtitle: {
+    marginTop: 1,
+
+    fontSize: 11,
+
+    color: '#667085',
+
+    fontWeight: '600',
+  },
+
+  closeButton: {
+    width: 38,
+
+    height: 38,
+
+    borderRadius: 12,
+
+    backgroundColor: '#F8FAFC',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+  },
+
+  sheetDivider: {
+    height: 1,
+
+    backgroundColor: '#E7EAF0',
+
+    marginVertical: 14,
+  },
+
+  /*
+   * ============================================================
+   * MENU ITEMS
+   * ============================================================
+   */
+
+  sheetItem: {
+    minHeight: 54,
+
+    borderRadius: 15,
+
+    flexDirection: 'row',
+
+    alignItems: 'center',
+
+    paddingHorizontal: 10,
+
+    marginBottom: 5,
+  },
+
+  sheetItemActive: {
+    backgroundColor: '#EEF4FF',
+  },
+
+  sheetItemIconWrap: {
+    width: 38,
+
+    height: 38,
+
+    borderRadius: 11,
+
+    backgroundColor: '#F2F4F7',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    marginRight: 12,
+  },
+
+  sheetItemIconWrapActive: {
+    backgroundColor: '#DCE9FF',
+  },
+
+  sheetItemText: {
+    flex: 1,
+
+    fontSize: 14,
+
+    fontWeight: '700',
+
+    color: '#344054',
+  },
+
+  sheetItemTextActive: {
+    color: BLUE,
+  },
+
+  /*
+   * ============================================================
+   * FOOTER
+   * ============================================================
+   */
+
+  sheetFooter: {
+    borderTopWidth: 1,
+
+    borderTopColor: '#E7EAF0',
+
+    marginTop: 12,
+
+    paddingTop: 15,
+
+    flexDirection: 'row',
+
+    alignItems: 'center',
+
+    justifyContent:
+      'space-between',
+  },
+
+  sheetUserRow: {
+    flexDirection: 'row',
+
+    alignItems: 'center',
+  },
+
+  sheetAvatar: {
+    width: 42,
+
+    height: 42,
+
+    borderRadius: 21,
+
+    backgroundColor: '#EEF4FF',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    marginRight: 10,
+  },
+
+  sheetAvatarText: {
+    color: BLUE,
+
+    fontSize: 13,
+
+    fontWeight: '900',
+  },
+
+  sheetUserInfo: {
+    justifyContent: 'center',
+  },
+
+  sheetUserName: {
+    fontSize: 13.5,
+
+    fontWeight: '800',
+
+    color: '#101828',
+  },
+
+  sheetUserSub: {
+    marginTop: 2,
+
+    fontSize: 11,
+
+    color: '#667085',
+  },
+
+  logoutButton: {
+    width: 42,
+
+    height: 42,
+
+    borderRadius: 12,
+
+    backgroundColor: '#EEF4FF',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+  },
+});
 
 export default SuperAdminBottomTabBar;

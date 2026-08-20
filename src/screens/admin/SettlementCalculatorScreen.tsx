@@ -3,7 +3,7 @@ import {View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet} from 'react
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/SettlementCalculatorScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from './AdminBottomTabBar';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 
 // ---------------------------------------------------------------------------
 // This screen is a queue of REAL pending settlement work, split into the
