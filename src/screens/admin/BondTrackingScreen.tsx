@@ -17,7 +17,8 @@ import {
 } from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/BondTrackingScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from './AdminBottomTabBar';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
+import AppHeader from '../../components/AppHeader';
 
 type TopTab = 'Pending Approval' | 'All Investments';
 // 'Pending Extension' / 'Pending Settlement' so a bond's status badge in
@@ -395,10 +396,7 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.bell}>🔔</Text>
-      </View>
-
+<AppHeader subtitle="Admin Portal" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Investment Management</Text>
         <Text style={styles.subtitle}>
@@ -783,7 +781,11 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
-      <AdminBottomTabBar active="Investments" navigation={navigation} />
+    
+<AdminBottomTabBar
+  active="Investments"
+  navigation={navigation}
+/>
 
       {/* ========== Review & Approve Modal ========== */}
       <Modal

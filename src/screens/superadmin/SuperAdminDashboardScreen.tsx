@@ -3,7 +3,7 @@ import {View, Text, ScrollView, Dimensions} from 'react-native';
 import {LineChart, BarChart, PieChart} from 'react-native-chart-kit';
 import {styles} from '../../styles/superadmin/SuperAdminDashboardScreen.styles';
 import {useAppData} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
@@ -70,7 +70,7 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Super Admin Dashboard" showBack={false} />
+      <AppHeader subtitle="Super Admin Dashboard" />
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.subtitle}>Complete system oversight and configuration</Text>
 

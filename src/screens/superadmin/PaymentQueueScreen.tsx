@@ -1,7 +1,7 @@
 import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, Modal} from 'react-native';
 import {styles} from '../../styles/superadmin/PaymentQueueScreen.styles';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useAppData, Payout} from '../../navigation/AppNavigator';
@@ -374,7 +374,7 @@ const {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Payments" showBack={false} />
+      <AppHeader subtitle="Payment Queue" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Payment Queue</Text>

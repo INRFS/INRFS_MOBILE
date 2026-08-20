@@ -3,6 +3,8 @@ import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-nat
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/ReportsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import AppHeader from '../../components/AppHeader';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 /* Static monthly series for the "Monthly Performance" chart.
    Mirrors the shape of the web Admin Portal chart (Interest vs Invested).
    Swap for real aggregated data once historical records exist. */
@@ -40,15 +42,7 @@ const ReportsScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.headerLeft}
-          onPress={() => navigation.navigate('AdminProfile')}>
-          <Image source={{uri: adminProfile.avatarUri}} style={styles.avatar} />
-          <Text style={styles.headerTitle}>Reports</Text>
-        </TouchableOpacity>
-        <Text style={styles.bell}>🔔</Text>
-      </View>
+    <AppHeader subtitle="Admin Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         {/* Stat cards — mirrors web: New Investments / Interest Paid / Settlements */}

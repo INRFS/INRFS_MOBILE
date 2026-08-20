@@ -1,76 +1,207 @@
-import {StyleSheet} from 'react-native';
+import {StyleSheet, Platform} from 'react-native';
 
 export const styles = StyleSheet.create({
+  /*
+   * ============================================================
+   * MAIN HEADER
+   * ============================================================
+   */
+
   container: {
+    minHeight: Platform.OS === 'ios' ? 58 : 56,
+
     flexDirection: 'row',
+
     alignItems: 'center',
+
     justifyContent: 'space-between',
+
     paddingHorizontal: 16,
-    paddingVertical: 14,
+
+    paddingVertical: 10,
+
     backgroundColor: '#FFFFFF',
+
     borderBottomWidth: 1,
+
     borderBottomColor: '#E5E7EB',
+
+    shadowColor: '#101828',
+
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
+
+    shadowOpacity: 0.04,
+
+    shadowRadius: 3,
+
+    elevation: 2,
   },
+
+  /*
+   * ============================================================
+   * LEFT
+   * ============================================================
+   */
+
   left: {
-    flexDirection: 'row',
-    alignItems: 'center',
     flex: 1,
-  },
-  backBtn: {
-    marginRight: 10,
-    paddingVertical: 4,
-    paddingRight: 6,
-  },
-  backArrow: {
-    fontSize: 20,
-    color: '#111827',
-  },
-  title: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-    flexShrink: 1,
-  },
-  right: {
+
     flexDirection: 'row',
+
     alignItems: 'center',
-    gap: 14,
+
+    minWidth: 0,
   },
-  bellWrap: {
-    position: 'relative',
-    padding: 4,
-  },
-  bellIcon: {
-    fontSize: 20,
-  },
-  dot: {
-    position: 'absolute',
-    top: -2,
-    right: -4,
-    backgroundColor: '#DC2626',
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 3,
-  },
-  dotText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-  },
-  avatar: {
+
+  /*
+   * ============================================================
+   * BACK BUTTON
+   * ============================================================
+   */
+
+  backBtn: {
     width: 34,
     height: 34,
+
     borderRadius: 17,
-    backgroundColor: '#2563EB',
+
     alignItems: 'center',
+
     justifyContent: 'center',
+
+    marginRight: 8,
   },
+
+  backArrow: {
+    fontSize: 25,
+
+    lineHeight: 28,
+
+    color: '#101828',
+
+    fontWeight: '400',
+  },
+
+  /*
+   * ============================================================
+   * TITLE
+   * ============================================================
+   */
+
+  title: {
+    flexShrink: 1,
+
+    fontSize: 18,
+
+    lineHeight: 23,
+
+    fontWeight: '700',
+
+    color: '#101828',
+  },
+
+  /*
+   * ============================================================
+   * RIGHT
+   * ============================================================
+   */
+
+  right: {
+    flexDirection: 'row',
+
+    alignItems: 'center',
+
+    marginLeft: 10,
+  },
+
+  /*
+   * ============================================================
+   * AVATAR
+   * ============================================================
+   */
+
+  avatar: {
+    width: 36,
+    height: 36,
+
+    borderRadius: 18,
+
+    backgroundColor: '#155EEF',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    borderWidth: 2,
+
+    borderColor: '#EAF0FE',
+  },
+
   avatarText: {
     color: '#FFFFFF',
-    fontWeight: '700',
+
     fontSize: 14,
+
+    fontWeight: '700',
+
+    textAlign: 'center',
+  },
+
+  /*
+   * ============================================================
+   * OPTIONAL NOTIFICATION STYLES
+   * ============================================================
+   */
+
+  bellWrap: {
+    position: 'relative',
+
+    width: 36,
+    height: 36,
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    marginRight: 8,
+  },
+
+  bellIcon: {
+    fontSize: 20,
+
+    color: '#475467',
+  },
+
+  dot: {
+    position: 'absolute',
+
+    top: 1,
+    right: 1,
+
+    minWidth: 16,
+    height: 16,
+
+    borderRadius: 8,
+
+    backgroundColor: '#DC2626',
+
+    alignItems: 'center',
+
+    justifyContent: 'center',
+
+    paddingHorizontal: 3,
+  },
+
+  dotText: {
+    color: '#FFFFFF',
+
+    fontSize: 9,
+
+    fontWeight: '700',
+
+    textAlign: 'center',
   },
 });

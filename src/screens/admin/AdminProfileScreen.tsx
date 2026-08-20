@@ -3,7 +3,8 @@ import {View, Text, ScrollView,  TouchableOpacity, Image, Alert} from 'react-nat
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminProfileScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from './AdminBottomTabBar';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
+import AppHeader from '../../components/AppHeader';
 
 const AdminProfileScreen = ({navigation}: any) => {
   const {adminProfile} = useAppData();
@@ -23,13 +24,7 @@ const AdminProfileScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>INRFS</Text>
-        <Text style={styles.bell}>🔔</Text>
-      </View>
+    <AppHeader subtitle="Admin Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <View style={styles.avatarWrap}>
@@ -132,7 +127,11 @@ const AdminProfileScreen = ({navigation}: any) => {
         <Text style={styles.versionText}>Version 2.4.0 (Enterprise Build)</Text>
       </ScrollView>
 
-      <AdminBottomTabBar active="More" navigation={navigation} />
+     
+<AdminBottomTabBar
+  active="Profile"
+  navigation={navigation}
+/>
     </SafeAreaView>
   );
 };

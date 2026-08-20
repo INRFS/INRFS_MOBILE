@@ -14,11 +14,12 @@ import {
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from './AdminBottomTabBar';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 
 import XLSX from 'xlsx';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
+import AppHeader from '../../components/AppHeader';
 
 const tierIcon = (inv: Investor) => (inv.type === 'institution' ? '🏢' : '👤');
 
@@ -179,19 +180,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={[styles.header, local.headerRow]}>
-        {/* Logo — same source/require as the Dashboard header
-            (src/assets/logo.jpeg), placed to the left of the title.
-            local.headerRow adds extra vertical padding so the row grows
-            to fit the bigger logo cleanly instead of clipping it. */}
-        <Image
-          source={require('../../assets/logo.jpeg')}
-          style={local.headerLogo}
-          resizeMode="contain"
-        />
-        <Text style={styles.headerTitle}>INRFS</Text>
-        {/* <Text style={styles.bell}>🔔</Text> */}
-      </View>
+    <AppHeader subtitle="Admin Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Investor Management</Text>
@@ -313,7 +302,10 @@ const InvestorRegistryScreen = ({navigation}: any) => {
         <Text style={styles.fabIcon}>+</Text>
       </TouchableOpacity>
 
-      <AdminBottomTabBar active="Investors" navigation={navigation} />
+    <AdminBottomTabBar
+  active="More"
+  navigation={navigation}
+/>
 
       {/* ---- View details modal (read-only, includes bank/KYC fields) ---- */}
       <Modal

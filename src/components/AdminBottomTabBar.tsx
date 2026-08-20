@@ -10,16 +10,17 @@ import {
   Dimensions,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {styles} from './BottomTabBar.styles';
+import {styles} from '../components/AdminBottomTabBar.styles';
 
-export type TabKey =
+export type AdminTabKey =
   | 'Home'
-  | 'Invest'
-  | 'My Investments'
-  | 'Profile';
+  | 'Investments'
+  | 'Payments'
+  | 'Profile'
+  | 'More';
 
 const tabs: {
-  key: TabKey;
+  key: AdminTabKey;
   label: string;
   icon: string;
   route: string | null;
@@ -28,88 +29,107 @@ const tabs: {
     key: 'Home',
     label: 'Home',
     icon: 'home-outline',
-    route: 'InvestorDashboard',
+    route: 'AdminDashboard',
   },
+{
+  key: 'Investments',
+  label: 'Investments',
+  icon: 'chart-box-outline',
+  route: 'BondTracking',
+},
   {
-    key: 'Invest',
-    label: 'Invest',
-    icon: 'wallet-outline',
-    route: 'InvestNow',
-  },
-  {
-    key: 'My Investments',
-    label: 'My Investments',
-    icon: 'chart-donut',
-    route: 'MyInvestments',
+    key: 'Payments',
+    label: 'Monthly Payouts',
+    icon: 'cash-multiple',
+    route: 'InterestPayouts',
   },
 ];
 
 const moreItems: {
-  key: TabKey | 'Notifications' | 'Settings';
+  key: string;
   label: string;
   icon: string;
   route: string | null;
-  disabled?: boolean;
 }[] = [
   {
-    key: 'Home',
-    label: 'Home',
-    icon: 'home-outline',
-    route: 'InvestorDashboard',
+    key: 'InvestorRegistry',
+    label: 'Investor Management',
+    icon: 'account-group-outline',
+    route: 'InvestorRegistry',
   },
   {
-    key: 'Invest',
-    label: 'Invest',
-    icon: 'wallet-outline',
-    route: 'InvestNow',
+    key: 'BondTracking',
+    label: 'Investments',
+    icon: 'chart-timeline-variant',
+    route: 'BondTracking',
+  },
+   {
+    key: 'Payments',
+    label: 'Monthly Payouts',
+    icon: 'cash-multiple',
+    route: 'InterestPayouts',
+  },
+//   {
+//     key: 'KycApprovals',
+//     label: 'KYC Approvals',
+//     icon: 'card-account-details-outline',
+//     route: 'KycApprovals',
+//   },
+  {
+    key: 'SettlementCalculator',
+    label: 'Settlement',
+    icon: 'calculator-variant-outline',
+    route: 'SettlementCalculator',
   },
   {
-    key: 'My Investments',
-    label: 'My Investments',
-    icon: 'chart-donut',
-    route: 'MyInvestments',
+    key: 'Reports',
+    label: 'Reports',
+    icon: 'file-chart-outline',
+    route: 'AdminReports',
   },
-  // {
-  //   key: 'Notifications',
-  //   label: 'Notifications',
-  //   icon: 'bell-outline',
-  //   route: 'InvestorNotifications',
-  // },
+//   {
+//     key: 'Notifications',
+//     label: 'Notifications',
+//     icon: 'bell-outline',
+//     route: 'Notifications',
+//   },
   {
     key: 'Profile',
     label: 'Profile',
     icon: 'account-outline',
-    route: 'Profile',
+    route: 'AdminProfile',
   },
 ];
 
 const {width: SCREEN_WIDTH} = Dimensions.get('window');
 
-const BottomTabBar = ({
+const AdminBottomTabBar = ({
   active,
   navigation,
-  investorId,
-  investorName,
+  adminName,
 }: {
-  active: TabKey | 'More';
+  active: AdminTabKey;
   navigation: any;
-  investorId?: string;
-  investorName?: string;
+  adminName?: string;
 }) => {
   const [moreVisible, setMoreVisible] = useState(false);
 
-  const slideAnim = useRef(new Animated.Value(360)).current;
+  const slideAnim = useRef(new Animated.Value(500)).current;
   const indicatorAnim = useRef(new Animated.Value(0)).current;
   const activeScale = useRef(new Animated.Value(1)).current;
 
-  const isMoreActive = active === 'More' || active === 'Profile';
+  const isMoreActive =
+    active === 'More' ||
+    [
+      'Profile',
+    ].includes(active);
 
   const activeIndex =
     active === 'Home'
       ? 0
-      : active === 'Invest'
+      : active === 'Investments'
       ? 1
-      : active === 'My Investments'
+      : active === 'Payments'
       ? 2
       : 3;
 
@@ -122,6 +142,7 @@ const BottomTabBar = ({
         stiffness: 180,
         mass: 0.7,
       }),
+
       Animated.sequence([
         Animated.timing(activeScale, {
           toValue: 0.94,
@@ -140,7 +161,7 @@ const BottomTabBar = ({
 
   const openMore = () => {
     setMoreVisible(true);
-    slideAnim.setValue(360);
+    slideAnim.setValue(500);
 
     Animated.spring(slideAnim, {
       toValue: 0,
@@ -153,7 +174,7 @@ const BottomTabBar = ({
 
   const closeMore = () => {
     Animated.timing(slideAnim, {
-      toValue: 360,
+      toValue: 500,
       duration: 220,
       useNativeDriver: true,
     }).start(() => setMoreVisible(false));
@@ -165,10 +186,7 @@ const BottomTabBar = ({
     }
 
     closeMore();
-
-    navigation.navigate(route, {
-      investorId,
-    });
+    navigation.navigate(route);
   };
 
   const handleMainTab = (route: string | null) => {
@@ -176,9 +194,7 @@ const BottomTabBar = ({
       return;
     }
 
-    navigation.navigate(route, {
-      investorId,
-    });
+    navigation.navigate(route);
   };
 
   const handleLogout = () => {
@@ -190,7 +206,6 @@ const BottomTabBar = ({
     });
   };
 
-  // The indicator is centered inside each of the four equal tab slots.
   const tabWidth = SCREEN_WIDTH / 4;
 
   const indicatorTranslateX = indicatorAnim.interpolate({
@@ -205,8 +220,10 @@ const BottomTabBar = ({
 
   return (
     <>
-      {/* Fixed bottom navigation.
-          Do NOT wrap this component in another bottom-margin/padding view. */}
+      {/* ------------------------------------------------------------- */}
+      {/* FIXED ADMIN BOTTOM BAR                                       */}
+      {/* ------------------------------------------------------------- */}
+
       <View style={styles.container}>
         <Animated.View
           pointerEvents="none"
@@ -255,6 +272,8 @@ const BottomTabBar = ({
           );
         })}
 
+        {/* MORE */}
+
         <TouchableOpacity
           style={styles.tabItem}
           activeOpacity={0.82}
@@ -284,13 +303,20 @@ const BottomTabBar = ({
         </TouchableOpacity>
       </View>
 
+      {/* ------------------------------------------------------------- */}
+      {/* MORE SHEET                                                    */}
+      {/* ------------------------------------------------------------- */}
+
       <Modal
         visible={moreVisible}
         transparent
         animationType="none"
         onRequestClose={closeMore}>
         <View style={styles.modalRoot}>
-          <Pressable style={styles.backdrop} onPress={closeMore} />
+          <Pressable
+            style={styles.backdrop}
+            onPress={closeMore}
+          />
 
           <Animated.View
             style={[
@@ -300,6 +326,8 @@ const BottomTabBar = ({
               },
             ]}>
             <View style={styles.grabber} />
+
+            {/* HEADER */}
 
             <View style={styles.sheetHeader}>
               <View style={styles.sheetBrandRow}>
@@ -312,9 +340,12 @@ const BottomTabBar = ({
                 </View>
 
                 <View style={styles.sheetBrandText}>
-                  <Text style={styles.sheetHeaderTitle}>INRFS</Text>
+                  <Text style={styles.sheetHeaderTitle}>
+                    INRFS
+                  </Text>
+
                   <Text style={styles.sheetHeaderSubtitle}>
-                    Investor Portal
+                    Admin Portal
                   </Text>
                 </View>
               </View>
@@ -323,16 +354,23 @@ const BottomTabBar = ({
                 style={styles.closeButton}
                 onPress={closeMore}
                 activeOpacity={0.7}>
-                <Icon name="close" size={20} color="#667085" />
+                <Icon
+                  name="close"
+                  size={20}
+                  color="#667085"
+                />
               </TouchableOpacity>
             </View>
 
             <View style={styles.sheetDivider} />
 
+            {/* MENU ITEMS */}
+
             {moreItems.map(item => {
               const isActive =
                 item.key === active ||
-                (item.key === 'Profile' && active === 'Profile');
+                (item.key === 'Profile' &&
+                  active === 'Profile');
 
               return (
                 <TouchableOpacity
@@ -341,21 +379,19 @@ const BottomTabBar = ({
                     styles.sheetItem,
                     isActive && styles.sheetItemActive,
                   ]}
-                  disabled={item.disabled}
                   activeOpacity={0.75}
                   onPress={() => goTo(item.route)}>
                   <View
                     style={[
                       styles.sheetItemIconWrap,
-                      isActive && styles.sheetItemIconWrapActive,
+                      isActive &&
+                        styles.sheetItemIconWrapActive,
                     ]}>
                     <Icon
                       name={item.icon}
                       size={21}
                       color={
-                        item.disabled
-                          ? '#D0D5DD'
-                          : isActive
+                        isActive
                           ? '#155EEF'
                           : '#475467'
                       }
@@ -365,8 +401,8 @@ const BottomTabBar = ({
                   <Text
                     style={[
                       styles.sheetItemText,
-                      isActive && styles.sheetItemTextActive,
-                      item.disabled && styles.sheetItemTextDisabled,
+                      isActive &&
+                        styles.sheetItemTextActive,
                     ]}>
                     {item.label}
                   </Text>
@@ -374,26 +410,35 @@ const BottomTabBar = ({
                   <Icon
                     name="chevron-right"
                     size={20}
-                    color={isActive ? '#155EEF' : '#98A2B3'}
+                    color={
+                      isActive
+                        ? '#155EEF'
+                        : '#98A2B3'
+                    }
                   />
                 </TouchableOpacity>
               );
             })}
 
+            {/* FOOTER */}
+
             <View style={styles.sheetFooter}>
               <View style={styles.sheetUserRow}>
                 <View style={styles.sheetAvatar}>
                   <Text style={styles.sheetAvatarText}>
-                    {(investorName || 'IN').slice(0, 2).toUpperCase()}
+                    {(adminName || 'AD')
+                      .slice(0, 2)
+                      .toUpperCase()}
                   </Text>
                 </View>
 
                 <View style={styles.sheetUserInfo}>
                   <Text style={styles.sheetUserName}>
-                    {investorName || 'Investor'}
+                    {adminName || 'Administrator'}
                   </Text>
+
                   <Text style={styles.sheetUserSub}>
-                    Investor Account
+                    Admin Account
                   </Text>
                 </View>
               </View>
@@ -402,7 +447,11 @@ const BottomTabBar = ({
                 style={styles.logoutButton}
                 onPress={handleLogout}
                 activeOpacity={0.7}>
-                <Icon name="logout" size={20} color="#155EEF" />
+                <Icon
+                  name="logout"
+                  size={20}
+                  color="#155EEF"
+                />
               </TouchableOpacity>
             </View>
           </Animated.View>
@@ -412,4 +461,4 @@ const BottomTabBar = ({
   );
 };
 
-export default BottomTabBar;
+export default AdminBottomTabBar;

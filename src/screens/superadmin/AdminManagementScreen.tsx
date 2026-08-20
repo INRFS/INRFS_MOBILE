@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, StyleSheet} from 'react-native';
 import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
 import {useAppData, SAAdmin} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
 const AdminManagementScreen = ({navigation}: any) => {
@@ -116,7 +116,7 @@ const AdminManagementScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Admin Management" />
+      <AppHeader subtitle="Admin Management" />
       <View style={styles.topBar}>
         <TextInput
           style={styles.searchInput}

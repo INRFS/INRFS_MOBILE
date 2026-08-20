@@ -11,7 +11,8 @@ import {
 import {useAppData, Payout} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/InterestPayoutsScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from './AdminBottomTabBar';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
+import AppHeader from '../../components/AppHeader';
 
 const formatINR = (n: number) => '₹' + n.toLocaleString('en-IN', {minimumFractionDigits: 2});
 const formatINRWhole = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
@@ -298,12 +299,7 @@ const renderRow = (p: Payout) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>🏦  INRFS</Text>
-        <TouchableOpacity onPress={() => navigation.navigate('SettlementCalculator')}>
-          <Text style={styles.calcIcon}>🧮</Text>
-        </TouchableOpacity>
-      </View>
+    <AppHeader subtitle="Admin Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Monthly Interest</Text>
@@ -384,7 +380,11 @@ const renderRow = (p: Payout) => {
         <Text style={styles.securityText}>🛡  Security standard PCI-DSS Level 1 compliant</Text>
       </ScrollView>
 
-      <AdminBottomTabBar active="More" navigation={navigation} />
+     
+<AdminBottomTabBar
+  active="Payments"
+  navigation={navigation}
+/>
     </SafeAreaView>
   );
 };

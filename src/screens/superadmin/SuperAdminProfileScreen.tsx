@@ -2,7 +2,7 @@ import React, {useState} from 'react';
 import {View, Text, ScrollView, TouchableOpacity, TextInput, Image, Alert} from 'react-native';
 import {styles} from '../../styles/superadmin/SuperAdminProfileScreen.styles';
 import {useAppData} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
@@ -32,7 +32,7 @@ const SuperAdminProfileScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Profile" showBack={false} />
+      <AppHeader subtitle="Profile" />
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* ---------- Hero card ---------- */}
         <View style={styles.heroCard}>

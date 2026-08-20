@@ -2,7 +2,7 @@ import React from 'react';
 import {View, Text, ScrollView, TouchableOpacity, } from 'react-native';
 import {styles} from '../../styles/superadmin/NotificationsScreen.styles';
 import {useAppData, SANotification} from '../../navigation/AppNavigator';
-import SuperAdminHeader from './components/SuperAdminHeader';
+import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {SafeAreaView} from 'react-native-safe-area-context';
 const iconFor = (icon: SANotification['icon']) => {
@@ -28,7 +28,7 @@ const NotificationsScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SuperAdminHeader navigation={navigation} title="Notifications" showBack={false} />
+      <AppHeader subtitle="Notifications" />
       <View style={styles.topBar}>
         <Text style={styles.unreadText}>{unreadCount} unread notifications</Text>
         <TouchableOpacity onPress={markAllNotificationsRead}>

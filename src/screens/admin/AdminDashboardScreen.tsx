@@ -3,7 +3,9 @@ import {View, Text, ScrollView,  TouchableOpacity, Alert, Modal, TextInput, Keyb
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminDashboardScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from './AdminBottomTabBar';
+// import AdminBottomTabBar from './AdminBottomTabBar';
+import AppHeader from '../../components/AppHeader';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 const TENURE_OPTIONS = [
   {months: 6, rate: 11},
   {months: 12, rate: 12},
@@ -117,14 +119,7 @@ const AdminDashboardScreen = ({navigation}: any) => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>🏦  INRFS</Text>
-        <View style={styles.headerIcons}>
-        {/* <TouchableOpacity onPress={() => navigation.navigate('AdminNotifications')}>
-  <Text style={styles.bell}>🔔</Text>
-</TouchableOpacity> */}
-        </View>
-      </View>
+     <AppHeader subtitle="Admin Portal" />
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.greetingTitle}>Admin Dashboard</Text>
@@ -287,7 +282,10 @@ const AdminDashboardScreen = ({navigation}: any) => {
         </TouchableOpacity> */}
       </ScrollView>
 
-      <AdminBottomTabBar active="Home" navigation={navigation} />
+    <AdminBottomTabBar
+  active="Home"
+  navigation={navigation}
+/>
 
       {/* ---- Add Investment / Generate Bond modal ---- */}
       <Modal
