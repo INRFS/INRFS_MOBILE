@@ -1,66 +1,440 @@
 import {StyleSheet} from 'react-native';
 
-const NAVY = '#0B1E45';
-const BG = '#e6e8f3';
-const GRAY = '#6B7280';
-
 export const styles = StyleSheet.create({
-  safeArea: {flex: 1, backgroundColor: '#fff'},
-
-  header: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: 20, paddingVertical: 14,
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#F7F8FA',
   },
-  backArrow: {fontSize: 20, color: '#111827'},
-  headerTitle: {fontSize: 18, fontWeight: '700', color: NAVY},
 
-  container: {padding: 20, paddingBottom: 40, backgroundColor: BG, flexGrow: 1},
-
-  title: {fontSize: 22, fontWeight: '700', color: '#111827', marginBottom: 4},
-  subtitle: {fontSize: 13, color: GRAY, marginBottom: 20},
-
-  fieldLabel: {fontSize: 12, color: GRAY, fontWeight: '600', marginBottom: 8, marginTop: 4},
-  selectBox: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    paddingHorizontal: 14, paddingVertical: 14, marginBottom: 8,
+  container: {
+    paddingHorizontal: 16,
+    paddingTop: 18,
+    paddingBottom: 120,
   },
-  selectBoxText: {fontSize: 14, color: '#111827', fontWeight: '600', flex: 1},
-  chevron: {fontSize: 14, color: GRAY},
 
-  dropdown: {
-    backgroundColor: '#fff', borderWidth: 1, borderColor: '#E5E7EB', borderRadius: 12,
-    marginBottom: 12, overflow: 'hidden',
+  title: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 6,
   },
-  dropdownItem: {paddingHorizontal: 14, paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F1F2F5'},
-  dropdownItemText: {fontSize: 13, color: '#111827'},
 
-  breakdownCard: {backgroundColor: '#fff', borderRadius: 16, padding: 18, marginTop: 12, marginBottom: 20, borderWidth: 1, borderColor: '#EEF0F4'},
-  breakdownTopRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: '#F1F2F5'},
-  breakdownTitle: {fontSize: 15, fontWeight: '700', color: '#111827'},
-  calculatedBadge: {backgroundColor: '#DCFCE7', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12},
-  calculatedBadgeText: {color: '#16A34A', fontSize: 10, fontWeight: '700'},
+  subtitle: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+});
 
-  breakdownRow: {flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12},
-  breakdownLabel: {fontSize: 13, color: GRAY},
-  breakdownValue: {fontSize: 14, fontWeight: '700', color: '#111827'},
-  breakdownValuePositive: {fontSize: 14, fontWeight: '700', color: '#16A34A'},
-  breakdownValueNegative: {fontSize: 14, fontWeight: '700', color: '#DC2626'},
+export const local = StyleSheet.create({
+  // ========================================================================
+  // TABS
+  // ========================================================================
 
-  divider: {height: 1, backgroundColor: '#F1F2F5', marginVertical: 4, marginBottom: 12},
+  tabScroll: {
+    marginBottom: 18,
+  },
 
-  netLabel: {fontSize: 12, color: GRAY, fontWeight: '700', letterSpacing: 0.5},
-  netValue: {fontSize: 26, fontWeight: '700', color: NAVY, marginTop: 2},
+  tabScrollContent: {
+    paddingRight: 10,
+  },
 
-  journeyLabel: {fontSize: 12, color: GRAY, fontWeight: '700', letterSpacing: 0.5, marginBottom: 12},
-  journeyRow: {flexDirection: 'row', backgroundColor: '#fff', borderRadius: 16, padding: 18, justifyContent: 'space-between', marginBottom: 10, borderWidth: 1, borderColor: '#EEF0F4'},
-  journeyItem: {alignItems: 'center', flex: 1},
-  journeyPill: {width: 46, height: 30, borderRadius: 15, backgroundColor: NAVY, marginBottom: 8},
-  journeyLabelText: {fontSize: 12, color: GRAY},
-  journeyLabelTextActive: {color: NAVY, fontWeight: '700'},
+  tabRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
 
-  maturityNote: {fontSize: 12, color: '#16A34A', marginBottom: 24},
+  tabPill: {
+    minHeight: 42,
+    paddingHorizontal: 15,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    backgroundColor: '#FFFFFF',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
-  approveBtn: {backgroundColor: NAVY, borderRadius: 14, paddingVertical: 16, alignItems: 'center'},
-  approveBtnText: {color: '#fff', fontWeight: '700', fontSize: 15},
+  tabPillActive: {
+    backgroundColor: '#111827',
+    borderColor: '#111827',
+  },
+
+  tabText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+
+  tabTextActive: {
+    color: '#FFFFFF',
+  },
+
+  tabBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    marginLeft: 7,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EF4444',
+  },
+
+  tabBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // ========================================================================
+  // LOADING
+  // ========================================================================
+
+  loadingWrap: {
+    minHeight: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 30,
+  },
+
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#6B7280',
+  },
+
+  // ========================================================================
+  // ERROR
+  // ========================================================================
+
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 18,
+  },
+
+  errorTitle: {
+    color: '#991B1B',
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+
+  errorText: {
+    color: '#B91C1C',
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+
+  retryButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#111827',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+
+  // ========================================================================
+  // EMPTY
+  // ========================================================================
+
+  emptyWrap: {
+    minHeight: 180,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    marginBottom: 16,
+  },
+
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+
+  emptyText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+
+  // ========================================================================
+  // CARD
+  // ========================================================================
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 16,
+
+    shadowColor: '#000000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.04,
+    shadowRadius: 5,
+    elevation: 2,
+  },
+
+  // ========================================================================
+  // CARD HEADER
+  // ========================================================================
+
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 18,
+    gap: 10,
+  },
+
+  cardTopLeft: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+
+  bondId: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+  },
+
+  // ========================================================================
+  // BADGES
+  // ========================================================================
+
+  pendingBadge: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+
+  pendingBadgeText: {
+    color: '#92400E',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  precloseBadge: {
+    backgroundColor: '#EDE9FE',
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+
+  precloseBadgeText: {
+    color: '#6D28D9',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  closedBadge: {
+    backgroundColor: '#DCFCE7',
+    borderRadius: 14,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+
+  closedBadgeText: {
+    color: '#166534',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // ========================================================================
+  // META
+  // ========================================================================
+
+  metaGrid: {
+    flexDirection: 'row',
+    marginBottom: 15,
+    gap: 12,
+  },
+
+  metaCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+
+  metaLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    marginBottom: 5,
+    letterSpacing: 0.4,
+  },
+
+  metaValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#1F2937',
+  },
+
+  metaValueMuted: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+
+  // ========================================================================
+  // BREAKDOWN
+  // ========================================================================
+
+  breakdown: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    paddingHorizontal: 13,
+    paddingTop: 5,
+    marginTop: 4,
+  },
+
+  breakdownRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    gap: 12,
+  },
+
+  breakdownRowLast: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+
+  breakdownLabel: {
+    flex: 1,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+
+  breakdownValue: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+    textAlign: 'right',
+  },
+
+  breakdownValueNegative: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#DC2626',
+    textAlign: 'right',
+  },
+
+  netLabel: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+  },
+
+  netValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#047857',
+    textAlign: 'right',
+  },
+
+  // ========================================================================
+  // REASON
+  // ========================================================================
+
+  reasonBox: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 14,
+  },
+
+  reasonLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
+  reasonText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#4B5563',
+    lineHeight: 19,
+  },
+
+  // ========================================================================
+  // ACTIONS
+  // ========================================================================
+
+  actionsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    gap: 10,
+  },
+
+  approveBtn: {
+    minHeight: 40,
+    paddingHorizontal: 13,
+    borderRadius: 9,
+    backgroundColor: '#111827',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  approveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  rejectBtn: {
+    minHeight: 40,
+    paddingHorizontal: 18,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  rejectBtnText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '700',
+  },
 });
