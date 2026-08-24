@@ -10,6 +10,7 @@ import {
   Modal,
   StyleSheet,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -205,8 +206,11 @@ const apiRequest = async (
 
   const headers: Record<string, string> = {
     Accept: 'application/json',
-    'Content-Type': 'application/json',
   };
+
+  if (options.body) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;
@@ -230,14 +234,39 @@ const apiRequest = async (
 
   /*
    * IMPORTANT:
-   * Swagger shows reject can return HTTP 400 when already processed.
-   * Therefore we throw for ALL non-2xx responses.
+   * Parse error messages safely to avoid "[object Object]" / "Object failed".
    */
   if (!response.ok) {
-    const errorMessage =
-      responseBody?.detail ||
-      responseBody?.message ||
-      `Request failed with status ${response.status}`;
+    let errorMessage = `Request failed with status ${response.status}`;
+
+    if (typeof responseBody === 'string') {
+      errorMessage = responseBody;
+    } else if (responseBody?.detail) {
+      if (typeof responseBody.detail === 'string') {
+        errorMessage = responseBody.detail;
+      } else if (Array.isArray(responseBody.detail)) {
+        errorMessage = responseBody.detail
+          .map((d: any) =>
+            typeof d === 'string' ? d : d.msg || d.message || JSON.stringify(d),
+          )
+          .join(', ');
+      } else if (typeof responseBody.detail === 'object') {
+        errorMessage =
+          responseBody.detail.message ||
+          responseBody.detail.error ||
+          JSON.stringify(responseBody.detail);
+      }
+    } else if (responseBody?.message) {
+      errorMessage =
+        typeof responseBody.message === 'string'
+          ? responseBody.message
+          : JSON.stringify(responseBody.message);
+    } else if (responseBody?.error) {
+      errorMessage =
+        typeof responseBody.error === 'string'
+          ? responseBody.error
+          : JSON.stringify(responseBody.error);
+    }
 
     const error: any = new Error(errorMessage);
     error.status = response.status;
@@ -247,6 +276,29 @@ const apiRequest = async (
   }
 
   return responseBody;
+};
+
+const getErrorMessage = (error: any): string => {
+  if (!error) return 'Operation failed.';
+  if (typeof error === 'string') return error;
+  if (typeof error.message === 'string' && error.message.trim()) {
+    return error.message;
+  }
+  if (error.response) {
+    const res = error.response;
+    if (typeof res === 'string') return res;
+    if (typeof res.detail === 'string') return res.detail;
+    if (Array.isArray(res.detail)) {
+      return res.detail
+        .map((d: any) =>
+          typeof d === 'string' ? d : d.msg || d.message || JSON.stringify(d),
+        )
+        .join(', ');
+    }
+    if (typeof res.message === 'string') return res.message;
+    if (typeof res.error === 'string') return res.error;
+  }
+  return 'Operation failed. Please try again.';
 };
 
 /* ============================================================
@@ -302,21 +354,55 @@ const getInvestorDetailsApi = async (
 };
 
 /* ============================================================
+   INVESTOR IDENTIFIER HELPER
+   ============================================================ */
+
+const getInvestorIdentifier = (inv: Investor | string): string => {
+  if (typeof inv === 'string') {
+    return inv;
+  }
+
+  if (inv.id && inv.id !== 'Pending' && inv.id !== 'undefined' && inv.id.trim() !== '') {
+    return inv.id;
+  }
+
+  if (inv.investorRegistrationId) {
+    return String(inv.investorRegistrationId);
+  }
+
+  if (inv.registrationId) {
+    return String(inv.registrationId);
+  }
+
+  if (inv.userId) {
+    return String(inv.userId);
+  }
+
+  return inv.id || '';
+};
+
+/* ============================================================
    API #3 - APPROVE INVESTOR
    ============================================================ */
 
 const approveInvestorApi = async (
-  investorId: string,
+  inv: Investor | string,
 ): Promise<ApiResponse> => {
-  /*
-   * Based on the Swagger naming pattern:
-   *
-   * PUT /admin/investors/{investor_id}/approve
-   *
-   * No request body is required.
-   */
-  return apiRequest(`/admin/investors/${investorId}/approve`, {
+  const identifier = getInvestorIdentifier(inv);
+  const bodyPayload: Record<string, any> = {};
+
+  if (typeof inv === 'object') {
+    if (inv.branchId) {
+      bodyPayload.branch_id = inv.branchId;
+    }
+    if (inv.userId) {
+      bodyPayload.user_id = inv.userId;
+    }
+  }
+
+  return apiRequest(`/admin/investors/${encodeURIComponent(identifier)}/approve`, {
     method: 'PUT',
+    body: Object.keys(bodyPayload).length > 0 ? JSON.stringify(bodyPayload) : undefined,
   });
 };
 
@@ -325,24 +411,15 @@ const approveInvestorApi = async (
    ============================================================ */
 
 const rejectInvestorApi = async (
-  investorId: string,
+  inv: Investor | string,
   remarks: string,
 ): Promise<ApiResponse> => {
-  /*
-   * Swagger screenshot clearly shows:
-   *
-   * PUT /admin/investors/{investor_id}/reject
-   *
-   * Body:
-   * {
-   *   "remarks": "Investor rejected by admin"
-   * }
-   */
+  const identifier = getInvestorIdentifier(inv);
 
-  return apiRequest(`/admin/investors/${investorId}/reject`, {
+  return apiRequest(`/admin/investors/${encodeURIComponent(identifier)}/reject`, {
     method: 'PUT',
     body: JSON.stringify({
-      remarks,
+      remarks: remarks.trim(),
     }),
   });
 };
@@ -379,14 +456,32 @@ const normalizeKycStatus = (value?: string): KycStatus => {
   return 'Pending';
 };
 
-const normalizeAccountStatus = (value?: string): StatusFilter => {
-  const status = String(value || '').toLowerCase();
+const isActionableKyc = (status?: string): boolean => {
+  const s = String(status || '').toLowerCase().trim();
+  return (
+    s === 'pending' ||
+    s === 'submitted' ||
+    s === 'under review' ||
+    s === 'under_review'
+  );
+};
 
-  if (status.includes('suspend')) {
+const normalizeAccountStatus = (
+  accountStatus?: string,
+  kycStatus?: string,
+): StatusFilter => {
+  const acc = String(accountStatus || '').toLowerCase();
+  const kyc = String(kycStatus || '').toLowerCase();
+
+  if (acc.includes('suspend') || kyc.includes('reject')) {
     return 'Suspended';
   }
 
-  if (status.includes('active')) {
+  if (
+    acc.includes('active') ||
+    kyc.includes('verified') ||
+    kyc.includes('approved')
+  ) {
     return 'Active';
   }
 
@@ -394,24 +489,30 @@ const normalizeAccountStatus = (value?: string): StatusFilter => {
 };
 
 const mapInvestor = (item: InvestorListItemApi): Investor => {
+  const regId =
+    item.investor_registration_id ||
+    item.investorRegistrationId ||
+    item.registration_id;
+
+  const invId =
+    item.investor_id ||
+    item.investorId ||
+    (regId ? String(regId) : '');
+
   return {
-    id: item.investor_id || item.investorId,
+    id: invId || 'Pending',
     name: item.investor_name || 'Unknown',
     mobile: item.mobile || '',
     email: item.email || '',
     branch: item.branch_name || '',
 
     kycStatus: normalizeKycStatus(item.kyc_status),
-    status: normalizeAccountStatus(item.account_status),
+    status: normalizeAccountStatus(item.account_status, item.kyc_status),
 
     totalInvested: toNumber(item.investment_amount),
 
-    investorRegistrationId:
-      item.investor_registration_id ||
-      item.investorRegistrationId ||
-      item.registration_id,
-
-    registrationId: item.registration_id,
+    investorRegistrationId: regId,
+    registrationId: regId,
 
     userId: item.user_id || item.userId,
     branchId: item.branch_id || item.branchId,
@@ -440,6 +541,10 @@ const orNotProvided = (value?: string | number) => {
 };
 
 const displayInvestorId = (inv: Investor) => {
+  if (inv.id && inv.id !== 'Pending' && !/^\d+$/.test(inv.id)) {
+    return inv.id;
+  }
+
   if (inv.status === 'Pending') {
     return 'Pending';
   }
@@ -448,7 +553,7 @@ const displayInvestorId = (inv: Investor) => {
     return '—';
   }
 
-  return inv.id;
+  return inv.id || '—';
 };
 
 const kycPillColor = (status: KycStatus) => {
@@ -530,6 +635,12 @@ const InvestorRegistryScreen = ({navigation}: any) => {
   const [rejectedName, setRejectedName] =
     useState<string | null>(null);
 
+  const [rejectingInvestor, setRejectingInvestor] =
+    useState<Investor | null>(null);
+
+  const [rejectionRemarks, setRejectionRemarks] =
+    useState('');
+
   /* ==========================================================
      LOAD INVESTORS
      ========================================================== */
@@ -561,8 +672,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
         Alert.alert(
           'Unable to load investors',
-          error?.message ||
-            'Could not load investor data from the server.',
+          getErrorMessage(error),
         );
       } finally {
         setLoading(false);
@@ -597,6 +707,10 @@ const InvestorRegistryScreen = ({navigation}: any) => {
     const lowerQuery = query.toLowerCase().trim();
 
     return investors.filter(inv => {
+      if (statusFilter !== 'All' && inv.status !== statusFilter) {
+        return false;
+      }
+
       if (!lowerQuery) {
         return true;
       }
@@ -608,7 +722,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
         inv.branch.toLowerCase().includes(lowerQuery)
       );
     });
-  }, [investors, query]);
+  }, [investors, query, statusFilter]);
 
   /* ==========================================================
      VIEW DETAILS
@@ -641,8 +755,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
       Alert.alert(
         'Unable to load details',
-        error?.message ||
-          'Could not retrieve investor details.',
+        getErrorMessage(error),
       );
     } finally {
       setDetailsLoading(false);
@@ -673,7 +786,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
                * API #3
                */
               const response = await approveInvestorApi(
-                inv.id,
+                inv,
               );
 
               console.log('Approve response:', response);
@@ -701,8 +814,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
               Alert.alert(
                 'Approval failed',
-                error?.message ||
-                  'Unable to approve this investor.',
+                getErrorMessage(error),
               );
             } finally {
               setActionLoadingId(null);
@@ -717,76 +829,55 @@ const InvestorRegistryScreen = ({navigation}: any) => {
      REJECT
      ========================================================== */
 
+  const handleConfirmReject = async () => {
+    if (!rejectingInvestor) return;
+
+    if (!rejectionRemarks.trim()) {
+      Alert.alert(
+        'Remarks Required',
+        'Please enter rejection remarks.',
+      );
+      return;
+    }
+
+    const inv = rejectingInvestor;
+
+    try {
+      setActionLoadingId(inv.id);
+
+      const response = await rejectInvestorApi(
+        inv,
+        rejectionRemarks.trim(),
+      );
+
+      console.log('Reject response:', response);
+
+      setRejectingInvestor(null);
+      setRejectionRemarks('');
+
+      await loadInvestors(false);
+
+      setRejectedName(inv.name);
+    } catch (error: any) {
+      console.log(
+        'PUT /admin/investors/{id}/reject error:',
+        error,
+      );
+
+      Alert.alert(
+        error?.status === 400
+          ? 'KYC Already Processed'
+          : 'Rejection failed',
+        getErrorMessage(error),
+      );
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   const handleReject = (inv: Investor) => {
-    Alert.alert(
-      'Reject request',
-      `Reject verification for ${inv.name}?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Reject',
-          style: 'destructive',
-
-          onPress: async () => {
-            try {
-              setActionLoadingId(inv.id);
-
-              /*
-               * EXACT body from your Swagger:
-               *
-               * {
-               *   "remarks": "Investor rejected by admin"
-               * }
-               */
-              const response = await rejectInvestorApi(
-                inv.id,
-                'Investor rejected by admin',
-              );
-
-              console.log('Reject response:', response);
-
-              /*
-               * Only show success AFTER HTTP 2xx.
-               *
-               * Your Swagger shows 400 for an already processed KYC,
-               * so that case will come into catch() instead.
-               */
-
-              await loadInvestors(false);
-
-              setRejectedName(inv.name);
-            } catch (error: any) {
-              console.log(
-                'PUT /admin/investors/{id}/reject error:',
-                error,
-              );
-
-              /*
-               * This handles the exact error you showed:
-               *
-               * 400
-               * {
-               *   "detail": "Investor KYC is already processed."
-               * }
-               */
-
-              Alert.alert(
-                error?.status === 400
-                  ? 'KYC Already Processed'
-                  : 'Rejection failed',
-                error?.message ||
-                  'Unable to reject this investor.',
-              );
-            } finally {
-              setActionLoadingId(null);
-            }
-          },
-        },
-      ],
-    );
+    setRejectingInvestor(inv);
+    setRejectionRemarks('');
   };
 
   /* ==========================================================
@@ -871,57 +962,48 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
   const renderActions = (inv: Investor) => {
     const isLoading = actionLoadingId === inv.id;
-
-    if (inv.status === 'Pending') {
-      return (
-        <View style={local.actionsRow}>
-          <TouchableOpacity
-            disabled={isLoading}
-            style={[
-              local.approveBtn,
-              isLoading && local.disabledBtn,
-            ]}
-            onPress={() => handleApprove(inv)}>
-            {isLoading ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <Text style={local.approveBtnText}>
-                Approve
-              </Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            disabled={isLoading}
-            style={[
-              local.rejectBtn,
-              isLoading && local.disabledBtn,
-            ]}
-            onPress={() => handleReject(inv)}>
-            <Text style={local.rejectBtnText}>
-              Reject
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            disabled={isLoading}
-            style={local.viewBtn}
-            onPress={() => handleView(inv)}>
-            <Text style={local.viewBtnIcon}>
-              👁
-            </Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
+    const canTakeKycAction = isActionableKyc(inv.kycStatus);
 
     return (
       <View style={local.actionsRow}>
+        {canTakeKycAction && (
+          <>
+            <TouchableOpacity
+              disabled={isLoading}
+              style={[
+                local.approveBtn,
+                isLoading && local.disabledBtn,
+              ]}
+              onPress={() => handleApprove(inv)}>
+              {isLoading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <Text style={local.approveBtnText}>
+                  ✓ Approve
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              disabled={isLoading}
+              style={[
+                local.rejectBtn,
+                isLoading && local.disabledBtn,
+              ]}
+              onPress={() => handleReject(inv)}>
+              <Text style={local.rejectBtnText}>
+                ✕ Reject
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
         <TouchableOpacity
+          disabled={isLoading}
           style={local.viewBtn}
           onPress={() => handleView(inv)}>
-          <Text style={local.viewBtnIcon}>
-            👁
+          <Text style={local.viewBtnText}>
+            👁 View
           </Text>
         </TouchableOpacity>
       </View>
@@ -1433,6 +1515,80 @@ const InvestorRegistryScreen = ({navigation}: any) => {
       </Modal>
 
       {/* ======================================================
+          REJECT KYC REMARKS MODAL
+          ====================================================== */}
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!rejectingInvestor}
+        onRequestClose={() => {
+          setRejectingInvestor(null);
+          setRejectionRemarks('');
+        }}>
+        <KeyboardAvoidingView
+          style={local.modalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={local.modalCard}>
+            {rejectingInvestor && (
+              <>
+                <View style={local.modalHeaderRow}>
+                  <Text style={local.modalTitle}>
+                    Reject KYC — {rejectingInvestor.name}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setRejectingInvestor(null);
+                      setRejectionRemarks('');
+                    }}>
+                    <Text style={local.modalClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={local.rejectSubtitle}>
+                  Enter rejection remarks for {rejectingInvestor.name} ({displayInvestorId(rejectingInvestor)}):
+                </Text>
+
+                <TextInput
+                  style={local.remarksInput}
+                  multiline
+                  placeholder="Enter rejection remarks (required)..."
+                  placeholderTextColor="#9CA3AF"
+                  value={rejectionRemarks}
+                  onChangeText={setRejectionRemarks}
+                />
+
+                <View style={local.modalBtnRow}>
+                  <TouchableOpacity
+                    style={local.modalCancelBtn}
+                    onPress={() => {
+                      setRejectingInvestor(null);
+                      setRejectionRemarks('');
+                    }}>
+                    <Text style={local.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      local.modalSubmitRejectBtn,
+                      (!rejectionRemarks.trim() || actionLoadingId === rejectingInvestor.id) && local.disabledBtn,
+                    ]}
+                    disabled={!rejectionRemarks.trim() || actionLoadingId === rejectingInvestor.id}
+                    onPress={handleConfirmReject}>
+                    {actionLoadingId === rejectingInvestor.id ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={local.modalSubmitRejectBtnText}>Reject KYC</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ======================================================
           REJECTION SUCCESS MODAL
           ====================================================== */}
 
@@ -1524,16 +1680,76 @@ const local = StyleSheet.create({
   },
 
   viewBtn: {
-    width: 40,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
 
-  viewBtnIcon: {
-    fontSize: 16,
+  viewBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
+  rejectSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+
+  remarksInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 80,
+    color: '#111827',
+    textAlignVertical: 'top',
+    fontSize: 14,
+    backgroundColor: '#FFFFFF',
+    marginTop: 4,
+    marginBottom: 16,
+  },
+
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  modalCancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+
+  modalCancelBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
+  modalSubmitRejectBtn: {
+    flex: 1.4,
+    backgroundColor: '#DC2626',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+
+  modalSubmitRejectBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 13.5,
   },
 
   loadingContainer: {

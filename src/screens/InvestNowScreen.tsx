@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -9,18 +9,18 @@ import {
   Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/InvestNowScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import AppHeader from '../components/AppHeader';
-
-// ---------------------------------------------------------
-// API CONFIG
-// ---------------------------------------------------------
-
-const API_BASE_URL = 'http://187.52.115.32:8000';
+import {
+  investorService,
+  InvestmentCalculationResponse,
+  InvestmentTenureItem,
+  ApiInvestment,
+} from '../services/investorService';
+import {validation} from '../utils/validation';
 
 // ---------------------------------------------------------
 // TYPES
@@ -43,11 +43,8 @@ type TenureOption = {
 // The backend/admin can adjust this during approval.
 const DEFAULT_INTEREST_RATE = 3;
 
-// IMPORTANT:
-// tenureId is the ID sent to the backend.
-// Change these IDs only if your backend master tenure IDs
-// are different.
-const TENURE_OPTIONS: TenureOption[] = [
+// Fallback tenure options if masters API is unavailable
+const DEFAULT_TENURE_OPTIONS: TenureOption[] = [
   {
     months: 3,
     tenureId: 1,
@@ -128,121 +125,6 @@ const formatINR = (n: number) =>
   '₹' + Math.round(n).toLocaleString('en-IN');
 
 // ---------------------------------------------------------
-// AUTH TOKEN
-// ---------------------------------------------------------
-
-const getAuthToken = async (): Promise<string> => {
-  /*
-   * IMPORTANT:
-   * Change 'access_token' if your login API stores the JWT
-   * under another AsyncStorage key.
-   */
-  const token = await AsyncStorage.getItem('access_token');
-
-  if (!token) {
-    throw new Error('Authentication token not found. Please login again.');
-  }
-
-  return token;
-};
-
-// ---------------------------------------------------------
-// API 1 - CALCULATE INVESTMENT
-// POST /investments/calculate
-// ---------------------------------------------------------
-
-const calculateInvestmentApi = async (
-  investmentAmount: number,
-  tenureId: number,
-) => {
-  const token = await getAuthToken();
-
-  const response = await fetch(
-    `${API_BASE_URL}/investments/calculate`,
-    {
-      method: 'POST',
-
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-
-      body: JSON.stringify({
-        investment_amount: investmentAmount,
-        tenure_id: tenureId,
-      }),
-    },
-  );
-
-  let data: any = null;
-
-  try {
-    data = await response.json();
-  } catch (error) {
-    data = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.detail ||
-        data?.message ||
-        'Unable to calculate investment.',
-    );
-  }
-
-  return data;
-};
-
-// ---------------------------------------------------------
-// API 2 - CREATE INVESTMENT
-// POST /investments/
-// ---------------------------------------------------------
-
-const createInvestmentApi = async (
-  investmentAmount: number,
-  tenureId: number,
-) => {
-  const token = await getAuthToken();
-
-  const response = await fetch(
-    `${API_BASE_URL}/investments/`,
-    {
-      method: 'POST',
-
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-
-      body: JSON.stringify({
-        investment_amount: investmentAmount,
-        tenure_id: tenureId,
-      }),
-    },
-  );
-
-  let data: any = null;
-
-  try {
-    data = await response.json();
-  } catch (error) {
-    data = null;
-  }
-
-  if (!response.ok) {
-    throw new Error(
-      data?.detail ||
-        data?.message ||
-        'Unable to create investment.',
-    );
-  }
-
-  return data;
-};
-
-// ---------------------------------------------------------
 // SCREEN
 // ---------------------------------------------------------
 
@@ -276,14 +158,46 @@ const InvestNowScreen = ({navigation, route}: any) => {
     useState<Step>('details');
 
   // -------------------------------------------------------
+  // TENURE OPTIONS (Dynamic from backend with fallback)
+  // -------------------------------------------------------
+
+  const [tenureOptions, setTenureOptions] =
+    useState<TenureOption[]>(DEFAULT_TENURE_OPTIONS);
+
+  const [tenureIndex, setTenureIndex] =
+    useState(2);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        const list = await investorService.getInvestmentTenures();
+        if (isMounted && Array.isArray(list) && list.length > 0) {
+          const mapped: TenureOption[] = list
+            .filter(t => t.is_active !== false)
+            .map(t => ({
+              months: t.tenure_months,
+              tenureId: t.id,
+            }));
+          if (mapped.length > 0) {
+            setTenureOptions(mapped);
+          }
+        }
+      } catch (e) {
+        console.warn('Could not load dynamic tenures, using defaults:', e);
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // -------------------------------------------------------
   // INVESTMENT STATE
   // -------------------------------------------------------
 
   const [amountText, setAmountText] =
     useState('500000');
-
-  const [tenureIndex, setTenureIndex] =
-    useState(2);
 
   // -------------------------------------------------------
   // PAYMENT STATE
@@ -319,7 +233,10 @@ const InvestNowScreen = ({navigation, route}: any) => {
   // -------------------------------------------------------
 
   const [calculationData, setCalculationData] =
-    useState<any>(null);
+    useState<InvestmentCalculationResponse | any>(null);
+
+  const [createdInvestment, setCreatedInvestment] =
+    useState<ApiInvestment | null>(null);
 
   // -------------------------------------------------------
   // CURRENT VALUES
@@ -329,10 +246,14 @@ const InvestNowScreen = ({navigation, route}: any) => {
     Number(amountText.replace(/[^0-9]/g, '')) || 0;
 
   const tenure =
-    TENURE_OPTIONS[tenureIndex];
+    tenureOptions[tenureIndex] ||
+    tenureOptions[0] ||
+    DEFAULT_TENURE_OPTIONS[0];
 
   const rate =
-    DEFAULT_INTEREST_RATE;
+    calculationData?.interest_rate
+      ? Number(calculationData.interest_rate)
+      : DEFAULT_INTEREST_RATE;
 
   const stepIndex =
     STEP_LABELS.findIndex(
@@ -342,27 +263,39 @@ const InvestNowScreen = ({navigation, route}: any) => {
   // -------------------------------------------------------
   // INVESTMENT CALCULATION
   // -------------------------------------------------------
-  //
-  // Before API calculation:
-  // use existing local calculation.
-  //
-  // After API calculation:
-  // use backend calculation values.
-  //
-  // This does not change the UI.
-  // -------------------------------------------------------
 
   const {
     totalInterest,
     monthlyPayout,
     maturityValue,
+    maturityDate,
   } = useMemo(() => {
+    const formatFormattedMaturityDate = (dateObj: Date) => {
+      return dateObj.toLocaleDateString('en-GB', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    };
+
+    let computedMaturityDate = '';
+    if (calculationData?.maturity_date) {
+      const parsed = new Date(calculationData.maturity_date);
+      computedMaturityDate = !Number.isNaN(parsed.getTime())
+        ? formatFormattedMaturityDate(parsed)
+        : String(calculationData.maturity_date);
+    } else {
+      const d = new Date();
+      d.setMonth(d.getMonth() + (tenure?.months || 12));
+      computedMaturityDate = formatFormattedMaturityDate(d);
+    }
+
     if (calculationData) {
       return {
         totalInterest:
           Number(
-            calculationData?.total_interest ??
-              calculationData?.expected_interest_amount ??
+            calculationData?.expected_interest_amount ??
+              calculationData?.total_interest ??
               0,
           ),
 
@@ -378,26 +311,28 @@ const InvestNowScreen = ({navigation, route}: any) => {
             calculationData?.maturity_amount ??
               0,
           ),
+
+        maturityDate: computedMaturityDate,
       };
     }
 
-    // Existing local calculation.
+    // Local calculation fallback
     const monthly =
-      amount * (rate / 100);
+      amount * (DEFAULT_INTEREST_RATE / 100);
 
     const total =
-      monthly * tenure.months;
+      monthly * (tenure?.months || 12);
 
     return {
       totalInterest: total,
       monthlyPayout: monthly,
       maturityValue: amount + total,
+      maturityDate: computedMaturityDate,
     };
   }, [
     calculationData,
     amount,
     tenure,
-    rate,
   ]);
 
   // ---------------------------------------------------------
@@ -408,9 +343,6 @@ const InvestNowScreen = ({navigation, route}: any) => {
     value: string,
   ) => {
     setAmountText(value);
-
-    // Existing backend calculation is no longer
-    // valid when amount changes.
     setCalculationData(null);
   };
 
@@ -422,9 +354,6 @@ const InvestNowScreen = ({navigation, route}: any) => {
     index: number,
   ) => {
     setTenureIndex(index);
-
-    // Existing backend calculation is no longer
-    // valid when tenure changes.
     setCalculationData(null);
   };
 
@@ -436,33 +365,28 @@ const InvestNowScreen = ({navigation, route}: any) => {
     value: number,
   ) => {
     setAmountText(String(value));
-
     setCalculationData(null);
   };
 
   // ---------------------------------------------------------
   // STEP 1 -> PAYMENT
   // ---------------------------------------------------------
-  //
-  // First call:
-  //
-  // POST /investments/calculate
-  //
-  // Then preserve the existing modal flow.
-  // ---------------------------------------------------------
 
   const goToPayment = async () => {
-    if (
-      amount < BOND.min ||
-      amount > BOND.max
-    ) {
+    const check = validation.isValidAmount(
+      amount,
+      BOND.min,
+      BOND.max,
+    );
+
+    if (!check.isValid) {
       Alert.alert(
         'Check amount',
-        `Investment amount must be between ${formatINR(
-          BOND.min,
-        )} and ${formatINR(BOND.max)}.`,
+        check.error ||
+          `Investment amount must be between ${formatINR(
+            BOND.min,
+          )} and ${formatINR(BOND.max)}.`,
       );
-
       return;
     }
 
@@ -470,21 +394,12 @@ const InvestNowScreen = ({navigation, route}: any) => {
       setCalculating(true);
 
       const result =
-        await calculateInvestmentApi(
+        await investorService.calculateInvestment(
           amount,
           tenure.tenureId,
         );
 
-      console.log(
-        'Calculate Investment API Response:',
-        result,
-      );
-
-      // Store backend calculation.
       setCalculationData(result);
-
-      // IMPORTANT:
-      // Existing flow remains unchanged.
       setShowBankModal(true);
     } catch (error: any) {
       console.error(
@@ -544,10 +459,10 @@ const InvestNowScreen = ({navigation, route}: any) => {
       return;
     }
 
-    if (!transactionRef.trim()) {
+    if (!validation.isValidTransactionRef(transactionRef)) {
       Alert.alert(
         'Missing details',
-        'Please enter the transaction reference number.',
+        'Please enter a valid transaction reference number.',
       );
 
       return;
@@ -559,43 +474,19 @@ const InvestNowScreen = ({navigation, route}: any) => {
   // ---------------------------------------------------------
   // REVIEW -> CREATE INVESTMENT
   // ---------------------------------------------------------
-  //
-  // POST /investments/
-  //
-  // Backend request:
-  //
-  // {
-  //   investment_amount: amount,
-  //   tenure_id: tenure.tenureId
-  // }
-  //
-  // ---------------------------------------------------------
 
   const handleSubmit = async () => {
     try {
       setSubmitting(true);
 
       const result =
-        await createInvestmentApi(
+        await investorService.createInvestment(
           amount,
           tenure.tenureId,
         );
 
-      console.log(
-        'Create Investment API Response:',
-        result,
-      );
+      setCreatedInvestment(result);
 
-      /*
-       * Keep existing local request submission if your app
-       * still needs it for local/admin UI state.
-       *
-       * This does NOT replace the backend API.
-       *
-       * If submitInvestmentRequest is only mock/local data
-       * and you don't want the local duplicate card anymore,
-       * you can remove this block.
-       */
       submitInvestmentRequest({
         investorId,
         investorName,
@@ -607,7 +498,6 @@ const InvestNowScreen = ({navigation, route}: any) => {
         branch: investorBranch,
       });
 
-      // Existing confirmation flow.
       setStep('confirmation');
     } catch (error: any) {
       console.error(
@@ -711,27 +601,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
 
       <View style={styles.summaryRow}>
         <Text style={styles.summaryLabel}>
-          Principal Amount
-        </Text>
-
-        <Text style={styles.summaryValue}>
-          {formatINR(amount)}
-        </Text>
-      </View>
-
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryLabel}>
-          Tenure
-        </Text>
-
-        <Text style={styles.summaryValue}>
-          {tenure.months} months
-        </Text>
-      </View>
-
-      <View style={styles.summaryRow}>
-        <Text style={styles.summaryLabel}>
-          Initial Rate
+          Interest Rate
         </Text>
 
         <Text style={styles.summaryValue}>
@@ -741,7 +611,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
 
       <View style={styles.summaryRow}>
         <Text style={styles.summaryLabel}>
-          Monthly Interest
+          Expected Monthly
         </Text>
 
         <Text style={styles.summaryValue}>
@@ -758,6 +628,18 @@ const InvestNowScreen = ({navigation, route}: any) => {
           {formatINR(totalInterest)}
         </Text>
       </View>
+
+      {!!maturityDate && (
+        <View style={styles.summaryRow}>
+          <Text style={styles.summaryLabel}>
+            Maturity Date
+          </Text>
+
+          <Text style={styles.summaryValue}>
+            {maturityDate}
+          </Text>
+        </View>
+      )}
 
       <View
         style={styles.summaryDivider}
@@ -874,7 +756,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
 
       <View
         style={styles.tenureGrid}>
-        {TENURE_OPTIONS.map(
+        {tenureOptions.map(
           (t, i) => {
             const active =
               i === tenureIndex;

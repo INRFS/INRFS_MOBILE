@@ -13,10 +13,14 @@ import Svg, {Path, Circle} from 'react-native-svg';
 import {styles, ICON_TINT} from '../styles/LoginScreen.styles';
 import {useAppData} from '../navigation/AppNavigator';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {ENV} from '../config/env';
+import {authService} from '../services/authService';
+import {formatErrorMessage} from '../api/client';
+import {validation} from '../utils/validation';
 
 type Role = 'investor' | 'admin' | 'superadmin';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL;
 
 const roles: {
   key: Role;
@@ -179,88 +183,30 @@ const LoginScreen = ({navigation}: any) => {
     // }
     // =========================================================
     if (selectedRole === 'investor') {
-      if (!investorId.trim() || !password.trim()) {
-        setErrorMsg(
-          'Please enter Investor ID and password.',
-        );
+      if (!validation.isValidInvestorId(investorId)) {
+        setErrorMsg('Please enter your Investor ID.');
+        return;
+      }
+      if (!validation.isValidPassword(password)) {
+        setErrorMsg('Please enter your password.');
         return;
       }
 
       try {
         setLoading(true);
 
-        const response = await fetch(
-          `${API_BASE_URL}/auth/investor/login`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              investor_id: investorId.trim(),
-              password: password,
-            }),
-          },
+        const data = await authService.loginInvestor(
+          investorId.trim(),
+          password,
         );
 
-        const responseText = await response.text();
-
-        let data: any;
-
-        try {
-          data = responseText
-            ? JSON.parse(responseText)
-            : {};
-        } catch {
-          data = {
-            detail: responseText,
-          };
-        }
-
-        console.log('Investor Login Response:', data);
-
-        if (!response.ok) {
-          throw new Error(
-            data?.detail ||
-              data?.message ||
-              'Investor login failed.',
-          );
-        }
-
-       const accessToken =
-         data?.access_token ||
-         data?.token ||
-         data?.accessToken;
-
-       if (!accessToken) {
-         throw new Error(
-           'Login successful, but no access token was returned by the server.',
-         );
-       }
-
-       // Store the logged-in investor's token
-       await AsyncStorage.setItem(
-         'access_token',
-         accessToken,
-       );
-
-       // Store investor ID as well if needed by other screens
-       await AsyncStorage.setItem(
-         'investor_id',
-         investorId.trim(),
-       );
-
-       setLoading(false);
-
-       navigation.navigate('InvestorDashboard');
+        setLoading(false);
+        navigation.navigate('InvestorDashboard');
       } catch (error: any) {
         setLoading(false);
-
-        console.log('Investor Login Error:', error);
-
         setErrorMsg(
           error?.message ||
-            'Investor login failed. Please check your credentials.',
+            'Invalid Investor ID or password. Please try again.',
         );
       }
 

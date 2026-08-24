@@ -359,4 +359,100 @@ export const styles = StyleSheet.create({
   modalCancelBtnText: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   modalSaveBtn: {flex: 1.4, backgroundColor: PRIMARY, borderRadius: 10, paddingVertical: 13, alignItems: 'center'},
   modalSaveBtnText: {fontSize: 13.5, fontWeight: '700', color: '#fff'},
+
+  // Activity action buttons
+  activityActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  actionBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  actionBtnApprove: {
+    backgroundColor: GREEN,
+    borderColor: GREEN,
+  },
+  actionBtnApproveText: {
+    color: '#fff',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  actionBtnReject: {
+    backgroundColor: RED_BG,
+    borderColor: '#FECACA',
+  },
+  actionBtnRejectText: {
+    color: RED,
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+
+  // Detail Modal styles
+  detailModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 7,
+  },
+  detailLabel: {
+    fontSize: 13,
+    color: GRAY,
+    fontWeight: '500',
+  },
+  detailValue: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  detailConfirmBtn: {
+    backgroundColor: PRIMARY,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  detailConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  rejectTextarea: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 10,
+    padding: 12,
+    minHeight: 90,
+    color: '#111827',
+    textAlignVertical: 'top',
+    fontSize: 14,
+    backgroundColor: '#fff',
+    marginTop: 8,
+    marginBottom: 16,
+  },
 });

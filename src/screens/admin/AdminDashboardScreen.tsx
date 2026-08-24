@@ -259,6 +259,21 @@ const AdminDashboardScreen = ({
   const [monthlyTrend, setMonthlyTrend] =
     useState<MonthlyInvestmentTrendItem[]>([]);
 
+  const [recentInvestments, setRecentInvestments] =
+    useState<any[]>([]);
+
+  const [selectedInvestment, setSelectedInvestment] =
+    useState<any | null>(null);
+
+  const [rejectingInvestment, setRejectingInvestment] =
+    useState<any | null>(null);
+
+  const [rejectionRemarks, setRejectionRemarks] =
+    useState('');
+
+  const [actionBusy, setActionBusy] =
+    useState(false);
+
   const [dashboardLoading, setDashboardLoading] =
     useState(true);
 
@@ -321,7 +336,7 @@ const AdminDashboardScreen = ({
     : 0;
 
   /* =======================================================
-     FETCH ALL 3 DASHBOARD APIs
+     FETCH ALL DASHBOARD APIs
   ======================================================= */
 
   const loadDashboardData = useCallback(
@@ -329,52 +344,36 @@ const AdminDashboardScreen = ({
       try {
         setDashboardError('');
 
-        /*
-         * All 3 APIs are called at the same time.
-         *
-         * 1. /admin/dashboard/summary
-         * 2. /admin/dashboard/investor-growth
-         * 3. /admin/dashboard/monthly-investment-trend
-         */
-
         const [
           summary,
           growth,
           monthly,
+          investmentsRes,
         ] = await Promise.all([
           fetchDashboardApi<DashboardSummary>(
             '/admin/dashboard/summary',
-          ),
+          ).catch(() => null),
 
           fetchDashboardApi<
             InvestorGrowthItem[]
           >(
             '/admin/dashboard/investor-growth',
-          ),
+          ).catch(() => []),
 
           fetchDashboardApi<
             MonthlyInvestmentTrendItem[]
           >(
             '/admin/dashboard/monthly-investment-trend',
-          ),
+          ).catch(() => []),
+
+          fetchDashboardApi<any[]>(
+            '/admin/investments?limit=10&offset=0',
+          ).catch(() => []),
         ]);
 
-        console.log(
-          'Dashboard Summary:',
-          summary,
-        );
-
-        console.log(
-          'Investor Growth:',
-          growth,
-        );
-
-        console.log(
-          'Monthly Investment Trend:',
-          monthly,
-        );
-
-        setDashboardSummary(summary);
+        if (summary) {
+          setDashboardSummary(summary);
+        }
 
         setInvestorGrowth(
           Array.isArray(growth)
@@ -385,6 +384,12 @@ const AdminDashboardScreen = ({
         setMonthlyTrend(
           Array.isArray(monthly)
             ? monthly
+            : [],
+        );
+
+        setRecentInvestments(
+          Array.isArray(investmentsRes)
+            ? investmentsRes
             : [],
         );
       } catch (error: any) {
@@ -398,10 +403,6 @@ const AdminDashboardScreen = ({
             'Unable to load dashboard data.',
         );
 
-        /*
-         * If token is missing/expired,
-         * send user back to Login.
-         */
         if (
           error?.message?.toLowerCase().includes(
             'session',
@@ -420,6 +421,92 @@ const AdminDashboardScreen = ({
     },
     [navigation],
   );
+
+  /* =======================================================
+     APPROVAL & REJECTION ACTIONS
+  ======================================================= */
+
+  const handleApproveInvestment = async (inv: any) => {
+    const invId = inv.investment_id || inv.id;
+    try {
+      setActionBusy(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch(
+        `${API_BASE_URL}/admin/investments/${encodeURIComponent(invId)}/approve`,
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            interest_rate: Number(inv.interest_rate || inv.rate || 3),
+            remarks: 'Approved by admin',
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data?.detail || data?.message || 'Failed to approve investment',
+        );
+      }
+      Alert.alert(
+        'Approved',
+        `Investment ${invId} has been approved successfully.`,
+      );
+      await loadDashboardData();
+    } catch (e: any) {
+      Alert.alert(
+        'Approval Failed',
+        e?.message || 'Could not approve investment.',
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const handleRejectInvestment = async () => {
+    if (!rejectingInvestment) return;
+    if (!rejectionRemarks.trim()) {
+      Alert.alert(
+        'Remarks Required',
+        'Please enter rejection remarks.',
+      );
+      return;
+    }
+    const invId =
+      rejectingInvestment.investment_id || rejectingInvestment.id;
+    try {
+      setActionBusy(true);
+      const headers = await getAuthHeaders();
+      const res = await fetch(
+        `${API_BASE_URL}/admin/investments/${encodeURIComponent(invId)}/reject`,
+        {
+          method: 'PUT',
+          headers,
+          body: JSON.stringify({
+            rejection_reason: rejectionRemarks.trim(),
+            remarks: rejectionRemarks.trim(),
+          }),
+        },
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(
+          data?.detail || data?.message || 'Failed to reject investment',
+        );
+      }
+      setRejectingInvestment(null);
+      setRejectionRemarks('');
+      Alert.alert('Rejected', `Investment ${invId} was rejected.`);
+      await loadDashboardData();
+    } catch (e: any) {
+      Alert.alert(
+        'Rejection Failed',
+        e?.message || 'Could not reject investment.',
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  };
 
   /* =======================================================
      LOAD DASHBOARD WHEN SCREEN OPENS
@@ -540,32 +627,109 @@ const AdminDashboardScreen = ({
   };
 
   /* =======================================================
-     REAL API DASHBOARD VALUES
+     REAL API DASHBOARD VALUES (FLEXIBLE MAPPING)
   ======================================================= */
 
-  const totalAUM =
-    dashboardSummary?.total_aum ?? 0;
+  const getValue = (object: any, keys: string[], fallback: any = 0) => {
+    if (!object) return fallback;
+    for (const key of keys) {
+      if (
+        object[key] !== undefined &&
+        object[key] !== null &&
+        object[key] !== ''
+      ) {
+        return object[key];
+      }
+    }
+    return fallback;
+  };
 
-  const totalInvestors =
-    dashboardSummary?.total_investors ??
-    0;
+  const totalAUM = getValue(
+    dashboardSummary,
+    [
+      'total_aum',
+      'totalAum',
+      'aum',
+      'total_portfolio_value',
+      'portfolio_value',
+    ],
+    0,
+  );
 
-  const pendingKyc =
-    dashboardSummary?.pending_kyc ??
-    kycPendingCount ??
-    0;
+  const totalInvestors = getValue(
+    dashboardSummary,
+    [
+      'total_investors',
+      'totalInvestors',
+      'investors_count',
+      'investor_count',
+    ],
+    investors.length || 0,
+  );
 
-  const activeInvestments =
-    dashboardSummary?.active_investments ??
-    0;
+  const pendingKyc = getValue(
+    dashboardSummary,
+    [
+      'pending_kyc',
+      'pendingKyc',
+      'pending_kyc_count',
+    ],
+    kycPendingCount || 0,
+  );
 
-  const monthlyInterestDue =
-    dashboardSummary?.monthly_interest_due ??
-    0;
+  const activeInvestments = getValue(
+    dashboardSummary,
+    [
+      'active_investments',
+      'activeInvestments',
+      'active_investment_count',
+    ],
+    0,
+  );
 
-  const pendingApprovals =
-    dashboardSummary?.pending_approvals ??
-    0;
+  const monthlyInterestDue = getValue(
+    dashboardSummary,
+    [
+      'monthly_interest_due',
+      'monthlyInterestDue',
+      'monthly_interest',
+      'monthly_payout',
+    ],
+    0,
+  );
+
+  const pendingApprovals = getValue(
+    dashboardSummary,
+    [
+      'pending_approvals',
+      'pendingApprovals',
+      'pending_investments_count',
+      'pending_approval_count',
+    ],
+    0,
+  );
+
+  const closedInvestments = getValue(
+    dashboardSummary,
+    [
+      'closed_investments',
+      'closedInvestments',
+      'matured_investments',
+      'closed_count',
+    ],
+    0,
+  );
+
+  const branchCount = getValue(
+    dashboardSummary,
+    [
+      'branch_count',
+      'branchCount',
+      'branches',
+      'total_branches',
+    ],
+    0,
+  );
 
   /* =======================================================
      CHART MAX VALUES
@@ -997,6 +1161,88 @@ const AdminDashboardScreen = ({
               Urgent
             </Text>
           </View>
+
+          {/* CLOSED INVESTMENTS */}
+
+          <View
+            style={
+              styles.statGridCard
+            }>
+            <View
+              style={[
+                styles.statGridIconWrap,
+                {
+                  backgroundColor:
+                    '#F3F4F6',
+                },
+              ]}>
+              <Text>🏁</Text>
+            </View>
+
+            <Text
+              style={
+                styles.statGridLabel
+              }>
+              CLOSED INVESTMENTS
+            </Text>
+
+            <Text
+              style={
+                styles.statGridValue
+              }>
+              {formatNumber(
+                closedInvestments,
+              )}
+            </Text>
+
+            <Text
+              style={
+                styles.statGridDeltaNeutral
+              }>
+              Settled
+            </Text>
+          </View>
+
+          {/* BRANCH COUNT */}
+
+          <View
+            style={
+              styles.statGridCard
+            }>
+            <View
+              style={[
+                styles.statGridIconWrap,
+                {
+                  backgroundColor:
+                    '#EDE9FE',
+                },
+              ]}>
+              <Text>🏢</Text>
+            </View>
+
+            <Text
+              style={
+                styles.statGridLabel
+              }>
+              BRANCHES
+            </Text>
+
+            <Text
+              style={
+                styles.statGridValue
+              }>
+              {formatNumber(
+                branchCount,
+              )}
+            </Text>
+
+            <Text
+              style={
+                styles.statGridDeltaGood
+              }>
+              Active
+            </Text>
+          </View>
         </View>
 
         {/* =================================================
@@ -1263,42 +1509,84 @@ const AdminDashboardScreen = ({
             styles.activityCard
           }>
 
-          {investors
-            .slice(0, 5)
-            .map(
-              (
-                inv,
-                idx,
-              ) => {
-                const kycStyle =
-                  kycBadgeStyle(
-                    inv.kycStatus,
-                  );
+          {(recentInvestments.length > 0
+            ? recentInvestments.slice(0, 5)
+            : investors.slice(0, 5)
+          ).map(
+            (
+              item: any,
+              idx: number,
+            ) => {
+              const isInvestment =
+                !!item.investment_id ||
+                item.investment_amount !== undefined;
 
-                const statusStyle =
-                  statusBadgeStyle(
-                    inv.status,
-                  );
+              const title = isInvestment
+                ? item.investor_name ||
+                  `Investment ${item.investment_id || item.id}`
+                : item.name;
 
-                return (
-                  <TouchableOpacity
-                    key={inv.id}
-                    style={[
-                      styles.activityRow,
-                      idx !==
-                        investors.slice(
-                          0,
-                          5,
-                        ).length -
-                          1 &&
-                        styles.activityRowBorder,
-                    ]}
-                    onPress={() =>
-                      navigation.navigate(
-                        'InvestorRegistry',
-                      )
-                    }>
+              const subtitle = isInvestment
+                ? `${item.investment_id || item.id} • ${formatCurrency(
+                    item.investment_amount || item.amount || 0,
+                  )}${
+                    item.interest_rate || item.rate
+                      ? ` • ${item.interest_rate || item.rate}%`
+                      : ''
+                  }`
+                : `${item.branch || 'Branch'} • ${item.id}`;
 
+              const rawStatus = String(
+                item.status ||
+                  item.investment_status ||
+                  (isInvestment ? 'Active' : item.status || 'Active'),
+              ).toLowerCase();
+
+              const isPending =
+                rawStatus.includes('pending') ||
+                rawStatus.includes('approval');
+
+              const isRejected = rawStatus.includes('reject');
+
+              const statusDisplay = isPending
+                ? 'Pending Approval'
+                : isRejected
+                ? 'Rejected'
+                : 'Active';
+
+              const badgeStyle = isPending
+                ? {bg: '#FEF3C7', text: '#B45309'}
+                : isRejected
+                ? {bg: '#FEE2E2', text: '#DC2626'}
+                : {bg: '#DCFCE7', text: '#16A34A'};
+
+              return (
+                <View
+                  key={
+                    item.investment_id ||
+                    item.id ||
+                    `act-${idx}`
+                  }
+                  style={[
+                    styles.activityRow,
+                    idx !==
+                      (recentInvestments.length > 0
+                        ? recentInvestments.slice(0, 5)
+                        : investors.slice(0, 5)
+                      ).length -
+                        1 &&
+                      styles.activityRowBorder,
+                    {
+                      flexDirection: 'column',
+                      alignItems: 'stretch',
+                    },
+                  ]}>
+
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                    }}>
                     <View
                       style={
                         styles.activityIconWrap
@@ -1307,9 +1595,9 @@ const AdminDashboardScreen = ({
                         style={
                           styles.activityInitial
                         }>
-                        {inv.name.charAt(
-                          0,
-                        )}
+                        {title
+                          .charAt(0)
+                          .toUpperCase()}
                       </Text>
                     </View>
 
@@ -1321,73 +1609,113 @@ const AdminDashboardScreen = ({
                         style={
                           styles.activityTitle
                         }>
-                        {inv.name}
+                        {title}
                       </Text>
 
                       <Text
                         style={
                           styles.activitySubtitle
                         }>
-                        {inv.branch} •{' '}
-                        {inv.id}
+                        {subtitle}
                       </Text>
                     </View>
 
                     <View
-                      style={{
-                        alignItems:
-                          'flex-end',
-                        gap: 4,
-                      }}>
-
-                      <View
+                      style={[
+                        styles.miniBadge,
+                        {
+                          backgroundColor:
+                            badgeStyle.bg,
+                        },
+                      ]}>
+                      <Text
                         style={[
-                          styles.miniBadge,
+                          styles.miniBadgeText,
                           {
-                            backgroundColor:
-                              kycStyle.bg,
+                            color:
+                              badgeStyle.text,
                           },
                         ]}>
-                        <Text
-                          style={[
-                            styles.miniBadgeText,
-                            {
-                              color:
-                                kycStyle.text,
-                            },
-                          ]}>
-                          {
-                            inv.kycStatus
-                          }
-                        </Text>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.miniBadge,
-                          {
-                            backgroundColor:
-                              statusStyle.bg,
-                          },
-                        ]}>
-                        <Text
-                          style={[
-                            styles.miniBadgeText,
-                            {
-                              color:
-                                statusStyle.text,
-                            },
-                          ]}>
-                          {
-                            inv.status
-                          }
-                        </Text>
-                      </View>
+                        {statusDisplay}
+                      </Text>
                     </View>
-                  </TouchableOpacity>
-                );
-              },
-            )}
+                  </View>
+
+                  {/* Actions Row */}
+                  <View
+                    style={
+                      styles.activityActionRow
+                    }>
+                    <TouchableOpacity
+                      style={
+                        styles.actionBtn
+                      }
+                      onPress={() =>
+                        setSelectedInvestment(
+                          item,
+                        )
+                      }>
+                      <Text
+                        style={
+                          styles.actionBtnText
+                        }>
+                        👁 View
+                      </Text>
+                    </TouchableOpacity>
+
+                    {isPending && (
+                      <>
+                        <TouchableOpacity
+                          style={[
+                            styles.actionBtn,
+                            styles.actionBtnApprove,
+                          ]}
+                          disabled={
+                            actionBusy
+                          }
+                          onPress={() =>
+                            handleApproveInvestment(
+                              item,
+                            )
+                          }>
+                          <Text
+                            style={
+                              styles.actionBtnApproveText
+                            }>
+                            ✓ Approve
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.actionBtn,
+                            styles.actionBtnReject,
+                          ]}
+                          disabled={
+                            actionBusy
+                          }
+                          onPress={() => {
+                            setRejectingInvestment(
+                              item,
+                            );
+                            setRejectionRemarks(
+                              '',
+                            );
+                          }}>
+                          <Text
+                            style={
+                              styles.actionBtnRejectText
+                            }>
+                            ✕ Reject
+                          </Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
+                  </View>
+                </View>
+              );
+            },
+          )}
 
         </View>
       </ScrollView>
@@ -1400,6 +1728,313 @@ const AdminDashboardScreen = ({
         active="Home"
         navigation={navigation}
       />
+
+      {/* ===================================================
+          DETAILS MODAL
+      ==================================================== */}
+
+      <Modal
+        visible={!!selectedInvestment}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setSelectedInvestment(null)
+        }>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor:
+              'rgba(0,0,0,0.5)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}>
+          <View
+            style={
+              styles.detailModalCard
+            }>
+            {selectedInvestment && (
+              <>
+                <View
+                  style={
+                    styles.modalHeaderRow
+                  }>
+                  <Text
+                    style={
+                      styles.modalTitle
+                    }>
+                    {selectedInvestment.investment_id ||
+                      selectedInvestment.id}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() =>
+                      setSelectedInvestment(
+                        null,
+                      )
+                    }>
+                    <Text
+                      style={
+                        styles.modalClose
+                      }>
+                      ✕
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {[
+                  [
+                    'Investor Name',
+                    selectedInvestment.investor_name ||
+                      selectedInvestment.name ||
+                      '—',
+                  ],
+                  [
+                    'Status',
+                    selectedInvestment.status ||
+                      selectedInvestment.investment_status ||
+                      'Active',
+                  ],
+                  [
+                    'Amount',
+                    formatCurrency(
+                      selectedInvestment.investment_amount ||
+                        selectedInvestment.amount ||
+                        selectedInvestment.totalInvested ||
+                        0,
+                    ),
+                  ],
+                  ...(selectedInvestment.interest_rate ||
+                  selectedInvestment.rate
+                    ? [
+                        [
+                          'Interest Rate',
+                          `${
+                            selectedInvestment.interest_rate ||
+                            selectedInvestment.rate
+                          }% p.a.`,
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.tenure_months
+                    ? [
+                        [
+                          'Tenure',
+                          `${selectedInvestment.tenure_months} months`,
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.investment_date ||
+                  selectedInvestment.registeredDate
+                    ? [
+                        [
+                          'Date',
+                          selectedInvestment.investment_date ||
+                            selectedInvestment.registeredDate,
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.maturity_date
+                    ? [
+                        [
+                          'Matures On',
+                          selectedInvestment.maturity_date,
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.branch_name ||
+                  selectedInvestment.branch
+                    ? [
+                        [
+                          'Branch',
+                          selectedInvestment.branch_name ||
+                            selectedInvestment.branch,
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.bond_number
+                    ? [
+                        [
+                          'Bond Number',
+                          selectedInvestment.bond_number,
+                        ],
+                      ]
+                    : []),
+                ].map(([label, val]) => (
+                  <View
+                    style={
+                      styles.detailRow
+                    }
+                    key={label}>
+                    <Text
+                      style={
+                        styles.detailLabel
+                      }>
+                      {label}
+                    </Text>
+                    <Text
+                      style={
+                        styles.detailValue
+                      }>
+                      {val}
+                    </Text>
+                  </View>
+                ))}
+
+                <TouchableOpacity
+                  style={
+                    styles.detailConfirmBtn
+                  }
+                  onPress={() =>
+                    setSelectedInvestment(
+                      null,
+                    )
+                  }>
+                  <Text
+                    style={
+                      styles.detailConfirmBtnText
+                    }>
+                    Close
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ===================================================
+          REJECTION REMARKS MODAL
+      ==================================================== */}
+
+      <Modal
+        visible={!!rejectingInvestment}
+        transparent
+        animationType="fade"
+        onRequestClose={() =>
+          setRejectingInvestment(null)
+        }>
+        <View
+          style={{
+            flex: 1,
+            backgroundColor:
+              'rgba(0,0,0,0.5)',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}>
+          <View
+            style={
+              styles.detailModalCard
+            }>
+            <View
+              style={
+                styles.modalHeaderRow
+              }>
+              <Text
+                style={
+                  styles.modalTitle
+                }>
+                Reject Investment
+              </Text>
+              <TouchableOpacity
+                onPress={() =>
+                  setRejectingInvestment(
+                    null,
+                  )
+                }>
+                <Text
+                  style={
+                    styles.modalClose
+                  }>
+                  ✕
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text
+              style={{
+                fontSize: 13,
+                color: '#6B7280',
+                marginTop: 4,
+                marginBottom: 8,
+              }}>
+              Enter the reason for rejecting{' '}
+              {rejectingInvestment?.investment_id ||
+                rejectingInvestment?.id}
+              :
+            </Text>
+
+            <TextInput
+              style={
+                styles.rejectTextarea
+              }
+              multiline
+              placeholder="Enter rejection remarks (required)..."
+              placeholderTextColor="#9CA3AF"
+              value={rejectionRemarks}
+              onChangeText={
+                setRejectionRemarks
+              }
+            />
+
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 10,
+              }}>
+              <TouchableOpacity
+                style={
+                  styles.modalCancelBtn
+                }
+                onPress={() =>
+                  setRejectingInvestment(
+                    null,
+                  )
+                }>
+                <Text
+                  style={
+                    styles.modalCancelBtnText
+                  }>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.actionBtn,
+                  styles.actionBtnReject,
+                  {
+                    flex: 1.4,
+                    paddingVertical: 12,
+                  },
+                  !rejectionRemarks.trim() && {
+                    opacity: 0.5,
+                  },
+                ]}
+                disabled={
+                  !rejectionRemarks.trim() ||
+                  actionBusy
+                }
+                onPress={
+                  handleRejectInvestment
+                }>
+                <Text
+                  style={[
+                    styles.actionBtnRejectText,
+                    {
+                      textAlign: 'center',
+                      fontSize: 13.5,
+                    },
+                  ]}>
+                  {actionBusy
+                    ? 'Rejecting...'
+                    : 'Reject Investment'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* ===================================================
           ADD INVESTMENT MODAL
@@ -1597,19 +2232,15 @@ const AdminDashboardScreen = ({
                     </View>
                   )}
 
-                  {investorQuery.trim()
-                    .length > 0 &&
+                  {investorQuery.trim() &&
                     investorResults.length ===
                       0 && (
                       <Text
                         style={
                           styles.noResultsText
                         }>
-                        No investors match "
-                        {
-                          investorQuery
-                        }
-                        "
+                        No matching
+                        investors found
                       </Text>
                     )}
                 </>
@@ -1630,10 +2261,8 @@ const AdminDashboardScreen = ({
                 }
                 placeholder="e.g. 500000"
                 placeholderTextColor="#9CA3AF"
-                keyboardType="number-pad"
-                value={
-                  amountText
-                }
+                keyboardType="numeric"
+                value={amountText}
                 onChangeText={
                   setAmountText
                 }
@@ -1652,20 +2281,14 @@ const AdminDashboardScreen = ({
                 style={
                   styles.tenureRow
                 }>
-
                 {TENURE_OPTIONS.map(
-                  (
-                    opt,
-                    i,
-                  ) => (
+                  (opt, i) => (
                     <TouchableOpacity
-                      key={
-                        opt.months
-                      }
+                      key={opt.months}
                       style={[
                         styles.tenureOption,
-                        tenureIndex ===
-                          i &&
+                        i ===
+                          tenureIndex &&
                           styles.tenureOptionActive,
                       ]}
                       onPress={() =>
@@ -1673,38 +2296,31 @@ const AdminDashboardScreen = ({
                           i,
                         )
                       }>
-
                       <Text
                         style={[
                           styles.tenureOptionMonths,
-                          tenureIndex ===
-                            i &&
+                          i ===
+                            tenureIndex &&
                             styles.tenureOptionMonthsActive,
                         ]}>
-                        {
-                          opt.months
-                        }
-                        m
+                        {opt.months}m
                       </Text>
 
                       <Text
                         style={[
                           styles.tenureOptionRate,
-                          tenureIndex ===
-                            i &&
+                          i ===
+                            tenureIndex &&
                             styles.tenureOptionRateActive,
                         ]}>
-                        {
-                          opt.rate
-                        }
-                        %
+                        {opt.rate}%
                       </Text>
                     </TouchableOpacity>
                   ),
                 )}
               </View>
 
-              {/* Date */}
+              {/* Invested Date */}
 
               <Text
                 style={

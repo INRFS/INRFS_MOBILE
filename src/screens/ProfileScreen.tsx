@@ -16,78 +16,12 @@ import axios, {InternalAxiosRequestConfig} from 'axios';
 import BottomTabBar from '../components/BottomTabBar';
 import {styles} from '../styles/ProfileScreen.styles';
 import AppHeader from '../components/AppHeader';
-
-/**
- * ============================================================
- * API CONFIGURATION
- * ============================================================
- *
- * Change this URL to your actual backend URL.
- *
- * Android Emulator:
- * http://10.0.2.2:8000
- *
- * Physical Android phone:
- * http://YOUR_COMPUTER_IP:8000
- *
- * Example:
- * http://192.168.1.10:8000
- */
-const API_BASE_URL = 'http://187.52.115.32:8000';
-
-/**
- * ============================================================
- * TYPES
- * ============================================================
- */
-
-type BankProfile = {
-  id?: number;
-  account_holder_name: string;
-  bank_name: string;
-  account_type_id: number;
-  account_type?: string;
-  account_number: string;
-  ifsc_code: string;
-  is_primary?: boolean;
-};
-
-type InvestorProfileResponse = {
-  investor_id: string;
-  full_name: string;
-  mobile: string;
-  email: string;
-  date_of_birth: string;
-  aadhaar_number?: string;
-  address: string;
-  city: string;
-  state_id: number;
-  state_name?: string;
-  pincode: string;
-  branch_id: number;
-  branch_name?: string;
-  status?: string;
-  bank?: BankProfile | null;
-};
-
-type UpdateProfileRequest = {
-  full_name: string;
-  mobile: string;
-  email: string;
-  date_of_birth: string;
-  address: string;
-  city: string;
-  state_id: number;
-  pincode: string;
-  branch_id: number;
-  bank: {
-    account_holder_name: string;
-    bank_name: string;
-    account_type_id: number;
-    account_number: string;
-    ifsc_code: string;
-  };
-};
+import {
+  investorService,
+  InvestorProfileResponse,
+  UpdateProfileRequest,
+} from '../services/investorService';
+import {validation} from '../utils/validation';
 
 /**
  * UI model
@@ -122,67 +56,6 @@ type Investor = {
 
 /**
  * ============================================================
- * API CLIENT
- * ============================================================
- */
-
-const api = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 30000,
-  headers: {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  },
-});
-
-/**
- * Get the logged-in user's token.
- *
- * This checks a few common keys so the Profile screen can work
- * with the token saved during login.
- *
- * Ideally your Login screen should save the access token as:
- *
- * await AsyncStorage.setItem('access_token', token);
- */
-const getAccessToken = async (): Promise<string | null> => {
-  const possibleKeys = [
-    'access_token',
-    'accessToken',
-    'token',
-    'authToken',
-    'jwt_token',
-  ];
-
-  for (const key of possibleKeys) {
-    const value = await AsyncStorage.getItem(key);
-
-    if (value) {
-      return value;
-    }
-  }
-
-  return null;
-};
-
-/**
- * Add Authorization header to every request.
- */
-api.interceptors.request.use(
-  async (config: InternalAxiosRequestConfig) => {
-    const token = await getAccessToken();
-
-    if (token) {
-      config.headers.set('Authorization', `Bearer ${token}`);
-    }
-
-    return config;
-  },
-  (error: unknown) => Promise.reject(error),
-);
-
-/**
- * ============================================================
  * API RESPONSE -> UI MODEL
  * ============================================================
  */
@@ -191,7 +64,7 @@ const mapApiProfileToInvestor = (
   data: InvestorProfileResponse,
 ): Investor => {
   return {
-    investorId: data.investor_id,
+    investorId: data.investor_id ?? '',
     name: data.full_name ?? '',
     mobile: data.mobile ?? '',
     email: data.email ?? '',
@@ -207,7 +80,7 @@ const mapApiProfileToInvestor = (
     status: data.status ?? 'Active',
 
     bank: {
-      id: data.bank?.id,
+      id: data.bank?.id ?? undefined,
       accountHolderName: data.bank?.account_holder_name ?? '',
       name: data.bank?.bank_name ?? '',
       accountTypeId: data.bank?.account_type_id ?? 0,
@@ -288,73 +161,22 @@ const ProfileScreen = ({
 
   const fetchProfile = useCallback(async () => {
     try {
-      const token = await getAccessToken();
-
-      if (!token) {
-        Alert.alert(
-          'Session expired',
-          'Please login again to continue.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                navigation.reset({
-                  index: 0,
-                  routes: [{name: 'Login'}],
-                });
-              },
-            },
-          ],
-        );
-
-        return;
-      }
-
-      const response = await api.get<InvestorProfileResponse>(
-        '/investors/profile',
-      );
-
-      const profile = mapApiProfileToInvestor(response.data);
+      const data = await investorService.getProfile();
+      const profile = mapApiProfileToInvestor(data);
 
       setInvestor(profile);
       setDraft(profile);
     } catch (error: any) {
-      console.log(
-        'GET /investors/profile error:',
-        error?.response?.data || error?.message,
+      console.log('GET /investors/profile error:', error);
+      Alert.alert(
+        'Unable to load profile',
+        error?.message || 'Could not fetch your profile. Please try again.',
       );
-
-      const statusCode = error?.response?.status;
-
-      if (statusCode === 401) {
-        Alert.alert(
-          'Session expired',
-          'Your session has expired. Please login again.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                navigation.reset({
-                  index: 0,
-                  routes: [{name: 'Login'}],
-                });
-              },
-            },
-          ],
-        );
-      } else {
-        Alert.alert(
-          'Unable to load profile',
-          error?.response?.data?.detail ||
-            error?.response?.data?.message ||
-            'Could not fetch your profile. Please try again.',
-        );
-      }
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [navigation]);
+  }, []);
 
   /**
    * Load profile when screen opens.
@@ -406,13 +228,15 @@ const ProfileScreen = ({
       return false;
     }
 
-    if (!data.mobile.trim()) {
-      Alert.alert('Missing details', 'Mobile number cannot be empty.');
+    const mobileCheck = validation.isValidMobile(data.mobile);
+    if (!mobileCheck.isValid) {
+      Alert.alert('Validation Error', mobileCheck.error || 'Invalid mobile number.');
       return false;
     }
 
-    if (!data.email.trim()) {
-      Alert.alert('Missing details', 'Email address cannot be empty.');
+    const emailCheck = validation.isValidEmail(data.email);
+    if (!emailCheck.isValid) {
+      Alert.alert('Validation Error', emailCheck.error || 'Invalid email address.');
       return false;
     }
 
@@ -432,7 +256,7 @@ const ProfileScreen = ({
     }
 
     if (!data.stateId || Number(data.stateId) <= 0) {
-      Alert.alert('Missing details', 'State ID is required.');
+      Alert.alert('Missing details', 'State is required.');
       return false;
     }
 
@@ -442,7 +266,7 @@ const ProfileScreen = ({
     }
 
     if (!data.branchId || Number(data.branchId) <= 0) {
-      Alert.alert('Missing details', 'Branch ID is required.');
+      Alert.alert('Missing details', 'Branch is required.');
       return false;
     }
 
@@ -467,16 +291,15 @@ const ProfileScreen = ({
       return false;
     }
 
-    if (!data.bank.accountNumber.trim()) {
-      Alert.alert(
-        'Missing details',
-        'Bank account number cannot be empty.',
-      );
+    const accCheck = validation.isValidAccountNumber(data.bank.accountNumber);
+    if (!accCheck.isValid) {
+      Alert.alert('Validation Error', accCheck.error || 'Invalid bank account number.');
       return false;
     }
 
-    if (!data.bank.ifsc.trim()) {
-      Alert.alert('Missing details', 'IFSC code cannot be empty.');
+    const ifscCheck = validation.isValidIFSC(data.bank.ifsc);
+    if (!ifscCheck.isValid) {
+      Alert.alert('Validation Error', ifscCheck.error || 'Invalid IFSC code.');
       return false;
     }
 
@@ -503,28 +326,10 @@ const ProfileScreen = ({
 
       const requestBody = mapInvestorToUpdateRequest(draft);
 
-      console.log(
-        'PUT /investors/profile request:',
-        JSON.stringify(requestBody, null, 2),
-      );
+      const updated = await investorService.updateProfile(requestBody);
 
-      const response = await api.put<InvestorProfileResponse>(
-        '/investors/profile',
-        requestBody,
-      );
-
-      console.log(
-        'PUT /investors/profile response:',
-        response.data,
-      );
-
-      /**
-       * Use returned profile if backend sends it.
-       * Otherwise fetch it again.
-       */
-      if (response.data) {
-        const updatedProfile = mapApiProfileToInvestor(response.data);
-
+      if (updated) {
+        const updatedProfile = mapApiProfileToInvestor(updated);
         setInvestor(updatedProfile);
         setDraft(updatedProfile);
       } else {
@@ -538,46 +343,8 @@ const ProfileScreen = ({
         'Your profile changes have been saved successfully.',
       );
     } catch (error: any) {
-      console.log(
-        'PUT /investors/profile error:',
-        error?.response?.data || error?.message,
-      );
-
-      const statusCode = error?.response?.status;
-
-      if (statusCode === 401) {
-        Alert.alert(
-          'Session expired',
-          'Please login again.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                navigation.reset({
-                  index: 0,
-                  routes: [{name: 'Login'}],
-                });
-              },
-            },
-          ],
-        );
-
-        return;
-      }
-
-      let message = 'Could not update your profile. Please try again.';
-
-      if (error?.response?.data?.detail) {
-        message = Array.isArray(error.response.data.detail)
-          ? error.response.data.detail
-              .map((item: any) => item?.msg || String(item))
-              .join('\n')
-          : String(error.response.data.detail);
-      } else if (error?.response?.data?.message) {
-        message = String(error.response.data.message);
-      }
-
-      Alert.alert('Update failed', message);
+      console.log('PUT /investors/profile error:', error);
+      Alert.alert('Update failed', error?.message || 'Could not update your profile. Please try again.');
     } finally {
       setSaving(false);
     }

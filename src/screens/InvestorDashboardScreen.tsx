@@ -1,15 +1,14 @@
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
-  Alert,
+  Modal,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, {Circle, Polyline} from 'react-native-svg';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import {useFocusEffect} from '@react-navigation/native';
 import BottomTabBar from '../components/BottomTabBar';
 import AppHeader from '../components/AppHeader';
@@ -20,77 +19,52 @@ import {
   GREEN,
   PURPLE,
   ORANGE,
+  GRAY,
 } from '../styles/InvestorDashboardScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {investorService, PortfolioSplitItem} from '../services/investorService';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+// ---------------------------------------------------------
+// HELPERS (ALIGNED WITH WEB SOURCE OF TRUTH)
+// ---------------------------------------------------------
 
-type DashboardSummary = {
-  total_invested: string;
-  interest_earned: string;
-  active_bonds: number;
-  monthly_payout: string;
-  portfolio_value: string;
-  next_maturity_date: string | null;
-  days_to_maturity: number | null;
+const getValue = (object: any, keys: string[], fallback: any = 0) => {
+  if (!object) return fallback;
+
+  for (const key of keys) {
+    if (
+      object[key] !== undefined &&
+      object[key] !== null &&
+      object[key] !== ''
+    ) {
+      return object[key];
+    }
+  }
+
+  return fallback;
 };
 
-type GrowthItem = {
-  month_name: string;
-  investment_amount: string;
-};
+const normalizeArray = (value: any): any[] => {
+  if (Array.isArray(value)) return value;
 
-type PortfolioSplitItem = {
-  label: string;
-  percentage?: number;
-  pct?: number;
-  color?: string;
-};
+  if (value && typeof value === 'object') {
+    return [value];
+  }
 
-type RecentInvestment = {
-  investment_id: string;
-  investment_amount: string;
-  interest_rate: string;
-  investment_date: string;
-  investment_status: string;
-  bond_id: string;
-};
-
-type Investor = {
-  investor_id: string;
-  investor_name: string;
-  mobile: string;
-  email: string;
-  date_of_birth: string;
-  aadhaar_number: string;
-  address: string;
-  city: string;
-  state_name: string;
-  pincode: string;
-  branch_name: string;
-  kyc_status: string;
-  account_status: string;
-  account_created_date: string;
-  approved_date: string;
-  remarks: string;
-};
-
-type InvestorDashboardResponse = {
-  summary: DashboardSummary;
-  growth: GrowthItem[];
-  portfolio_split: PortfolioSplitItem[];
-  recent_investments: RecentInvestment[];
-  investor: Investor;
+  return [];
 };
 
 const formatINR = (value: string | number) => {
   const number = Number(value) || 0;
-  return '₹' + number.toLocaleString('en-IN', {
-    maximumFractionDigits: 0,
-  });
+  return (
+    '₹' +
+    Math.round(number).toLocaleString('en-IN', {
+      maximumFractionDigits: 0,
+    })
+  );
 };
 
-const formatDate = (date: string) => {
+const formatDate = (date: string | null | undefined) => {
   if (!date) {
     return '-';
   }
@@ -98,7 +72,7 @@ const formatDate = (date: string) => {
   const parsed = new Date(date);
 
   if (Number.isNaN(parsed.getTime())) {
-    return date;
+    return String(date);
   }
 
   return parsed.toLocaleDateString('en-GB', {
@@ -135,9 +109,7 @@ const Sparkline = ({
   const points = data
     .map(
       (value, index) =>
-        `${index * step},${
-          height - ((value - min) / range) * height
-        }`,
+        `${index * step},${height - ((value - min) / range) * height}`,
     )
     .join(' ');
 
@@ -232,15 +204,12 @@ const Donut = ({
   return (
     <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
       {data.map((item, index) => {
-        const percentage = Number(
-          item.percentage ?? item.pct ?? 0,
-        );
+        const percentage = Number(item.percentage ?? item.pct ?? 0);
 
         const dash = (percentage / 100) * circumference;
 
         const color =
-          item.color ??
-          [NAVY, PURPLE, GREEN, ORANGE][index % 4];
+          item.color ?? [NAVY, PURPLE, GREEN, ORANGE][index % 4];
 
         const segment = (
           <Circle
@@ -250,9 +219,7 @@ const Donut = ({
             r={radius}
             stroke={color}
             strokeWidth={strokeWidth}
-            strokeDasharray={`${dash} ${
-              circumference - dash
-            }`}
+            strokeDasharray={`${dash} ${circumference - dash}`}
             strokeDashoffset={-offsetAcc}
             strokeLinecap="butt"
             fill="none"
@@ -270,71 +237,27 @@ const Donut = ({
 };
 
 const InvestorDashboardScreen = ({navigation}: any) => {
-  const [dashboard, setDashboard] =
-    useState<InvestorDashboardResponse | null>(null);
-
+  const [dashboard, setDashboard] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [selectedInvestment, setSelectedInvestment] = useState<any>(null);
 
   const fetchDashboard = useCallback(async () => {
     try {
       setLoading(true);
       setError('');
 
-      /*
-       * IMPORTANT:
-       * Use the SAME token key that your investor login stores.
-       *
-       * If your login stores it under another key, change this line.
-       */
-      const token = await AsyncStorage.getItem('access_token');
-
-if (!token) {
-  setError('Please login to continue.');
-  setLoading(false);
-  return;
-}
-
-      const response = await fetch(
-        `${API_BASE_URL}/investor/dashboard`,
-        {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
-
-if (response.status === 401) {
-  await AsyncStorage.removeItem('access_token');
-
-  setDashboard(null);
-  setError('Your session has expired. Please login again.');
-  setLoading(false);
-
-  return;
-}
-
-      if (!response.ok) {
-        throw new Error(
-          `Dashboard request failed: ${response.status}`,
-        );
-      }
-
-      const data: InvestorDashboardResponse =
-        await response.json();
-
+      const data = await investorService.getDashboard();
       setDashboard(data);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Investor dashboard error:', err);
       setError(
-        'Unable to load your dashboard. Please try again.',
+        err?.message || 'Unable to load your dashboard. Please try again.',
       );
     } finally {
       setLoading(false);
     }
-  }, [navigation]);
+  }, []);
 
   /*
    * Refresh every time the investor comes back to this screen.
@@ -344,6 +267,436 @@ if (response.status === 401) {
       fetchDashboard();
     }, [fetchDashboard]),
   );
+
+  const resolveNumericInvestmentId = async (
+    investment: any,
+  ): Promise<number | null> => {
+    if (!investment) return null;
+
+    const rawId =
+      investment?.id ??
+      investment?.investmentId ??
+      investment?.investment_id ??
+      null;
+
+    const numericId = Number(rawId);
+    if (Number.isInteger(numericId) && numericId > 0) {
+      return numericId;
+    }
+
+    const displayInvestmentId =
+      investment?.investment_id ??
+      investment?.investmentId ??
+      investment?.bond_number ??
+      '';
+
+    try {
+      const list = await investorService.getMyInvestments();
+      const matched = list.find((item: any) => {
+        const itemInvestmentId =
+          item?.investment_id ?? item?.investmentId ?? '';
+        return (
+          displayInvestmentId &&
+          String(itemInvestmentId) === String(displayInvestmentId)
+        );
+      });
+
+      const matchedId = Number(matched?.id);
+      if (Number.isInteger(matchedId) && matchedId > 0) {
+        return matchedId;
+      }
+    } catch (e) {
+      console.warn('Could not resolve numeric investment ID:', e);
+    }
+
+    return null;
+  };
+
+  // -------------------------------------------------------
+  // DATA NORMALIZATION (MATCHING WEB SOURCE OF TRUTH)
+  // -------------------------------------------------------
+
+  const dataRoot = dashboard?.data ?? dashboard;
+
+  const summary = useMemo(() => {
+    const value = dataRoot?.summary ?? {};
+    return Array.isArray(value) ? value[0] || {} : value;
+  }, [dataRoot]);
+
+  const investor = useMemo(() => {
+    const value = dataRoot?.investor ?? {};
+    return Array.isArray(value) ? value[0] || {} : value;
+  }, [dataRoot]);
+
+  const growth = useMemo(
+    () => normalizeArray(dataRoot?.growth),
+    [dataRoot],
+  );
+
+  const portfolioSplit = useMemo(
+    () =>
+      normalizeArray(
+        dataRoot?.portfolio_split ?? dataRoot?.portfolioSplit,
+      ),
+    [dataRoot],
+  );
+
+  const recentInvestments = useMemo(
+    () =>
+      normalizeArray(
+        dataRoot?.recent_investments ?? dataRoot?.recentInvestments,
+      ),
+    [dataRoot],
+  );
+
+  // -------------------------------------------------------
+  // SUMMARY FIELDS
+  // -------------------------------------------------------
+
+  const totalInvestment = Number(
+    getValue(
+      summary,
+      [
+        'total_investment',
+        'total_investments',
+        'total_invested',
+        'investment_amount',
+        'principal',
+        'total_principal',
+      ],
+      0,
+    ),
+  );
+
+  const earnedInterest = Number(
+    getValue(
+      summary,
+      [
+        'earned_interest',
+        'interest_earned',
+        'total_interest',
+        'interest_amount',
+      ],
+      0,
+    ),
+  );
+
+  const activeInvestment = Number(
+    getValue(
+      summary,
+      [
+        'active_investment',
+        'active_investments',
+        'active_amount',
+        'total_active',
+      ],
+      0,
+    ),
+  );
+
+  const activeCount = Number(
+    getValue(
+      summary,
+      ['active_count', 'active_investment_count', 'active_bonds'],
+      0,
+    ),
+  );
+
+  const monthlyPayout = Number(
+    getValue(
+      summary,
+      ['monthly_payout', 'monthly_interest', 'monthly_return', 'payout'],
+      0,
+    ),
+  );
+
+  const portfolioValue =
+    Number(
+      getValue(summary, ['portfolio_value', 'current_portfolio_value'], 0),
+    ) || totalInvestment + earnedInterest;
+
+  const maturityAmount = Number(
+    getValue(
+      summary,
+      [
+        'maturity_amount',
+        'total_maturity',
+        'expected_maturity',
+        'maturity_value',
+      ],
+      0,
+    ),
+  );
+
+  const investmentCount = Number(
+    getValue(
+      summary,
+      [
+        'investment_count',
+        'total_investment_count',
+        'total_investments_count',
+        'count',
+      ],
+      0,
+    ),
+  );
+
+  const nextMaturityDate = getValue(
+    summary,
+    ['next_maturity_date', 'maturity_date'],
+    null,
+  );
+
+  const daysToMaturity = getValue(
+    summary,
+    ['days_to_maturity', 'days_remaining'],
+    null,
+  );
+
+  // -------------------------------------------------------
+  // INVESTOR INFORMATION
+  // -------------------------------------------------------
+
+  const displayName = String(
+    getValue(investor, ['full_name', 'investor_name', 'name'], 'Investor'),
+  );
+
+  const investorId = String(
+    getValue(investor, ['investor_id', 'login_id'], ''),
+  );
+
+  const kycStatus = String(
+    getValue(investor, ['kyc_status', 'kyc_status_name'], 'Verified'),
+  );
+
+  const accountStatus = String(
+    getValue(investor, ['account_status', 'status'], 'Active'),
+  );
+
+  // -------------------------------------------------------
+  // GROWTH SERIES
+  // -------------------------------------------------------
+
+  const growthValues = growth.map((item, index) => ({
+    label: String(
+      getValue(
+        item,
+        ['month', 'month_name', 'period', 'label', 'year_month'],
+        `Month ${index + 1}`,
+      ),
+    ),
+    value: Number(
+      getValue(
+        item,
+        [
+          'amount',
+          'value',
+          'investment_amount',
+          'total_amount',
+          'total_investment',
+          'portfolio_value',
+        ],
+        0,
+      ),
+    ),
+  }));
+
+  const growthSeries =
+    growthValues.length > 0
+      ? growthValues.map(item => item.value)
+      : [0, totalInvestment];
+
+  const growthMonths =
+    growthValues.length > 0 ? growthValues.map(item => item.label) : [];
+
+  // Sparklines for 4 summary cards
+  const totalInvestedSparkline = [0, totalInvestment];
+  const interestSparkline = [0, earnedInterest];
+  const payoutSparkline = [0, monthlyPayout];
+  const bondSparkline = [0, activeCount || investmentCount];
+
+  // -------------------------------------------------------
+  // PORTFOLIO DISTRIBUTION
+  // -------------------------------------------------------
+
+  const donutColors = [NAVY, PRIMARY, GREEN, ORANGE, PURPLE];
+
+  const portfolioItems: PortfolioSplitItem[] = portfolioSplit.map(
+    (item, index) => {
+      const label = String(
+        getValue(
+          item,
+          [
+            'status_name',
+            'investment_status',
+            'status',
+            'category',
+            'label',
+            'name',
+          ],
+          `Investment ${index + 1}`,
+        ),
+      );
+
+      const amount = Number(
+        getValue(
+          item,
+          ['amount', 'investment_amount', 'total_amount', 'value'],
+          0,
+        ),
+      );
+
+      const rawPct = Number(
+        getValue(item, ['percentage', 'percent', 'share'], 0),
+      );
+
+      const percentage =
+        rawPct > 0
+          ? rawPct
+          : totalInvestment > 0
+          ? (amount / totalInvestment) * 100
+          : 0;
+
+      return {
+        label,
+        amount,
+        percentage: Math.round(percentage),
+        color: item.color ?? donutColors[index % donutColors.length],
+      };
+    },
+  );
+
+  // -------------------------------------------------------
+  // RECENT INVESTMENTS
+  // -------------------------------------------------------
+
+  const mappedRecentInvestments = recentInvestments.map(
+    (investment, index) => {
+      const itemInvestmentId = String(
+        getValue(
+          investment,
+          ['investment_id', 'investmentId', 'bond_number', 'id'],
+          `INV-${index + 1}`,
+        ),
+      );
+
+      const amount = Number(
+        getValue(
+          investment,
+          ['investment_amount', 'amount', 'principal'],
+          0,
+        ),
+      );
+
+      const rate = getValue(
+        investment,
+        ['interest_rate', 'rate', 'interest'],
+        0,
+      );
+
+      const investedOn = getValue(
+        investment,
+        ['investment_date', 'invested_on', 'invested_date', 'created_at'],
+        null,
+      );
+
+      const status = String(
+        getValue(
+          investment,
+          ['investment_status', 'status_name', 'status'],
+          'Pending',
+        ),
+      );
+
+      const bondNumber = String(
+        getValue(
+          investment,
+          ['bond_number', 'bond_id', 'bondNumber'],
+          '—',
+        ),
+      );
+
+      return {
+        raw: investment,
+        investmentId: itemInvestmentId,
+        amount,
+        rate,
+        investedOn,
+        status,
+        bondNumber,
+      };
+    },
+  );
+
+  const handleViewInvestment = async (invItem: any) => {
+    setSelectedInvestment(invItem);
+    try {
+      const numericId = await resolveNumericInvestmentId(invItem.raw);
+      if (numericId) {
+        const detail = await investorService.getInvestmentDetails(numericId);
+        if (detail) {
+          setSelectedInvestment((prev: any) =>
+            prev
+              ? {
+                  ...prev,
+                  detailData: detail,
+                }
+              : null,
+          );
+        }
+      }
+    } catch (e) {
+      console.log('Could not fetch investment details:', e);
+    }
+  };
+
+  const handleOpenBond = async (invItem: any) => {
+    try {
+      const numericId = await resolveNumericInvestmentId(invItem.raw);
+      if (numericId) {
+        navigation.navigate('BondDetails', {
+          bondId: numericId,
+          bondDisplayId:
+            invItem.bondNumber !== '—'
+              ? invItem.bondNumber
+              : invItem.investmentId,
+          investorId: investorId,
+        });
+      } else {
+        navigation.navigate('MyInvestments', {
+          investorId: investorId,
+        });
+      }
+    } catch {
+      navigation.navigate('MyInvestments', {
+        investorId: investorId,
+      });
+    }
+  };
+
+  const handleDownloadBond = async (invItem: any) => {
+    try {
+      const numericId = await resolveNumericInvestmentId(invItem.raw);
+      if (numericId) {
+        navigation.navigate('BondDetails', {
+          bondId: numericId,
+          bondDisplayId:
+            invItem.bondNumber !== '—'
+              ? invItem.bondNumber
+              : invItem.investmentId,
+          investorId: investorId,
+        });
+      } else {
+        navigation.navigate('MyInvestments', {
+          investorId: investorId,
+        });
+      }
+    } catch {
+      navigation.navigate('MyInvestments', {
+        investorId: investorId,
+      });
+    }
+  };
 
   if (loading && !dashboard) {
     return (
@@ -383,11 +736,7 @@ if (response.status === 401) {
             alignItems: 'center',
             padding: 30,
           }}>
-          <Icon
-            name="alert-circle-outline"
-            size={48}
-            color="#DC2626"
-          />
+          <Icon name="alert-circle-outline" size={48} color="#DC2626" />
 
           <Text
             style={{
@@ -425,41 +774,6 @@ if (response.status === 401) {
     return null;
   }
 
-  const {summary, growth, portfolio_split, recent_investments, investor} =
-    dashboard;
-
-  const growthSeries = growth.map(item =>
-    Number(item.investment_amount) || 0,
-  );
-
-  const growthMonths = growth.map(item => item.month_name);
-
-  /*
-   * The API currently doesn't provide historical values for
-   * the four small sparkline cards.
-   *
-   * Therefore we don't use the old fake hardcoded history.
-   */
-  const totalInvestedSparkline = [
-    0,
-    Number(summary.total_invested) || 0,
-  ];
-
-  const interestSparkline = [
-    0,
-    Number(summary.interest_earned) || 0,
-  ];
-
-  const payoutSparkline = [
-    0,
-    Number(summary.monthly_payout) || 0,
-  ];
-
-  const bondSparkline = [
-    0,
-    Number(summary.active_bonds) || 0,
-  ];
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader subtitle="Investment Portal" />
@@ -467,13 +781,12 @@ if (response.status === 401) {
       <ScrollView
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}>
-
         {/* HERO */}
         <View style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View>
               <Text style={styles.heroTitle}>
-                Good morning, {investor.investor_name}! 👋
+                Good morning, {displayName}! 👋
               </Text>
 
               <Text style={styles.heroSubtitle}>
@@ -482,68 +795,48 @@ if (response.status === 401) {
             </View>
 
             <View style={styles.heroBadge}>
-              <Icon
-                name="chart-line"
-                size={16}
-                color="#fff"
-              />
+              <Icon name="chart-line" size={16} color="#fff" />
             </View>
           </View>
 
-          <Text style={styles.heroLabel}>
-            TOTAL PORTFOLIO VALUE
-          </Text>
+          <Text style={styles.heroLabel}>TOTAL PORTFOLIO VALUE</Text>
 
-          <Text style={styles.heroValue}>
-            {formatINR(summary.portfolio_value)}
-          </Text>
+          <Text style={styles.heroValue}>{formatINR(portfolioValue)}</Text>
 
           <View style={styles.heroDeltaRow}>
-            <Icon
-              name="shield-check-outline"
-              size={13}
-              color="#D9F99D"
-            />
+            <Icon name="shield-check-outline" size={13} color="#D9F99D" />
 
             <Text style={styles.heroDeltaText}>
-              {investor.kyc_status} • {investor.account_status}
+              {kycStatus} • {accountStatus}
             </Text>
           </View>
         </View>
 
         {/* STATS */}
         <View style={styles.statGrid}>
-
           <View style={styles.statGridCard}>
             <View
               style={[
                 styles.statGridIconWrap,
                 {backgroundColor: '#DBEAFE'},
               ]}>
-              <Icon
-                name="wallet-outline"
-                size={16}
-                color={PRIMARY}
-              />
+              <Icon name="wallet-outline" size={16} color={PRIMARY} />
             </View>
 
-            <Text style={styles.statGridLabel}>
-              TOTAL INVESTED
-            </Text>
+            <Text style={styles.statGridLabel}>TOTAL INVESTED</Text>
 
             <Text style={styles.statGridValue}>
-              {formatINR(summary.total_invested)}
+              {formatINR(totalInvestment)}
             </Text>
 
             <Text style={styles.statGridDeltaGood}>
-              Current investment
+              {investmentCount > 0
+                ? `${investmentCount} investments`
+                : 'Current investment'}
             </Text>
 
             <View style={styles.statGridSparkWrap}>
-              <Sparkline
-                data={totalInvestedSparkline}
-                color={PRIMARY}
-              />
+              <Sparkline data={totalInvestedSparkline} color={PRIMARY} />
             </View>
           </View>
 
@@ -553,30 +846,19 @@ if (response.status === 401) {
                 styles.statGridIconWrap,
                 {backgroundColor: '#DCFCE7'},
               ]}>
-              <Icon
-                name="trending-up"
-                size={16}
-                color={GREEN}
-              />
+              <Icon name="trending-up" size={16} color={GREEN} />
             </View>
 
-            <Text style={styles.statGridLabel}>
-              INTEREST EARNED
-            </Text>
+            <Text style={styles.statGridLabel}>INTEREST EARNED</Text>
 
             <Text style={styles.statGridValue}>
-              {formatINR(summary.interest_earned)}
+              {formatINR(earnedInterest)}
             </Text>
 
-            <Text style={styles.statGridDeltaGood}>
-              Earned interest
-            </Text>
+            <Text style={styles.statGridDeltaGood}>Current earnings</Text>
 
             <View style={styles.statGridSparkWrap}>
-              <Sparkline
-                data={interestSparkline}
-                color={GREEN}
-              />
+              <Sparkline data={interestSparkline} color={GREEN} />
             </View>
           </View>
 
@@ -593,23 +875,16 @@ if (response.status === 401) {
               />
             </View>
 
-            <Text style={styles.statGridLabel}>
-              MONTHLY PAYOUT
-            </Text>
+            <Text style={styles.statGridLabel}>MONTHLY PAYOUT</Text>
 
             <Text style={styles.statGridValue}>
-              {formatINR(summary.monthly_payout)}
+              {formatINR(monthlyPayout)}
             </Text>
 
-            <Text style={styles.statGridDeltaGood}>
-              Monthly payout
-            </Text>
+            <Text style={styles.statGridDeltaGood}>Monthly return</Text>
 
             <View style={styles.statGridSparkWrap}>
-              <Sparkline
-                data={payoutSparkline}
-                color={ORANGE}
-              />
+              <Sparkline data={payoutSparkline} color={ORANGE} />
             </View>
           </View>
 
@@ -619,133 +894,97 @@ if (response.status === 401) {
                 styles.statGridIconWrap,
                 {backgroundColor: '#EDE9FE'},
               ]}>
-              <Icon
-                name="bank-outline"
-                size={16}
-                color={PURPLE}
-              />
+              <Icon name="bank-outline" size={16} color={PURPLE} />
             </View>
 
-            <Text style={styles.statGridLabel}>
-              ACTIVE BONDS
-            </Text>
+            <Text style={styles.statGridLabel}>ACTIVE BONDS</Text>
 
-            <Text style={styles.statGridValue}>
-              {summary.active_bonds}
-            </Text>
+            <Text style={styles.statGridValue}>{activeCount}</Text>
 
             <Text style={styles.statGridDeltaNeutral}>
-              Active investments
+              {activeInvestment > 0
+                ? formatINR(activeInvestment)
+                : 'Active investments'}
             </Text>
 
             <View style={styles.statGridSparkWrap}>
-              <Sparkline
-                data={bondSparkline}
-                color={PRIMARY}
-              />
+              <Sparkline data={bondSparkline} color={PRIMARY} />
             </View>
           </View>
-
         </View>
 
         {/* INVESTMENT GROWTH */}
         <View style={styles.portfolioCard}>
           <View style={styles.portfolioTopRow}>
-            <Text style={styles.portfolioLabel}>
-              INVESTMENT GROWTH
-            </Text>
+            <Text style={styles.portfolioLabel}>INVESTMENT GROWTH</Text>
 
             <View style={styles.trendBadge}>
-              <Icon
-                name="trending-up"
-                size={12}
-                color={GREEN}
-              />
+              <Icon name="trending-up" size={12} color={GREEN} />
 
               <Text style={styles.trendText}>
-                {growth.length} months
+                {growthSeries.length} months
               </Text>
             </View>
           </View>
 
           <Text style={styles.portfolioValue}>
-            {formatINR(summary.portfolio_value)}
+            {formatINR(portfolioValue)}
           </Text>
 
           <View style={styles.lineChartWrap}>
-            <LineChart
-              data={growthSeries}
-              width={296}
-              height={80}
-            />
+            <LineChart data={growthSeries} width={296} height={80} />
           </View>
 
-          <View style={styles.lineChartMonthRow}>
-            {growthMonths.map(month => (
-              <Text
-                key={month}
-                style={styles.lineChartMonthText}>
-                {month}
-              </Text>
-            ))}
-          </View>
+          {growthMonths.length > 0 && (
+            <View style={styles.lineChartMonthRow}>
+              {growthMonths.map((month, idx) => (
+                <Text
+                  key={`${month}-${idx}`}
+                  style={styles.lineChartMonthText}>
+                  {month}
+                </Text>
+              ))}
+            </View>
+          )}
 
           <View style={styles.portfolioBtnRow}>
             <TouchableOpacity
               style={styles.investBtn}
               activeOpacity={0.85}
               onPress={() =>
-                navigation.navigate('InvestNow')
+                navigation.navigate('InvestNow', {investorId})
               }>
-              <Icon
-                name="plus-circle-outline"
-                size={16}
-                color="#fff"
-              />
+              <Icon name="plus-circle-outline" size={16} color="#fff" />
 
-              <Text style={styles.investBtnText}>
-                Invest Now
-              </Text>
+              <Text style={styles.investBtnText}>Invest Now</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={styles.withdrawBtn}
               activeOpacity={0.85}
               onPress={() =>
-                navigation.navigate('MyInvestments')
+                navigation.navigate('MyInvestments', {investorId})
               }>
-              <Icon
-                name="briefcase-outline"
-                size={16}
-                color="#fff"
-              />
+              <Icon name="briefcase-outline" size={16} color="#fff" />
 
-              <Text style={styles.withdrawBtnText}>
-                My Investments
-              </Text>
+              <Text style={styles.withdrawBtnText}>My Investments</Text>
             </TouchableOpacity>
           </View>
         </View>
 
         {/* PORTFOLIO DISTRIBUTION */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>
-            Portfolio Distribution
-          </Text>
+          <Text style={styles.sectionTitle}>Portfolio Distribution</Text>
         </View>
 
         <View style={styles.distributionCard}>
-          {portfolio_split.length === 0 ? (
+          {portfolioItems.length === 0 ? (
             <View
               style={{
                 padding: 25,
                 alignItems: 'center',
               }}>
-              <Icon
-                name="chart-donut"
-                size={40}
-                color="#9CA3AF"
-              />
+              <Icon name="chart-donut" size={40} color="#9CA3AF" />
 
               <Text
                 style={{
@@ -753,17 +992,14 @@ if (response.status === 401) {
                   color: '#6B7280',
                   fontSize: 14,
                 }}>
-                No portfolio distribution available
+                No portfolio data
               </Text>
             </View>
           ) : (
             <>
               <View style={styles.distributionBody}>
                 <View style={styles.donutWrap}>
-                  <Donut
-                    data={portfolio_split}
-                    size={96}
-                  />
+                  <Donut data={portfolioItems} size={96} />
 
                   <View
                     style={[
@@ -773,106 +1009,60 @@ if (response.status === 401) {
                         height: 96,
                       },
                     ]}>
-                    <Text
-                      style={styles.donutCenterValue}>
-                      {formatINR(
-                        summary.portfolio_value,
-                      )}
+                    <Text style={styles.donutCenterValue}>
+                      {formatINR(totalInvestment || portfolioValue)}
                     </Text>
 
-                    <Text
-                      style={styles.donutCenterLabel}>
-                      Total Value
-                    </Text>
+                    <Text style={styles.donutCenterLabel}>Portfolio</Text>
                   </View>
                 </View>
 
                 <View style={styles.legendWrap}>
-                  {portfolio_split.map(
-                    (item, index) => {
-                      const percentage = Number(
-                        item.percentage ??
-                          item.pct ??
-                          0,
-                      );
-
-                      const amount =
-                        (percentage / 100) *
-                        Number(
-                          summary.portfolio_value,
-                        );
-
-                      return (
+                  {portfolioItems.map((item, index) => (
+                    <View
+                      key={`${item.label}-${index}`}
+                      style={styles.legendRow}>
+                      <View style={styles.legendLabelRow}>
                         <View
-                          key={`${item.label}-${index}`}
-                          style={styles.legendRow}>
+                          style={[
+                            styles.legendDot,
+                            {
+                              backgroundColor:
+                                item.color ??
+                                donutColors[index % donutColors.length],
+                            },
+                          ]}
+                        />
 
-                          <View
-                            style={
-                              styles.legendLabelRow
-                            }>
-                            <View
-                              style={[
-                                styles.legendDot,
-                                {
-                                  backgroundColor:
-                                    item.color ??
-                                    [
-                                      NAVY,
-                                      PURPLE,
-                                      GREEN,
-                                      ORANGE,
-                                    ][
-                                      index % 4
-                                    ],
-                                },
-                              ]}
-                            />
+                        <Text style={styles.legendLabel}>{item.label}</Text>
+                      </View>
 
-                            <Text
-                              style={
-                                styles.legendLabel
-                              }>
-                              {item.label}
-                            </Text>
-                          </View>
+                      <View style={styles.legendValueWrap}>
+                        <Text style={styles.legendPct}>
+                          {item.percentage}%
+                        </Text>
 
-                          <View
-                            style={
-                              styles.legendValueWrap
-                            }>
-                            <Text
-                              style={
-                                styles.legendPct
-                              }>
-                              {percentage}%
-                            </Text>
-
-                            <Text
-                              style={
-                                styles.legendAmount
-                              }>
-                              {formatINR(amount)}
-                            </Text>
-                          </View>
-                        </View>
-                      );
-                    },
-                  )}
+                        {typeof item.amount === 'number' && item.amount > 0 && (
+                          <Text style={styles.legendAmount}>
+                            {formatINR(item.amount)}
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                  ))}
                 </View>
               </View>
 
               <TouchableOpacity
-                style={styles.viewDetailsRow}>
+                style={styles.viewDetailsRow}
+                onPress={() =>
+                  navigation.navigate('MyInvestments', {investorId})
+                }>
                 <Text style={styles.viewDetailsText}>
                   View Full Breakdown
                 </Text>
 
-                <Icon
-                  name="chevron-right"
-                  size={16}
-                  color={PRIMARY}
-                />
+                <Icon name="chevron-right" size={16} color={PRIMARY} />
               </TouchableOpacity>
             </>
           )}
@@ -880,141 +1070,233 @@ if (response.status === 401) {
 
         {/* RECENT INVESTMENTS */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>
-            Recent Investments
-          </Text>
+          <Text style={styles.sectionTitle}>Recent Investments</Text>
 
           <TouchableOpacity
             onPress={() =>
-              navigation.navigate('MyInvestments')
+              navigation.navigate('MyInvestments', {investorId})
             }>
-            <Text style={styles.viewAllLink}>
-              View All
-            </Text>
+            <Text style={styles.viewAllLink}>View All</Text>
           </TouchableOpacity>
         </View>
 
-        {recent_investments.length === 0 ? (
+        {mappedRecentInvestments.length === 0 ? (
           <View
             style={{
               padding: 25,
               alignItems: 'center',
             }}>
-            <Text style={{color: '#6B7280'}}>
-              No investments found
-            </Text>
+            <Text style={{color: '#6B7280'}}>No investments yet</Text>
           </View>
         ) : (
-          recent_investments.map(inv => (
-            <View
-              key={inv.investment_id}
-              style={[
-                styles.bondCard,
-                {
-                  borderLeftColor:
-                    inv.investment_status ===
-                    'Active'
-                      ? GREEN
-                      : PURPLE,
-                },
-              ]}>
+          mappedRecentInvestments.map((inv, index) => {
+            const statusLower = inv.status.toLowerCase();
+            const isActive =
+              statusLower.includes('active') ||
+              statusLower.includes('approved');
+            const isPending =
+              statusLower.includes('pending') ||
+              statusLower.includes('approval');
 
-              <View style={styles.bondTopRow}>
-                <View style={styles.bondIconBox}>
-                  <Icon
-                    name="file-certificate-outline"
-                    size={18}
-                    color="#0E2A5E"
-                  />
-                </View>
-
-                <View
-                  style={styles.bondTitleWrap}>
-                  <Text style={styles.bondId}>
-                    {inv.investment_id}
-                  </Text>
-
-                  <Text
-                    style={styles.bondType}>
-                    {Number(
-                      inv.interest_rate,
-                    ).toFixed(2)}
-                    % p.a. •{' '}
-                    {formatINR(
-                      inv.investment_amount,
-                    )}
-                  </Text>
-
-                  <Text
-                    style={{
-                      marginTop: 3,
-                      fontSize: 11,
-                      color: '#6B7280',
-                    }}>
-                    Bond: {inv.bond_id}
-                  </Text>
-                </View>
-
-                <View
-                  style={[
-                    styles.statusBadge,
-                    inv.investment_status !==
-                      'Active' &&
-                      styles.statusBadgeMuted,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.statusBadgeText,
-                      inv.investment_status !==
-                        'Active' &&
-                        styles.statusBadgeTextMuted,
-                    ]}>
-                    {inv.investment_status}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.bondDivider} />
-
+            return (
               <View
-                style={styles.bondBottomRow}>
-                <View>
-                  <Text
-                    style={styles.bondMetaLabel}>
-                    Invested On
-                  </Text>
+                key={`${inv.investmentId}-${index}`}
+                style={[
+                  styles.bondCard,
+                  {
+                    borderLeftColor: isActive
+                      ? GREEN
+                      : isPending
+                      ? ORANGE
+                      : PURPLE,
+                  },
+                ]}>
+                <View style={styles.bondTopRow}>
+                  <View style={styles.bondIconBox}>
+                    <Icon
+                      name="file-certificate-outline"
+                      size={18}
+                      color="#0E2A5E"
+                    />
+                  </View>
 
-                  <Text
-                    style={styles.bondMetaValue}>
-                    {formatDate(
-                      inv.investment_date,
+                  <View style={styles.bondTitleWrap}>
+                    <Text style={styles.bondId}>{inv.investmentId}</Text>
+
+                    <Text style={styles.bondType}>
+                      {Number(inv.rate)}% p.a. • {formatINR(inv.amount)}
+                    </Text>
+
+                    {inv.bondNumber !== '—' && (
+                      <Text
+                        style={{
+                          marginTop: 3,
+                          fontSize: 11,
+                          color: '#6B7280',
+                        }}>
+                        Bond: {inv.bondNumber}
+                      </Text>
                     )}
-                  </Text>
+                  </View>
+
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      !isActive && styles.statusBadgeMuted,
+                    ]}>
+                    <Text
+                      style={[
+                        styles.statusBadgeText,
+                        !isActive && styles.statusBadgeTextMuted,
+                      ]}>
+                      {inv.status}
+                    </Text>
+                  </View>
                 </View>
 
-                <View
-                  style={{
-                    alignItems: 'flex-end',
-                  }}>
-                  <Text
-                    style={styles.bondMetaLabel}>
-                    Amount
-                  </Text>
+                <View style={styles.bondDivider} />
 
-                  <Text
-                    style={styles.bondReturnValue}>
-                    {formatINR(
-                      inv.investment_amount,
-                    )}
-                  </Text>
+                <View style={styles.bondBottomRow}>
+                  <View>
+                    <Text style={styles.bondMetaLabel}>Invested On</Text>
+
+                    <Text style={styles.bondMetaValue}>
+                      {formatDate(inv.investedOn)}
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      alignItems: 'flex-end',
+                    }}>
+                    <Text style={styles.bondMetaLabel}>Amount</Text>
+
+                    <Text style={styles.bondReturnValue}>
+                      {formatINR(inv.amount)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* ACTIONS */}
+                <View style={styles.bondActionDivider} />
+
+                <View style={styles.bondActionRow}>
+                  <Text style={styles.bondActionTitle}>Actions</Text>
+
+                  {isActive ? (
+                    <View style={styles.bondActionButtonsWrap}>
+                      <TouchableOpacity
+                        style={[
+                          styles.bondActionBtn,
+                          styles.bondActionBtnPrimary,
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleViewInvestment(inv)}>
+                        <Icon
+                          name="eye-outline"
+                          size={15}
+                          color={PRIMARY}
+                        />
+                        <Text
+                          style={[
+                            styles.bondActionBtnText,
+                            styles.bondActionBtnTextPrimary,
+                          ]}>
+                          View
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.bondActionBtn}
+                        activeOpacity={0.7}
+                        onPress={() => handleDownloadBond(inv)}>
+                        <Icon
+                          name="download-outline"
+                          size={15}
+                          color="#374151"
+                        />
+                        <Text style={styles.bondActionBtnText}>
+                          Download Bond
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : isPending ? (
+                    <View style={styles.bondActionButtonsWrap}>
+                      <TouchableOpacity
+                        style={[
+                          styles.bondActionBtn,
+                          styles.bondActionBtnPrimary,
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleViewInvestment(inv)}>
+                        <Icon
+                          name="eye-outline"
+                          size={15}
+                          color={PRIMARY}
+                        />
+                        <Text
+                          style={[
+                            styles.bondActionBtnText,
+                            styles.bondActionBtnTextPrimary,
+                          ]}>
+                          View
+                        </Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.bondPendingWrap}>
+                        <Icon
+                          name="clock-outline"
+                          size={14}
+                          color="#D97706"
+                        />
+                        <Text style={styles.bondActionPendingText}>
+                          Waiting for Admin Approval
+                        </Text>
+                      </View>
+                    </View>
+                  ) : (
+                    <View style={styles.bondActionButtonsWrap}>
+                      <TouchableOpacity
+                        style={[
+                          styles.bondActionBtn,
+                          styles.bondActionBtnPrimary,
+                        ]}
+                        activeOpacity={0.7}
+                        onPress={() => handleViewInvestment(inv)}>
+                        <Icon
+                          name="eye-outline"
+                          size={15}
+                          color={PRIMARY}
+                        />
+                        <Text
+                          style={[
+                            styles.bondActionBtnText,
+                            styles.bondActionBtnTextPrimary,
+                          ]}>
+                          View
+                        </Text>
+                      </TouchableOpacity>
+
+                      <View style={styles.bondPendingWrap}>
+                        <Icon
+                          name="information-outline"
+                          size={14}
+                          color="#6B7280"
+                        />
+                        <Text style={styles.bondActionMutedText}>
+                          {inv.status}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
                 </View>
               </View>
-            </View>
-          ))
+            );
+          })
         )}
 
         {/* MATURITY */}
-        {summary.next_maturity_date && (
+        {(nextMaturityDate || maturityAmount > 0) && (
           <View
             style={{
               marginTop: 15,
@@ -1038,28 +1320,32 @@ if (response.status === 401) {
                 fontWeight: '700',
                 color: NAVY,
               }}>
-              {formatDate(
-                summary.next_maturity_date,
-              )}
+              {nextMaturityDate
+                ? formatDate(nextMaturityDate)
+                : maturityAmount > 0
+                ? formatINR(maturityAmount)
+                : '0 Days'}
             </Text>
 
-            {summary.days_to_maturity !==
-              null && (
+            {daysToMaturity !== null && daysToMaturity !== undefined ? (
               <Text
                 style={{
                   marginTop: 3,
                   color: '#475569',
                 }}>
-                {summary.days_to_maturity} days remaining
+                {daysToMaturity} days remaining
               </Text>
-            )}
+            ) : maturityAmount > 0 ? (
+              <Text
+                style={{
+                  marginTop: 3,
+                  color: '#475569',
+                }}>
+                Expected maturity: {formatINR(maturityAmount)}
+              </Text>
+            ) : null}
           </View>
         )}
-
-        {/* NOTIFICATIONS
-            Removed because /investor/dashboard does not return
-            notifications. Do not show fake notifications.
-        */}
 
         <View
           style={{
@@ -1068,10 +1354,116 @@ if (response.status === 401) {
         />
       </ScrollView>
 
+      {/* INVESTMENT DETAILS MODAL */}
+      <Modal
+        visible={!!selectedInvestment}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedInvestment(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {selectedInvestment && (
+              <>
+                <View style={styles.modalHeaderRow}>
+                  <View>
+                    <Text style={styles.modalTitle}>
+                      {selectedInvestment.investmentId}
+                    </Text>
+                    {selectedInvestment.bondNumber !== '—' && (
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: GRAY,
+                          marginTop: 2,
+                          fontWeight: '600',
+                        }}>
+                        Bond: {selectedInvestment.bondNumber}
+                      </Text>
+                    )}
+                  </View>
+
+                  <TouchableOpacity
+                    onPress={() => setSelectedInvestment(null)}
+                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    <Icon name="close" size={22} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+
+                {[
+                  ['Status', selectedInvestment.status],
+                  ['Principal Amount', formatINR(selectedInvestment.amount)],
+                  [
+                    'Interest Rate',
+                    `${Number(selectedInvestment.rate)}% p.a.`,
+                  ],
+                  [
+                    'Invested On',
+                    formatDate(
+                      selectedInvestment.detailData?.investment_date ??
+                        selectedInvestment.investedOn,
+                    ),
+                  ],
+                  ...(selectedInvestment.detailData?.maturity_date
+                    ? [
+                        [
+                          'Matures On',
+                          formatDate(
+                            selectedInvestment.detailData.maturity_date,
+                          ),
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.detailData?.tenure_months
+                    ? [
+                        [
+                          'Tenure',
+                          `${selectedInvestment.detailData.tenure_months} months`,
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.detailData?.expected_interest_amount
+                    ? [
+                        [
+                          'Expected Interest',
+                          formatINR(
+                            selectedInvestment.detailData
+                              .expected_interest_amount,
+                          ),
+                        ],
+                      ]
+                    : []),
+                  ...(selectedInvestment.detailData?.maturity_amount
+                    ? [
+                        [
+                          'Maturity Amount',
+                          formatINR(
+                            selectedInvestment.detailData.maturity_amount,
+                          ),
+                        ],
+                      ]
+                    : []),
+                ].map(([label, value]) => (
+                  <View style={styles.modalRow} key={label}>
+                    <Text style={styles.modalRowLabel}>{label}</Text>
+                    <Text style={styles.modalRowValue}>{value}</Text>
+                  </View>
+                ))}
+
+                <TouchableOpacity
+                  style={styles.modalConfirmBtn}
+                  onPress={() => setSelectedInvestment(null)}>
+                  <Text style={styles.modalConfirmBtnText}>Close</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       <BottomTabBar
         active="Home"
         navigation={navigation}
-        investorId={investor.investor_id}
+        investorId={investorId}
       />
     </SafeAreaView>
   );

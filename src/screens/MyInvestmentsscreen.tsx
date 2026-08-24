@@ -19,118 +19,11 @@ import RNShare from 'react-native-share';
 import BottomTabBar from '../components/BottomTabBar';
 import AppHeader from '../components/AppHeader';
 import {styles} from '../styles/MyInvestmentsScreen.styles';
-
-
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE_URL = 'http://187.52.115.32:8000';
-
-type ApiInvestment = {
-  id: number;
-  investment_id: string;
-  investor_registration_id?: number | string | null;
-  investor_id?: string | null;
-  investor_name?: string | null;
-  tenure_id?: number | null;
-  tenure_months?: number | null;
-  investment_amount?: string | number | null;
-  amount?: string | number | null;
-  interest_rate?: string | number | null;
-  rate?: string | number | null;
-  expected_interest_amount?: string | number | null;
-  maturity_amount?: string | number | null;
-  investment_status_id?: number | string | null;
-  investment_status?: string | null;
-  status?: string | null;
-  investment_date?: string | null;
-  maturity_date?: string | null;
-  approved_by?: string | number | null;
-  approved_date?: string | null;
-  remarks?: string | null;
-  rejection_reason?: string | null;
-  bond_id?: string | null;
-  bond_number?: string | null;
-};
-
-type ApiEnvelope<T> = {data?: T; message?: string; success?: boolean; total?: number};
-
-type ApiBond = ApiInvestment & {
-  investment_code?: string | null;
-  mobile?: string | null;
-  email?: string | null;
-  aadhar?: string | null;
-  aadhaar?: string | null;
-  bank?: {
-    name?: string; accountNumber?: string; account_number?: string; ifsc?: string;
-    accountType?: string; account_type?: string;
-  } | null;
-  bank_name?: string | null;
-  account_number?: string | null;
-  ifsc_code?: string | null;
-  account_type?: string | null;
-  investor?: any;
-};
-
-async function getToken(): Promise<string> {
-  const token =
-    (await AsyncStorage.getItem('access_token')) ||
-    (await AsyncStorage.getItem('accessToken')) ||
-    (await AsyncStorage.getItem('authToken')) ||
-    (await AsyncStorage.getItem('token'));
-  if (!token) throw new Error('Authentication token not found. Please log in again.');
-  return token;
-}
-
-function apiError(data: any, fallback: string) {
-  if (typeof data === 'string' && data.trim()) return data;
-  if (typeof data?.detail === 'string') return data.detail;
-  if (Array.isArray(data?.detail)) return data.detail.map((x: any) => x?.msg || String(x)).join(', ');
-  if (data?.message) return String(data.message);
-  if (data?.error) return String(data.error);
-  return fallback;
-}
-
-async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = await getToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {})},
-  });
-  const raw = await response.text();
-  let data: any = null;
-  try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
-  if (!response.ok) throw new Error(apiError(data, `Request failed with status ${response.status}.`));
-  return data as T;
-}
-
-function unwrap<T>(response: T | ApiEnvelope<T>): T {
-  if (response && typeof response === 'object' && 'data' in (response as any) && (response as any).data !== undefined) return (response as any).data as T;
-  return response as T;
-}
-
-async function getMyInvestments(): Promise<ApiInvestment[]> {
-  const response = await requestJson<ApiInvestment[] | ApiEnvelope<ApiInvestment[]>>('/investments/my-investments', {method: 'GET'});
-  if (Array.isArray(response)) return response;
-  return Array.isArray(response?.data) ? response.data : [];
-}
-
-async function getMyInvestment(investmentDbId: number): Promise<ApiInvestment> {
-  const response = await requestJson<ApiInvestment | ApiEnvelope<ApiInvestment>>(`/investments/my-investments/${investmentDbId}`, {method: 'GET'});
-  return unwrap(response);
-}
-
-async function requestTenureExtension(investmentDbId: number, extensionMonths: number, remarks = '') {
-  return requestJson(`/investments/my-investments/${investmentDbId}/tenure-extension`, {method: 'POST', body: JSON.stringify({extension_months: extensionMonths, remarks})});
-}
-
-async function requestPreclose(investmentDbId: number, reason: string) {
-  return requestJson(`/investments/my-investments/${investmentDbId}/preclose`, {method: 'POST', body: JSON.stringify({reason})});
-}
-
-async function getMyInvestmentBond(investmentDbId: number): Promise<ApiBond> {
-  const response = await requestJson<ApiBond | ApiEnvelope<ApiBond>>(`/investments/my-investments/${investmentDbId}/bond`, {method: 'GET'});
-  return unwrap(response);
-}
+import {
+  investorService,
+  ApiInvestment,
+} from '../services/investorService';
+import {validation} from '../utils/validation';
 
 type BondStatus =
   | 'Active'
@@ -138,6 +31,8 @@ type BondStatus =
   | 'Pending Approval'
   | 'Pending Extension'
   | 'Pending Settlement';
+
+type FilterTab = 'all' | 'active' | 'pending' | 'others';
 
 type Investment = {
   id: string;
@@ -153,6 +48,7 @@ type Investment = {
   earned: number;
   expectedInterestAmount: number;
   maturityAmount: number;
+  bondNumber?: string;
 };
 
 const EXTENSION_OPTIONS = [3, 6, 12, 36];
@@ -198,7 +94,13 @@ function apiStatus(item: ApiInvestment): BondStatus {
   if (raw.includes('pending') && raw.includes('extension')) {
     return 'Pending Extension';
   }
-  if (raw.includes('pending') && (raw.includes('settlement') || raw.includes('preclose'))) {
+  if (
+    raw.includes('pending') &&
+    (raw.includes('settlement') || raw.includes('preclose') || raw.includes('close'))
+  ) {
+    return 'Pending Settlement';
+  }
+  if (raw.includes('pre-close') || raw.includes('preclose')) {
     return 'Pending Settlement';
   }
   if (raw.includes('pending') || raw.includes('approval')) {
@@ -228,9 +130,7 @@ function apiStatus(item: ApiInvestment): BondStatus {
 
   if (item.approved_by != null || item.approved_date) return 'Active';
 
-  // Current API does not expose a separate pending-status endpoint.
-  // If the record has not been approved and no explicit status was sent,
-  // treat it as pending approval rather than inventing a local state.
+  // If the record has not been approved and status is 1, treat as pending approval.
   if (item.approved_by == null && !item.approved_date && statusId === 1) {
     return 'Pending Approval';
   }
@@ -265,6 +165,7 @@ function mapInvestment(item: ApiInvestment): Investment {
       )
     : 0;
   const earned = Math.min(expected, (expected / tenure) * elapsedMonths);
+  const bondNum = String(item.bond_number ?? item.bond_id ?? '').trim();
 
   return {
     id: String(item.investment_id ?? item.id),
@@ -280,6 +181,7 @@ function mapInvestment(item: ApiInvestment): Investment {
     earned,
     expectedInterestAmount: expected,
     maturityAmount,
+    bondNumber: bondNum || undefined,
   };
 }
 
@@ -292,6 +194,10 @@ const statusColor = (status: BondStatus) => {
       return {bg: '#DCFCE7', fg: '#15803D'};
     case 'Matured':
       return {bg: '#E5E7EB', fg: '#374151'};
+    case 'Pending Extension':
+    case 'Pending Settlement':
+    case 'Pending Approval':
+      return {bg: '#FEF3C7', fg: '#B45309'};
     default:
       return {bg: '#FEF3C7', fg: '#B45309'};
   }
@@ -305,7 +211,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [pendingOnly, setPendingOnly] = useState(false);
+  const [activeTab, setActiveTab] = useState<FilterTab>('all');
 
   const [view, setView] = useState<Investment | null>(null);
   const [extension, setExtension] = useState<Investment | null>(null);
@@ -317,7 +223,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   const load = useCallback(async () => {
     try {
       setError('');
-      const response = await getMyInvestments();
+      const response = await investorService.getMyInvestments();
       setItems(response.map(mapInvestment));
     } catch (e: any) {
       setError(e?.message || 'Unable to load investments.');
@@ -331,57 +237,79 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     load();
   }, [load]);
 
+  const counts = useMemo(() => {
+    let active = 0;
+    let pending = 0;
+    let others = 0;
+
+    items.forEach(item => {
+      if (item.status === 'Active') {
+        active++;
+      } else if (item.status === 'Pending Approval') {
+        pending++;
+      } else {
+        others++;
+      }
+    });
+
+    return {
+      all: items.length,
+      active,
+      pending,
+      others,
+    };
+  }, [items]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return items.filter(item => {
-      const pending =
-        item.status === 'Pending Approval' ||
-        item.status === 'Pending Extension' ||
-        item.status === 'Pending Settlement';
+      const isActive = item.status === 'Active';
+      const isPending = item.status === 'Pending Approval';
+      const isOther = !isActive && !isPending;
 
-      if (pendingOnly && !pending) return false;
+      if (activeTab === 'active' && !isActive) return false;
+      if (activeTab === 'pending' && !isPending) return false;
+      if (activeTab === 'others' && !isOther) return false;
+
       if (!q) return true;
 
       return (
         item.id.toLowerCase().includes(q) ||
-        item.name.toLowerCase().includes(q)
+        item.name.toLowerCase().includes(q) ||
+        (item.bondNumber && item.bondNumber.toLowerCase().includes(q))
       );
     });
-  }, [items, pendingOnly, query]);
+  }, [items, activeTab, query]);
 
   const total = useMemo(
     () => items.reduce((sum, x) => sum + x.amount + x.earned, 0),
     [items],
   );
 
-  const pendingCount = useMemo(
-    () =>
-      items.filter(
-        x =>
-          x.status === 'Pending Approval' ||
-          x.status === 'Pending Extension' ||
-          x.status === 'Pending Settlement',
-      ).length,
-    [items],
-  );
-
   const openDetails = async (item: Investment) => {
     setView(item);
     try {
-      const detail = await getMyInvestment(item.investmentDbId);
-      setView(mapInvestment(detail));
+      const detail = await investorService.getInvestmentDetails(item.investmentDbId);
+      if (detail) {
+        setView(mapInvestment(detail));
+      }
     } catch (e: any) {
-      Alert.alert('Unable to load details', e?.message || 'Try again.');
+      console.log('Could not fetch rich investment details:', e?.message);
     }
   };
 
   const submitExtension = async () => {
     if (!extension) return;
 
+    if (!validation.isValidExtensionMonths(extensionMonths)) {
+      Alert.alert('Invalid Duration', 'Please select a valid extension tenure.');
+      return;
+    }
+
     try {
       setBusy(true);
-      await requestTenureExtension(
+      await investorService.requestTenureExtension(
         extension.investmentDbId,
         extensionMonths,
         '',
@@ -391,12 +319,12 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       await load();
 
       Alert.alert(
-        'Request submitted',
-        `${extension.id}: ${extensionMonths}-month tenure extension request sent to admin.`,
+        'Request Submitted',
+        `${extension.id}: ${extensionMonths}-month tenure extension request sent to admin for approval.`,
       );
     } catch (e: any) {
       Alert.alert(
-        'Extension failed',
+        'Extension Failed',
         e?.message || 'Could not submit the extension request.',
       );
     } finally {
@@ -405,23 +333,29 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   };
 
   const submitPreclose = async () => {
-    if (!preclose || !reason.trim()) return;
+    if (!preclose) return;
+
+    const check = validation.isValidPrecloseReason(reason);
+    if (!check.isValid) {
+      Alert.alert('Validation Error', check.error || 'Please enter a valid reason.');
+      return;
+    }
 
     try {
       setBusy(true);
-      await requestPreclose(preclose.investmentDbId, reason.trim());
+      await investorService.requestPreclose(preclose.investmentDbId, reason.trim());
 
       setPreclose(null);
       setReason('');
       await load();
 
       Alert.alert(
-        'Pre-close requested',
-        `${preclose.id}: request sent to admin for approval.`,
+        'Pre-Close Requested',
+        `${preclose.id}: Request sent to admin for approval. Status is now Pending Approval.`,
       );
     } catch (e: any) {
       Alert.alert(
-        'Pre-close failed',
+        'Pre-Close Failed',
         e?.message || 'Could not submit the pre-close request.',
       );
     } finally {
@@ -433,6 +367,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     try {
       const rows = items.map(x => ({
         'Investment ID': x.id,
+        'Bond Number': x.bondNumber || '—',
         Status: x.status,
         Amount: x.amount,
         'Interest Rate': x.rate,
@@ -464,6 +399,19 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       });
     } catch (e: any) {
       Alert.alert('Export failed', e?.message || 'Could not export.');
+    }
+  };
+
+  const getEmptyMessage = () => {
+    switch (activeTab) {
+      case 'active':
+        return 'No active investments';
+      case 'pending':
+        return 'No pending investments';
+      case 'others':
+        return 'No other investments';
+      default:
+        return 'No investments yet';
     }
   };
 
@@ -506,37 +454,71 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
           </TouchableOpacity>
         </View>
 
-        <View style={styles.filterRow}>
+        {/* 4 FILTER TABS: All Investments | Active | Pending | Others */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.filterRow}>
           <TouchableOpacity
             style={[
               styles.filterChip,
-              !pendingOnly && styles.filterChipActive,
+              activeTab === 'all' && styles.filterChipActive,
             ]}
-            onPress={() => setPendingOnly(false)}>
+            onPress={() => setActiveTab('all')}>
             <Text
               style={[
                 styles.filterChipText,
-                !pendingOnly && styles.filterChipTextActive,
+                activeTab === 'all' && styles.filterChipTextActive,
               ]}>
-              All Investments
+              All Investments ({counts.all})
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={[
               styles.filterChip,
-              pendingOnly && styles.filterChipActive,
+              activeTab === 'active' && styles.filterChipActive,
             ]}
-            onPress={() => setPendingOnly(true)}>
+            onPress={() => setActiveTab('active')}>
             <Text
               style={[
                 styles.filterChipText,
-                pendingOnly && styles.filterChipTextActive,
+                activeTab === 'active' && styles.filterChipTextActive,
               ]}>
-              Pending Investments{pendingCount ? ` (${pendingCount})` : ''}
+              Active ({counts.active})
             </Text>
           </TouchableOpacity>
-        </View>
+
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              activeTab === 'pending' && styles.filterChipActive,
+            ]}
+            onPress={() => setActiveTab('pending')}>
+            <Text
+              style={[
+                styles.filterChipText,
+                activeTab === 'pending' && styles.filterChipTextActive,
+              ]}>
+              Pending ({counts.pending})
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.filterChip,
+              activeTab === 'others' && styles.filterChipActive,
+            ]}
+            onPress={() => setActiveTab('others')}>
+            <Text
+              style={[
+                styles.filterChipText,
+                activeTab === 'others' && styles.filterChipTextActive,
+              ]}>
+              Others ({counts.others})
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
 
         {loading ? (
           <View style={{padding: 40, alignItems: 'center'}}>
@@ -561,7 +543,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               color="#9C9689"
             />
             <Text style={styles.emptyTitle}>
-              {pendingOnly ? 'No pending investments' : 'No investments yet'}
+              {getEmptyMessage()}
             </Text>
           </View>
         ) : (
@@ -605,6 +587,40 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                     </Text>
                   </View>
                 </View>
+
+                {item.status === 'Active' && item.bondNumber ? (
+                  <TouchableOpacity
+                    onPress={() =>
+                      navigation.navigate('BondDetails', {
+                        investorId,
+                        bondId: item.investmentDbId,
+                        bondDisplayId: item.bondNumber,
+                      })
+                    }
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 4,
+                      marginTop: 4,
+                      marginBottom: 6,
+                    }}>
+                    <Icon name="file-certificate-outline" size={14} color="#16A34A" />
+                    <Text style={{fontSize: 12, fontWeight: '700', color: '#16A34A'}}>
+                      Bond: {item.bondNumber}
+                    </Text>
+                  </TouchableOpacity>
+                ) : isPending ? (
+                  <Text
+                    style={{
+                      fontSize: 11.5,
+                      color: '#9CA3AF',
+                      marginTop: 2,
+                      marginBottom: 6,
+                      fontStyle: 'italic',
+                    }}>
+                    Bond: Pending...
+                  </Text>
+                ) : null}
 
                 <Text style={styles.bondName}>{item.name}</Text>
 
@@ -663,6 +679,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                   </Text>
                 ) : (
                   <View style={styles.actionIconRow}>
+                    {/* View Action -> Investment Details */}
                     <TouchableOpacity
                       style={styles.actionIconBtn}
                       onPress={() => openDetails(item)}>
@@ -670,13 +687,14 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                       <Text style={styles.actionIconBtnText}>View</Text>
                     </TouchableOpacity>
 
+                    {/* Bond Action -> Bond Certificate */}
                     <TouchableOpacity
                       style={styles.actionIconBtn}
                       onPress={() =>
                         navigation.navigate('BondDetails', {
                           investorId,
                           bondId: item.investmentDbId,
-                          bondDisplayId: item.id,
+                          bondDisplayId: item.bondNumber || item.id,
                         })
                       }>
                       <Icon name="file-certificate-outline" size={18} color="#1A1A18" />
@@ -721,14 +739,34 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         </TouchableOpacity>
       </ScrollView>
 
-      <Modal visible={!!view} transparent animationType="fade">
+      {/* INVESTMENT DETAILS MODAL */}
+      <Modal
+        visible={!!view}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setView(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             {view && (
               <>
                 <View style={styles.modalHeaderRow}>
-                  <Text style={styles.modalTitle}>{view.id}</Text>
-                  <TouchableOpacity onPress={() => setView(null)}>
+                  <View>
+                    <Text style={styles.modalTitle}>{view.id}</Text>
+                    {view.bondNumber && view.bondNumber !== '—' && (
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          color: '#6B7280',
+                          marginTop: 2,
+                          fontWeight: '600',
+                        }}>
+                        Bond: {view.bondNumber}
+                      </Text>
+                    )}
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setView(null)}
+                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
                     <Icon name="close" size={20} color="#6B7280" />
                   </TouchableOpacity>
                 </View>
@@ -740,8 +778,12 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                   ['Tenure', `${view.tenureMonths} months`],
                   ['Invested On', view.investedOn],
                   ['Matures On', view.maturesOn],
+                  ['Monthly Interest', money(view.monthlyInterest)],
                   ['Expected Interest', money(view.expectedInterestAmount)],
                   ['Maturity Amount', money(view.maturityAmount)],
+                  ...(view.bondNumber && view.bondNumber !== '—'
+                    ? [['Bond Number', view.bondNumber]]
+                    : []),
                 ].map(([label, value]) => (
                   <View style={styles.modalRow} key={label}>
                     <Text style={styles.modalRowLabel}>{label}</Text>
@@ -760,12 +802,19 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         </View>
       </Modal>
 
-      <Modal visible={!!extension} transparent animationType="fade">
+      {/* TENURE EXTENSION MODAL */}
+      <Modal
+        visible={!!extension}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setExtension(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>Request Tenure Extension</Text>
-              <TouchableOpacity onPress={() => setExtension(null)}>
+              <TouchableOpacity
+                onPress={() => setExtension(null)}
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
                 <Icon name="close" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -815,12 +864,19 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         </View>
       </Modal>
 
-      <Modal visible={!!preclose} transparent animationType="fade">
+      {/* PRE-CLOSE MODAL */}
+      <Modal
+        visible={!!preclose}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPreclose(null)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
               <Text style={styles.modalTitle}>Request Pre-Close</Text>
-              <TouchableOpacity onPress={() => setPreclose(null)}>
+              <TouchableOpacity
+                onPress={() => setPreclose(null)}
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
                 <Icon name="close" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -877,4 +933,4 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   );
 };
 
-export default MyInvestmentsScreen;
+export default MyInvestmentsScreen;

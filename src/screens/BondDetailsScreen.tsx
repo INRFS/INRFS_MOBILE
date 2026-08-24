@@ -6,116 +6,11 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {styles} from '../styles/BondDetailsScreen.styles';
 
 
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const API_BASE_URL = 'http://187.52.115.32:8000';
-
-type ApiInvestment = {
-  id: number;
-  investment_id: string;
-  investor_registration_id?: number | string | null;
-  investor_id?: string | null;
-  investor_name?: string | null;
-  tenure_id?: number | null;
-  tenure_months?: number | null;
-  investment_amount?: string | number | null;
-  amount?: string | number | null;
-  interest_rate?: string | number | null;
-  rate?: string | number | null;
-  expected_interest_amount?: string | number | null;
-  maturity_amount?: string | number | null;
-  investment_status_id?: number | string | null;
-  investment_status?: string | null;
-  status?: string | null;
-  investment_date?: string | null;
-  maturity_date?: string | null;
-  approved_by?: string | number | null;
-  approved_date?: string | null;
-  remarks?: string | null;
-  rejection_reason?: string | null;
-  bond_id?: string | null;
-  bond_number?: string | null;
-};
-
-type ApiEnvelope<T> = {data?: T; message?: string; success?: boolean; total?: number};
-
-type ApiBond = ApiInvestment & {
-  investment_code?: string | null;
-  mobile?: string | null;
-  email?: string | null;
-  aadhar?: string | null;
-  aadhaar?: string | null;
-  bank?: {
-    name?: string; accountNumber?: string; account_number?: string; ifsc?: string;
-    accountType?: string; account_type?: string;
-  } | null;
-  bank_name?: string | null;
-  account_number?: string | null;
-  ifsc_code?: string | null;
-  account_type?: string | null;
-  investor?: any;
-};
-
-async function getToken(): Promise<string> {
-  const token =
-    (await AsyncStorage.getItem('access_token')) ||
-    (await AsyncStorage.getItem('accessToken')) ||
-    (await AsyncStorage.getItem('authToken')) ||
-    (await AsyncStorage.getItem('token'));
-  if (!token) throw new Error('Authentication token not found. Please log in again.');
-  return token;
-}
-
-function apiError(data: any, fallback: string) {
-  if (typeof data === 'string' && data.trim()) return data;
-  if (typeof data?.detail === 'string') return data.detail;
-  if (Array.isArray(data?.detail)) return data.detail.map((x: any) => x?.msg || String(x)).join(', ');
-  if (data?.message) return String(data.message);
-  if (data?.error) return String(data.error);
-  return fallback;
-}
-
-async function requestJson<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = await getToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {Accept: 'application/json', 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, ...(options.headers || {})},
-  });
-  const raw = await response.text();
-  let data: any = null;
-  try { data = raw ? JSON.parse(raw) : null; } catch { data = raw; }
-  if (!response.ok) throw new Error(apiError(data, `Request failed with status ${response.status}.`));
-  return data as T;
-}
-
-function unwrap<T>(response: T | ApiEnvelope<T>): T {
-  if (response && typeof response === 'object' && 'data' in (response as any) && (response as any).data !== undefined) return (response as any).data as T;
-  return response as T;
-}
-
-async function getMyInvestments(): Promise<ApiInvestment[]> {
-  const response = await requestJson<ApiInvestment[] | ApiEnvelope<ApiInvestment[]>>('/investments/my-investments', {method: 'GET'});
-  if (Array.isArray(response)) return response;
-  return Array.isArray(response?.data) ? response.data : [];
-}
-
-async function getMyInvestment(investmentDbId: number): Promise<ApiInvestment> {
-  const response = await requestJson<ApiInvestment | ApiEnvelope<ApiInvestment>>(`/investments/my-investments/${investmentDbId}`, {method: 'GET'});
-  return unwrap(response);
-}
-
-async function requestTenureExtension(investmentDbId: number, extensionMonths: number, remarks = '') {
-  return requestJson(`/investments/my-investments/${investmentDbId}/tenure-extension`, {method: 'POST', body: JSON.stringify({extension_months: extensionMonths, remarks})});
-}
-
-async function requestPreclose(investmentDbId: number, reason: string) {
-  return requestJson(`/investments/my-investments/${investmentDbId}/preclose`, {method: 'POST', body: JSON.stringify({reason})});
-}
-
-async function getMyInvestmentBond(investmentDbId: number): Promise<ApiBond> {
-  const response = await requestJson<ApiBond | ApiEnvelope<ApiBond>>(`/investments/my-investments/${investmentDbId}/bond`, {method: 'GET'});
-  return unwrap(response);
-}
+import {
+  investorService,
+  BondData,
+  ApiInvestment,
+} from '../services/investorService';
 
 const money = (value: number) =>
   '₹' + Math.round(value).toLocaleString('en-IN');
@@ -128,7 +23,7 @@ const num = (v: any, fallback = 0) => {
 const BondDetailsScreen = ({navigation, route}: any) => {
   const {bondId, bondDisplayId} = route?.params || {};
 
-  const [bond, setBond] = useState<ApiBond | null>(null);
+  const [bond, setBond] = useState<BondData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -142,7 +37,7 @@ const BondDetailsScreen = ({navigation, route}: any) => {
         let numericId = Number(bondId);
 
         if (!Number.isInteger(numericId) || numericId <= 0) {
-          const investments = await getMyInvestments();
+          const investments = await investorService.getMyInvestments();
           const match = investments.find(
             x => String(x.investment_id) === String(bondId),
           );
@@ -153,7 +48,7 @@ const BondDetailsScreen = ({navigation, route}: any) => {
           throw new Error('Investment not found.');
         }
 
-        const response = await getMyInvestmentBond(numericId);
+        const response = await investorService.getInvestmentBond(numericId);
 
         if (mounted) setBond(response);
       } catch (e: any) {
