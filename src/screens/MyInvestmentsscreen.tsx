@@ -27,10 +27,21 @@ import {validation} from '../utils/validation';
 
 type BondStatus =
   | 'Active'
-  | 'Matured'
+  | 'Extension Requested'
+  | 'Pre-Close Requested'
   | 'Pending Approval'
   | 'Pending Extension'
-  | 'Pending Settlement';
+  | 'Pending Settlement'
+  | 'Settled'
+  | 'Closed'
+  | 'Matured'
+  | 'Rejected'
+  | 'Refunded';
+
+type LocalActionState =
+  | 'Extension Requested'
+  | 'Pre-Close Requested'
+  | '';
 
 type FilterTab = 'all' | 'active' | 'pending' | 'others';
 
@@ -39,6 +50,7 @@ type Investment = {
   investmentDbId: number;
   name: string;
   status: BondStatus;
+  stage?: string;
   amount: number;
   rate: number;
   tenureMonths: number;
@@ -85,60 +97,209 @@ function monthsBetween(
   );
 }
 
-function apiStatus(item: ApiInvestment): BondStatus {
-  const raw = String(
-    item.status || item.investment_status || '',
+export function resolveInvestmentStatus(item: ApiInvestment): BondStatus {
+  const anyItem = item as any;
+
+  const extractString = (val: any): string => {
+    if (!val) return '';
+    if (typeof val === 'string') return val.trim().toLowerCase();
+    if (typeof val === 'object') {
+      return String(
+        val.status ||
+        val.request_status ||
+        val.settlement_status ||
+        val.status_name ||
+        val.approval_status ||
+        '',
+      ).trim().toLowerCase();
+    }
+    return String(val).trim().toLowerCase();
+  };
+
+  const rawStatus = String(
+    anyItem.status_name ||
+    anyItem.investment_status_name ||
+    item.status ||
+    item.investment_status ||
+    anyItem.status_code ||
+    '',
   ).trim().toLowerCase();
 
-  // Prefer an explicit status returned by the backend.
-  if (raw.includes('pending') && raw.includes('extension')) {
-    return 'Pending Extension';
+  const statusId = n(item.investment_status_id ?? anyItem.status_id);
+
+  const precloseValues = [
+    extractString(anyItem.preclose_request_status),
+    extractString(anyItem.pre_close_request_status),
+    extractString(anyItem.preclose_status),
+    extractString(anyItem.pre_close_status),
+    extractString(anyItem.settlement_request_status),
+    extractString(anyItem.settlement_status),
+    extractString(anyItem.payout_status),
+    extractString(anyItem.payment_status),
+    extractString(anyItem.preclose_request),
+    extractString(anyItem.pre_close_request),
+    extractString(anyItem.preclose),
+    extractString(anyItem.settlement),
+    extractString(anyItem.workflow_status),
+    extractString(anyItem.workflow_status_name),
+    extractString(anyItem.request_status),
+    extractString(anyItem.approval_status),
+    extractString(anyItem.action_status),
+  ].filter(Boolean);
+
+  const extensionValues = [
+    extractString(anyItem.extension_request_status),
+    extractString(anyItem.tenure_extension_request_status),
+    extractString(anyItem.extension_status),
+    extractString(anyItem.tenure_extension_status),
+    extractString(anyItem.extension_request),
+    extractString(anyItem.extension),
+  ].filter(Boolean);
+
+  const hasSettlementDate = Boolean(
+    anyItem.settled_date ||
+    anyItem.settlement_date ||
+    anyItem.closed_date ||
+    anyItem.paid_date ||
+    anyItem.settled_on ||
+    anyItem.closed_on ||
+    anyItem.paid_on,
+  );
+
+  const hasSettlementFlag = Boolean(
+    anyItem.is_settled === true ||
+    anyItem.is_closed === true ||
+    anyItem.is_preclosed === true ||
+    anyItem.is_paid === true,
+  );
+
+  const isPrecloseSettled = precloseValues.some(
+    s =>
+      !s.includes('pending') &&
+      !s.includes('requested') &&
+      !s.includes('reject') &&
+      (s.includes('settled') ||
+        s.includes('closed') ||
+        s.includes('paid') ||
+        s.includes('completed') ||
+        s.includes('approved')),
+  );
+
+  // =========================================================================
+  // 1. FINAL SETTLED / CLOSED / PAID / COMPLETED STATE (HIGHEST PRIORITY)
+  // Evaluated strictly before Active.
+  // =========================================================================
+  if (
+    statusId === 3 ||
+    rawStatus === 'settled' ||
+    rawStatus.includes('settled') ||
+    rawStatus === 'closed' ||
+    rawStatus.includes('closed') ||
+    rawStatus.includes('paid') ||
+    rawStatus.includes('completed') ||
+    hasSettlementDate ||
+    hasSettlementFlag ||
+    isPrecloseSettled
+  ) {
+    return 'Settled';
+  }
+
+  // =========================================================================
+  // 2. FINAL REJECTED / CANCELLED / REFUNDED STATES
+  // =========================================================================
+  if (
+    statusId === 4 ||
+    rawStatus.includes('reject') ||
+    rawStatus.includes('cancel') ||
+    precloseValues.some(s => s.includes('reject') || s.includes('cancel'))
+  ) {
+    return 'Rejected';
   }
   if (
-    raw.includes('pending') &&
-    (raw.includes('settlement') || raw.includes('preclose') || raw.includes('close'))
+    statusId === 5 ||
+    rawStatus.includes('refund') ||
+    precloseValues.some(s => s.includes('refund'))
   ) {
-    return 'Pending Settlement';
+    return 'Refunded';
   }
-  if (raw.includes('pre-close') || raw.includes('preclose')) {
-    return 'Pending Settlement';
+
+  // =========================================================================
+  // 3. PENDING PRE-CLOSE / SETTLEMENT REQUEST
+  // =========================================================================
+  if (
+    precloseValues.some(
+      s =>
+        s.includes('pending') ||
+        s.includes('requested') ||
+        s.includes('preclose') ||
+        s.includes('pre close') ||
+        s.includes('settlement'),
+    ) ||
+    rawStatus.includes('pre-close') ||
+    rawStatus.includes('preclose')
+  ) {
+    return 'Pre-Close Requested';
   }
-  if (raw.includes('pending') || raw.includes('approval')) {
+
+  // =========================================================================
+  // 4. PENDING TENURE EXTENSION REQUEST
+  // =========================================================================
+  if (
+    extensionValues.some(
+      s =>
+        s.includes('pending') ||
+        s.includes('requested') ||
+        s.includes('extension'),
+    ) ||
+    rawStatus.includes('extension')
+  ) {
+    return 'Extension Requested';
+  }
+
+  // =========================================================================
+  // 5. PENDING INITIAL INVESTMENT APPROVAL
+  // =========================================================================
+  if (
+    statusId === 1 ||
+    rawStatus === 'pending' ||
+    rawStatus === 'pending approval' ||
+    rawStatus.includes('pending approval') ||
+    rawStatus.includes('waiting for admin approval') ||
+    rawStatus.includes('submitted') ||
+    rawStatus.includes('under review')
+  ) {
     return 'Pending Approval';
   }
-  if (raw.includes('rejected') || raw.includes('cancelled')) {
-    return 'Pending Approval';
-  }
-  if (raw.includes('matur') || raw.includes('settled')) {
+
+  // =========================================================================
+  // 6. MATURED (Past maturity date)
+  // =========================================================================
+  if (rawStatus === 'matured' || rawStatus.includes('matur')) {
     return 'Matured';
   }
-  if (raw.includes('active') || raw.includes('approved')) {
-    return 'Active';
+  const maturity = parseDate(item.maturity_date);
+  if (maturity && maturity.getTime() <= Date.now()) {
+    return 'Matured';
   }
 
-  // The Swagger response supplied for /investments/my-investments shows:
-  // investment_status_id = 2 together with approved_by/approved_date and
-  // a future maturity date. Therefore status 2 is an approved/active
-  // investment in the current backend, not Matured.
-  const statusId = n(item.investment_status_id);
-  if (statusId === 2) return 'Active';
-
-  // Never mark an investment Matured merely because an unknown status id
-  // was returned. The maturity date is the reliable fallback.
-  const maturity = parseDate(item.maturity_date);
-  if (maturity && maturity.getTime() <= Date.now()) return 'Matured';
-
-  if (item.approved_by != null || item.approved_date) return 'Active';
-
-  // If the record has not been approved and status is 1, treat as pending approval.
-  if (item.approved_by == null && !item.approved_date && statusId === 1) {
-    return 'Pending Approval';
+  // =========================================================================
+  // 7. ACTIVE (Approved & ongoing)
+  // =========================================================================
+  if (
+    statusId === 2 ||
+    rawStatus.includes('active') ||
+    rawStatus.includes('approved') ||
+    item.approved_by != null ||
+    item.approved_date
+  ) {
+    return 'Active';
   }
 
   return 'Active';
 }
 
 function mapInvestment(item: ApiInvestment): Investment {
+  const anyItem = item as any;
   const amount = n(item.investment_amount ?? item.amount);
   const rate = n(item.interest_rate ?? item.rate);
   const expected = n(item.expected_interest_amount);
@@ -167,11 +328,20 @@ function mapInvestment(item: ApiInvestment): Investment {
   const earned = Math.min(expected, (expected / tenure) * elapsedMonths);
   const bondNum = String(item.bond_number ?? item.bond_id ?? '').trim();
 
+  const stage =
+    anyItem.stage ||
+    (anyItem.request_status === 'PendingSuperAdmin' ||
+    anyItem.approval_status === 'PendingSuperAdmin' ||
+    anyItem.status === 'PendingSuperAdmin'
+      ? 'SuperAdmin'
+      : 'Admin');
+
   return {
     id: String(item.investment_id ?? item.id),
     investmentDbId: n(item.id),
     name: `INRFS Bond — ${String(item.investment_id ?? item.id)}`,
-    status: apiStatus(item),
+    status: resolveInvestmentStatus(item),
+    stage,
     amount,
     rate,
     tenureMonths: tenure,
@@ -188,25 +358,52 @@ function mapInvestment(item: ApiInvestment): Investment {
 const money = (value: number) =>
   '₹' + Math.round(value).toLocaleString('en-IN');
 
-const statusColor = (status: BondStatus) => {
+const statusColor = (status: string) => {
   switch (status) {
     case 'Active':
       return {bg: '#DCFCE7', fg: '#15803D'};
+    case 'Settled':
+    case 'Closed':
     case 'Matured':
       return {bg: '#E5E7EB', fg: '#374151'};
+    case 'Extension Requested':
+    case 'Pre-Close Requested':
     case 'Pending Extension':
     case 'Pending Settlement':
     case 'Pending Approval':
+    case 'Pending':
       return {bg: '#FEF3C7', fg: '#B45309'};
+    case 'Rejected':
+    case 'Refunded':
+      return {bg: '#FEF2F2', fg: '#DC2626'};
     default:
       return {bg: '#FEF3C7', fg: '#B45309'};
   }
 };
 
+const isPendingStatus = (s: BondStatus) =>
+  s === 'Pending Approval' ||
+  s === 'Extension Requested' ||
+  s === 'Pre-Close Requested' ||
+  s === 'Pending Extension' ||
+  s === 'Pending Settlement';
+
+const isOthersStatus = (s: BondStatus) =>
+  s === 'Settled' ||
+  s === 'Closed' ||
+  s === 'Matured' ||
+  s === 'Rejected' ||
+  s === 'Refunded';
+
+const isActiveStatus = (s: BondStatus) => s === 'Active';
+
 const MyInvestmentsScreen = ({navigation, route}: any) => {
   const {investorId} = route?.params || {};
 
   const [items, setItems] = useState<Investment[]>([]);
+  const [localActionState, setLocalActionState] = useState<
+    Record<string, LocalActionState>
+  >({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -215,10 +412,38 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
   const [view, setView] = useState<Investment | null>(null);
   const [extension, setExtension] = useState<Investment | null>(null);
-  const [extensionMonths, setExtensionMonths] = useState(3);
+  const [extensionMonths, setExtensionMonths] = useState(6);
   const [preclose, setPreclose] = useState<Investment | null>(null);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+
+  const getActionState = (item: Investment): LocalActionState => {
+    // If backend returns a definitive final status, clear local requested state
+    if (
+      item.status === 'Settled' ||
+      item.status === 'Closed' ||
+      item.status === 'Matured' ||
+      item.status === 'Rejected' ||
+      item.status === 'Refunded'
+    ) {
+      return '';
+    }
+    return localActionState[String(item.investmentDbId)] || '';
+  };
+
+  const getItemEffectiveStatus = (item: Investment): BondStatus => {
+    if (
+      item.status === 'Settled' ||
+      item.status === 'Closed' ||
+      item.status === 'Matured' ||
+      item.status === 'Rejected' ||
+      item.status === 'Refunded'
+    ) {
+      return item.status === 'Closed' ? 'Settled' : item.status;
+    }
+    const actionState = getActionState(item);
+    return (actionState || item.status) as BondStatus;
+  };
 
   const load = useCallback(async () => {
     try {
@@ -237,17 +462,34 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     load();
   }, [load]);
 
+  // Focus listener and periodic refresh
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('focus', () => {
+      load();
+    });
+
+    const interval = setInterval(() => {
+      load();
+    }, 15000);
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+      clearInterval(interval);
+    };
+  }, [navigation, load]);
+
   const counts = useMemo(() => {
     let active = 0;
     let pending = 0;
     let others = 0;
 
     items.forEach(item => {
-      if (item.status === 'Active') {
+      const status = getItemEffectiveStatus(item);
+      if (isActiveStatus(status)) {
         active++;
-      } else if (item.status === 'Pending Approval') {
+      } else if (isPendingStatus(status)) {
         pending++;
-      } else {
+      } else if (isOthersStatus(status)) {
         others++;
       }
     });
@@ -258,15 +500,16 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       pending,
       others,
     };
-  }, [items]);
+  }, [items, localActionState]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
 
     return items.filter(item => {
-      const isActive = item.status === 'Active';
-      const isPending = item.status === 'Pending Approval';
-      const isOther = !isActive && !isPending;
+      const status = getItemEffectiveStatus(item);
+      const isActive = isActiveStatus(status);
+      const isPending = isPendingStatus(status);
+      const isOther = isOthersStatus(status);
 
       if (activeTab === 'active' && !isActive) return false;
       if (activeTab === 'pending' && !isPending) return false;
@@ -280,19 +523,60 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         (item.bondNumber && item.bondNumber.toLowerCase().includes(q))
       );
     });
-  }, [items, activeTab, query]);
+  }, [items, activeTab, query, localActionState]);
 
   const total = useMemo(
     () => items.reduce((sum, x) => sum + x.amount + x.earned, 0),
     [items],
   );
 
-  const openDetails = async (item: Investment) => {
-    setView(item);
+  const exportExcel = async () => {
     try {
-      const detail = await investorService.getInvestmentDetails(item.investmentDbId);
-      if (detail) {
-        setView(mapInvestment(detail));
+      const exportData = filtered.map(x => ({
+        'Investment ID': x.id,
+        'Bond Number': x.bondNumber || '—',
+        'Amount (₹)': x.amount,
+        'Interest Rate (%)': x.rate,
+        'Tenure (Months)': x.tenureMonths,
+        'Invested On': x.investedOn,
+        'Matures On': x.maturesOn,
+        'Monthly Interest (₹)': x.monthlyInterest,
+        'Earned (₹)': x.earned,
+        Status: getItemEffectiveStatus(x),
+      }));
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      XLSX.utils.book_append_sheet(wb, ws, 'My Investments');
+
+      const wbout = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
+      const path = `${RNFS.DocumentDirectoryPath}/INRFS_My_Investments_${Date.now()}.xlsx`;
+
+      await RNFS.writeFile(path, wbout, 'base64');
+      await RNShare.open({
+        url: `file://${path}`,
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        title: 'Share My Investments Report',
+      });
+    } catch (e: any) {
+      if (e?.message !== 'User did not share') {
+        Alert.alert('Export Error', 'Unable to export report.');
+      }
+    }
+  };
+
+  const openDetails = async (item: Investment) => {
+    const currentStatus = getItemEffectiveStatus(item);
+    setView({...item, status: currentStatus});
+
+    try {
+      const details = await investorService.getInvestmentDetails(
+        item.investmentDbId,
+      );
+      if (details) {
+        const mapped = mapInvestment(details);
+        const mappedStatus = getItemEffectiveStatus(mapped);
+        setView({...mapped, status: mappedStatus});
       }
     } catch (e: any) {
       console.log('Could not fetch rich investment details:', e?.message);
@@ -302,31 +586,46 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   const submitExtension = async () => {
     if (!extension) return;
 
-    if (!validation.isValidExtensionMonths(extensionMonths)) {
+    const selectedTarget = Number(extensionMonths);
+    if (!validation.isValidExtensionMonths(selectedTarget)) {
       Alert.alert('Invalid Duration', 'Please select a valid extension tenure.');
       return;
     }
+
+    const currentTenure = Number(extension.tenureMonths) || 3;
+    // Calculate increment so backend computes (currentTenure + deltaMonths = selectedTarget)
+    const deltaMonths =
+      selectedTarget > currentTenure ? selectedTarget - currentTenure : selectedTarget;
 
     try {
       setBusy(true);
       await investorService.requestTenureExtension(
         extension.investmentDbId,
-        extensionMonths,
+        deltaMonths,
         '',
       );
+
+      // Set local requested state immediately
+      setLocalActionState(previous => ({
+        ...previous,
+        [String(extension.investmentDbId)]: 'Extension Requested',
+      }));
 
       setExtension(null);
       await load();
 
       Alert.alert(
         'Request Submitted',
-        `${extension.id}: ${extensionMonths}-month tenure extension request sent to admin for approval.`,
+        `${extension.id}: ${selectedTarget}-month tenure extension request sent to admin for approval.`,
       );
     } catch (e: any) {
-      Alert.alert(
-        'Extension Failed',
-        e?.message || 'Could not submit the extension request.',
-      );
+      const errMsg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        e?.message ||
+        'Unable to submit tenure extension.';
+      Alert.alert('Extension Request Failed', errMsg);
     } finally {
       setBusy(false);
     }
@@ -343,81 +642,74 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
     try {
       setBusy(true);
-      await investorService.requestPreclose(preclose.investmentDbId, reason.trim());
+      await investorService.requestPreclose(
+        preclose.investmentDbId,
+        reason.trim(),
+      );
+
+      // Set local requested state immediately
+      setLocalActionState(previous => ({
+        ...previous,
+        [String(preclose.investmentDbId)]: 'Pre-Close Requested',
+      }));
 
       setPreclose(null);
       setReason('');
       await load();
 
       Alert.alert(
-        'Pre-Close Requested',
-        `${preclose.id}: Request sent to admin for approval. Status is now Pending Approval.`,
+        'Request Submitted',
+        `${preclose.id}: Pre-close request submitted to admin for approval.`,
       );
     } catch (e: any) {
-      Alert.alert(
-        'Pre-Close Failed',
-        e?.message || 'Could not submit the pre-close request.',
-      );
+      const errMsg =
+        e?.response?.data?.detail ||
+        e?.response?.data?.message ||
+        e?.response?.data?.error ||
+        e?.message ||
+        'Unable to submit pre-close request.';
+      Alert.alert('Pre-Close Request Failed', errMsg);
     } finally {
       setBusy(false);
     }
   };
 
-  const exportExcel = async () => {
-    try {
-      const rows = items.map(x => ({
-        'Investment ID': x.id,
-        'Bond Number': x.bondNumber || '—',
-        Status: x.status,
-        Amount: x.amount,
-        'Interest Rate': x.rate,
-        'Tenure Months': x.tenureMonths,
-        'Invested On': x.investedOn,
-        'Matures On': x.maturesOn,
-        'Monthly Interest': x.monthlyInterest,
-        'Expected Interest': x.expectedInterestAmount,
-        'Maturity Amount': x.maturityAmount,
-      }));
-
-      const sheet = XLSX.utils.json_to_sheet(rows);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, sheet, 'My Investments');
-
-      const base64 = XLSX.write(workbook, {
-        type: 'base64',
-        bookType: 'xlsx',
-      });
-
-      const fileName = `INRFS_My_Investments_${Date.now()}.xlsx`;
-      const path = `${RNFS.CachesDirectoryPath}/${fileName}`;
-      await RNFS.writeFile(path, base64, 'base64');
-
-      await RNShare.open({
-        url: `file://${path}`,
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        filename: fileName,
-      });
-    } catch (e: any) {
-      Alert.alert('Export failed', e?.message || 'Could not export.');
+  const getEmptyMessage = () => {
+    if (query) return `No investments match "${query}"`;
+    switch (activeTab) {
+      case 'active':
+        return 'No active investments found.';
+      case 'pending':
+        return 'No pending approval investments.';
+      case 'others':
+        return 'No other investments found.';
+      default:
+        return 'No investments found in your portfolio.';
     }
   };
 
-  const getEmptyMessage = () => {
-    switch (activeTab) {
-      case 'active':
-        return 'No active investments';
-      case 'pending':
-        return 'No pending investments';
-      case 'others':
-        return 'No other investments';
-      default:
-        return 'No investments yet';
+  const getPendingHintText = (item: Investment, status: BondStatus) => {
+    if (status === 'Pending Approval') {
+      return 'Waiting for Admin Approval — actions unlock once approved.';
     }
+    if (status === 'Extension Requested' || status === 'Pending Extension') {
+      if (item.stage === 'SuperAdmin') {
+        return 'Waiting for Super Admin Approval — your extension has been approved by the admin and sent for final approval.';
+      }
+      return 'Waiting for Admin Approval — tenure extension request submitted.';
+    }
+    if (status === 'Pre-Close Requested' || status === 'Pending Settlement') {
+      if (item.stage === 'SuperAdmin') {
+        return 'Waiting for Super Admin Approval — your pre-close request has been approved by the admin and sent for final settlement.';
+      }
+      return 'Waiting for Admin Approval — pre-close request submitted.';
+    }
+    return 'Waiting for Admin Approval.';
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <AppHeader subtitle="Investment Portal" />
+    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
+      <AppHeader />
 
       <ScrollView
         contentContainerStyle={styles.container}
@@ -529,34 +821,25 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Unable to load investments</Text>
             <Text style={styles.emptySubtitle}>{error}</Text>
-            <TouchableOpacity
-              style={styles.newInvestmentBtn}
-              onPress={load}>
+            <TouchableOpacity style={styles.newInvestmentBtn} onPress={load}>
               <Text style={styles.newInvestmentBtnText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : filtered.length === 0 ? (
           <View style={styles.emptyState}>
-            <Icon
-              name="briefcase-outline"
-              size={40}
-              color="#9C9689"
-            />
-            <Text style={styles.emptyTitle}>
-              {getEmptyMessage()}
-            </Text>
+            <Icon name="briefcase-outline" size={40} color="#9C9689" />
+            <Text style={styles.emptyTitle}>{getEmptyMessage()}</Text>
           </View>
         ) : (
           filtered.map((item, index) => {
-            const colors = statusColor(item.status);
-            const isPending =
-              item.status === 'Pending Approval' ||
-              item.status === 'Pending Extension' ||
-              item.status === 'Pending Settlement';
+            const displayStatus = getItemEffectiveStatus(item);
+            const colors = statusColor(displayStatus);
+            const isPending = isPendingStatus(displayStatus);
+            const isSettledOrOther = isOthersStatus(displayStatus);
 
             return (
               <View
-                key={`${item.investmentDbId}-${index}`}
+                key={`investment-${item.id || item.investmentDbId}-${index}`}
                 style={[
                   styles.investmentCard,
                   index === 0 && styles.investmentCardFirst,
@@ -567,7 +850,8 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                     <Text
                       style={[
                         styles.bondId,
-                        isPending && styles.bondIdPending,
+                        displayStatus === 'Pending Approval' &&
+                          styles.bondIdPending,
                       ]}>
                       {item.id}
                     </Text>
@@ -583,12 +867,13 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                         styles.statusBadgeText,
                         {color: colors.fg},
                       ]}>
-                      {item.status.toUpperCase()}
+                      {displayStatus.toUpperCase()}
                     </Text>
                   </View>
                 </View>
 
-                {item.status === 'Active' && item.bondNumber ? (
+                {/* Bond Badge / Link */}
+                {displayStatus !== 'Pending Approval' && item.bondNumber ? (
                   <TouchableOpacity
                     onPress={() =>
                       navigation.navigate('BondDetails', {
@@ -604,12 +889,21 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                       marginTop: 4,
                       marginBottom: 6,
                     }}>
-                    <Icon name="file-certificate-outline" size={14} color="#16A34A" />
-                    <Text style={{fontSize: 12, fontWeight: '700', color: '#16A34A'}}>
+                    <Icon
+                      name="file-certificate-outline"
+                      size={14}
+                      color="#16A34A"
+                    />
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontWeight: '700',
+                        color: '#16A34A',
+                      }}>
                       Bond: {item.bondNumber}
                     </Text>
                   </TouchableOpacity>
-                ) : isPending ? (
+                ) : displayStatus === 'Pending Approval' ? (
                   <Text
                     style={{
                       fontSize: 11.5,
@@ -627,9 +921,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                 <View style={styles.metaGrid}>
                   <View style={styles.metaCol}>
                     <Text style={styles.metaLabel}>AMOUNT</Text>
-                    <Text style={styles.metaValue}>
-                      {money(item.amount)}
-                    </Text>
+                    <Text style={styles.metaValue}>{money(item.amount)}</Text>
                   </View>
                   <View style={styles.metaCol}>
                     <Text style={styles.metaLabel}>RATE</Text>
@@ -642,15 +934,11 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                 <View style={styles.metaGrid}>
                   <View style={styles.metaCol}>
                     <Text style={styles.metaLabel}>INVESTED ON</Text>
-                    <Text style={styles.metaValue}>
-                      {item.investedOn}
-                    </Text>
+                    <Text style={styles.metaValue}>{item.investedOn}</Text>
                   </View>
                   <View style={styles.metaCol}>
                     <Text style={styles.metaLabel}>MATURES ON</Text>
-                    <Text style={styles.metaValue}>
-                      {item.maturesOn}
-                    </Text>
+                    <Text style={styles.metaValue}>{item.maturesOn}</Text>
                   </View>
                 </View>
 
@@ -669,25 +957,25 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                   </View>
                 </View>
 
-                {isPending ? (
+                {/* Pending Status Hint Message */}
+                {isPending && (
                   <Text style={styles.pendingHint}>
-                    {item.status === 'Pending Approval'
-                      ? 'Waiting for Admin Approval — actions unlock once approved.'
-                      : item.status === 'Pending Extension'
-                      ? 'Waiting for Admin Approval — tenure extension request submitted.'
-                      : 'Waiting for Admin Approval — pre-close request submitted.'}
+                    {getPendingHintText(item, displayStatus)}
                   </Text>
-                ) : (
-                  <View style={styles.actionIconRow}>
-                    {/* View Action -> Investment Details */}
-                    <TouchableOpacity
-                      style={styles.actionIconBtn}
-                      onPress={() => openDetails(item)}>
-                      <Icon name="eye-outline" size={18} color="#1A1A18" />
-                      <Text style={styles.actionIconBtnText}>View</Text>
-                    </TouchableOpacity>
+                )}
 
-                    {/* Bond Action -> Bond Certificate */}
+                {/* Actions Row */}
+                <View style={styles.actionIconRow}>
+                  {/* View Action -> Investment Details (Available across all) */}
+                  <TouchableOpacity
+                    style={styles.actionIconBtn}
+                    onPress={() => openDetails(item)}>
+                    <Icon name="eye-outline" size={18} color="#1A1A18" />
+                    <Text style={styles.actionIconBtnText}>View</Text>
+                  </TouchableOpacity>
+
+                  {/* Bond Action -> Bond Certificate (Available once approved) */}
+                  {displayStatus !== 'Pending Approval' && (
                     <TouchableOpacity
                       style={styles.actionIconBtn}
                       onPress={() =>
@@ -697,35 +985,51 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                           bondDisplayId: item.bondNumber || item.id,
                         })
                       }>
-                      <Icon name="file-certificate-outline" size={18} color="#1A1A18" />
+                      <Icon
+                        name="file-certificate-outline"
+                        size={18}
+                        color="#1A1A18"
+                      />
                       <Text style={styles.actionIconBtnText}>Bond</Text>
                     </TouchableOpacity>
+                  )}
 
-                    {item.status === 'Active' && (
-                      <>
-                        <TouchableOpacity
-                          style={styles.actionIconBtn}
-                          onPress={() => {
-                            setExtension(item);
-                            setExtensionMonths(3);
-                          }}>
-                          <Icon name="calendar-clock" size={18} color="#1A1A18" />
-                          <Text style={styles.actionIconBtnText}>Extend</Text>
-                        </TouchableOpacity>
+                  {/* Extend & Pre-Close Actions (Available ONLY when status is strictly Active) */}
+                  {displayStatus === 'Active' && !isPending && !isSettledOrOther && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.actionIconBtn}
+                        onPress={() => {
+                          setExtension(item);
+                          const curr = Number(item.tenureMonths) || 3;
+                          const defaultOpt =
+                            EXTENSION_OPTIONS.find(m => m > curr) || 6;
+                          setExtensionMonths(defaultOpt);
+                        }}>
+                        <Icon
+                          name="calendar-clock"
+                          size={18}
+                          color="#1A1A18"
+                        />
+                        <Text style={styles.actionIconBtnText}>Extend</Text>
+                      </TouchableOpacity>
 
-                        <TouchableOpacity
-                          style={styles.actionIconBtn}
-                          onPress={() => {
-                            setPreclose(item);
-                            setReason('');
-                          }}>
-                          <Icon name="cash-refund" size={18} color="#1A1A18" />
-                          <Text style={styles.actionIconBtnText}>Pre-Close</Text>
-                        </TouchableOpacity>
-                      </>
-                    )}
-                  </View>
-                )}
+                      <TouchableOpacity
+                        style={styles.actionIconBtn}
+                        onPress={() => {
+                          setPreclose(item);
+                          setReason('');
+                        }}>
+                        <Icon
+                          name="cash-refund"
+                          size={18}
+                          color="#1A1A18"
+                        />
+                        <Text style={styles.actionIconBtnText}>Pre-Close</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                </View>
               </View>
             );
           })
@@ -784,10 +1088,10 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                   ...(view.bondNumber && view.bondNumber !== '—'
                     ? [['Bond Number', view.bondNumber]]
                     : []),
-                ].map(([label, value]) => (
+                ].map(([label, val]) => (
                   <View style={styles.modalRow} key={label}>
                     <Text style={styles.modalRowLabel}>{label}</Text>
-                    <Text style={styles.modalRowValue}>{value}</Text>
+                    <Text style={styles.modalRowValue}>{val}</Text>
                   </View>
                 ))}
 
@@ -820,28 +1124,31 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
             </View>
 
             <Text style={styles.modalFieldLabel}>
-              Select the extension period for {extension?.id}.
+              Select the new total tenure for {extension?.id} (Current:{' '}
+              {extension?.tenureMonths}M):
             </Text>
 
             <View style={styles.modalChipRow}>
-              {EXTENSION_OPTIONS.map(months => (
-                <TouchableOpacity
-                  key={months}
-                  style={[
-                    styles.modalChip,
-                    extensionMonths === months && styles.modalChipActive,
-                  ]}
-                  onPress={() => setExtensionMonths(months)}>
-                  <Text
+              {EXTENSION_OPTIONS.map(months => {
+                const isSelected = extensionMonths === months;
+                return (
+                  <TouchableOpacity
+                    key={months}
                     style={[
-                      styles.modalChipText,
-                      extensionMonths === months &&
-                        styles.modalChipTextActive,
-                    ]}>
-                    {months} Months
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                      styles.modalChip,
+                      isSelected && styles.modalChipActive,
+                    ]}
+                    onPress={() => setExtensionMonths(months)}>
+                    <Text
+                      style={[
+                        styles.modalChipText,
+                        isSelected && styles.modalChipTextActive,
+                      ]}>
+                      {months} Months
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
 
             <View style={styles.modalActionRow}>
@@ -881,9 +1188,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.modalFieldLabel}>
-              REASON FOR PRE-CLOSE
-            </Text>
+            <Text style={styles.modalFieldLabel}>REASON FOR PRE-CLOSE</Text>
             <TextInput
               style={{
                 borderWidth: 1,
@@ -933,4 +1238,4 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   );
 };
 
-export default MyInvestmentsScreen;
+export default MyInvestmentsScreen;

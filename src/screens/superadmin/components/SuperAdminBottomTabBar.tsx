@@ -28,6 +28,7 @@ export type SuperAdminTabKey =
   | 'Dashboard'
   | 'Investors'
   | 'Investments'
+  | 'Payments'
   | 'More'
   | 'Profile';
 
@@ -118,10 +119,10 @@ const moreItems: {
   },
 
   {
-    key: 'Notifications',
+    key: 'PaymentQueue',
     label: 'Payments',
-    icon: 'bell-outline',
-    route: 'Notifications',
+    icon: 'cash-multiple',
+    route: 'PaymentQueue',
   },
 
   {

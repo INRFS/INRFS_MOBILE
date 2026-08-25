@@ -96,7 +96,6 @@ const BondDetailsScreen = ({navigation, route}: any) => {
 
   const investor = useMemo(() => {
     const nested: any = (bond as any)?.investor || {};
-    const nestedBank = nested?.bank || (bond as any)?.bank || {};
 
     return {
       name:
@@ -118,33 +117,6 @@ const BondDetailsScreen = ({navigation, route}: any) => {
         bond?.mobile ||
         '—',
       email: nested?.email || bond?.email || '—',
-      aadhar:
-        nested?.aadhar ||
-        nested?.aadhaar ||
-        bond?.aadhar ||
-        bond?.aadhaar ||
-        '—',
-      bankName:
-        nested?.bank_name ||
-        nestedBank?.name ||
-        bond?.bank_name ||
-        '—',
-      account:
-        nested?.account_number ||
-        nestedBank?.accountNumber ||
-        nestedBank?.account_number ||
-        bond?.account_number ||
-        '—',
-      ifsc:
-        nestedBank?.ifsc ||
-        bond?.ifsc_code ||
-        '—',
-      accountType:
-        nested?.account_type ||
-        nestedBank?.accountType ||
-        nestedBank?.account_type ||
-        bond?.account_type ||
-        '—',
     };
   }, [bond]);
 
@@ -241,77 +213,49 @@ const BondDetailsScreen = ({navigation, route}: any) => {
 
           <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>AADHAR NUMBER</Text>
-              <Text style={styles.metaValue}>{investor.aadhar}</Text>
-            </View>
-            <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>MOBILE</Text>
               <Text style={styles.metaValue}>{investor.mobile}</Text>
             </View>
-          </View>
-
-          <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>INVESTMENT DATE</Text>
               <Text style={styles.metaValue}>
                 {bond.investment_date || '—'}
               </Text>
             </View>
+          </View>
+
+          <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>MATURITY DATE</Text>
               <Text style={styles.metaValue}>
                 {bond.maturity_date || '—'}
               </Text>
             </View>
-          </View>
-
-          <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>INTEREST RATE</Text>
               <Text style={styles.metaValueGold}>{rate}% p.a.</Text>
             </View>
+          </View>
+
+          <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>MONTHLY INTEREST</Text>
               <Text style={styles.metaValue}>{money(monthlyInterest)}</Text>
             </View>
-          </View>
-
-          <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>TOTAL INTEREST</Text>
               <Text style={styles.metaValue}>
                 {money(expectedInterest)} ({months} months)
               </Text>
             </View>
+          </View>
+
+          <View style={styles.metaGrid}>
             <View style={styles.metaCol}>
               <Text style={styles.metaLabel}>MATURITY AMOUNT</Text>
               <Text style={styles.metaValueGreen}>
                 {money(maturityAmount)}
               </Text>
-            </View>
-          </View>
-
-          <View style={styles.divider} />
-
-          <View style={styles.metaGrid}>
-            <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>BANK NAME</Text>
-              <Text style={styles.metaValue}>{investor.bankName}</Text>
-            </View>
-            <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>ACCOUNT NUMBER</Text>
-              <Text style={styles.metaValue}>{investor.account}</Text>
-            </View>
-          </View>
-
-          <View style={styles.metaGrid}>
-            <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>IFSC CODE</Text>
-              <Text style={styles.metaValue}>{investor.ifsc}</Text>
-            </View>
-            <View style={styles.metaCol}>
-              <Text style={styles.metaLabel}>ACCOUNT TYPE</Text>
-              <Text style={styles.metaValue}>{investor.accountType}</Text>
             </View>
           </View>
 

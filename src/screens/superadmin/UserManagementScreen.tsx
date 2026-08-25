@@ -1,150 +1,304 @@
-import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity,  TextInput, Modal, Alert} from 'react-native';
-import {styles} from '../../styles/superadmin/UserManagementScreen.styles';
-import {useAppData, SystemUser} from '../../navigation/AppNavigator';
-import AppHeader from '../../components/AppHeader';
+import React, {useCallback, useEffect, useState} from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-const roleOptions: SystemUser['role'][] = ['Investor', 'Admin', 'Branch Manager', 'Super Admin'];
+
+import AppHeader from '../../components/AppHeader';
+import {styles} from '../../styles/superadmin/UserManagementScreen.styles';
+import {
+  getInvestors,
+  getErrorMessage,
+  SuperAdminInvestorRecord,
+} from '../../services/superadmin/superAdminInvestorService';
+import {formatSuperAdminDate} from '../../services/superadmin/superAdminDashboardService';
 
 const UserManagementScreen = ({navigation}: any) => {
-  const {systemUsers, branches, addSystemUser, deleteSystemUser} = useAppData();
+  const [investors, setInvestors] = useState<SuperAdminInvestorRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
   const [search, setSearch] = useState('');
-  const [modalVisible, setModalVisible] = useState(false);
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [branch, setBranch] = useState('');
-  const [role, setRole] = useState<SystemUser['role']>('Investor');
 
-  const filtered = systemUsers.filter(
+  const [selectedUser, setSelectedUser] = useState<SuperAdminInvestorRecord | null>(null);
+
+  const loadData = useCallback(async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      else setRefreshing(true);
+      setError('');
+
+      const res = await getInvestors({limit: 100, offset: 0, search: search.trim() || undefined});
+      setInvestors(res.records || []);
+    } catch (err: any) {
+      console.log('Error loading users:', err);
+      setError(getErrorMessage(err) || 'Failed to load users.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [search]);
+
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
+
+  const filtered = investors.filter(
     u =>
       u.name.toLowerCase().includes(search.toLowerCase()) ||
       u.email.toLowerCase().includes(search.toLowerCase()) ||
-      u.role.toLowerCase().includes(search.toLowerCase()),
+      u.branchName.toLowerCase().includes(search.toLowerCase()) ||
+      u.investorId.toLowerCase().includes(search.toLowerCase()),
   );
-
-  const handleAdd = () => {
-    if (!name.trim() || !email.trim() || !branch.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email and branch.');
-      return;
-    }
-    addSystemUser({name: name.trim(), email: email.trim(), branch: branch.trim(), role});
-    setName('');
-    setEmail('');
-    setBranch('');
-    setRole('Investor');
-    setModalVisible(false);
-  };
-
-  const confirmDelete = (id: string, userName: string) => {
-    Alert.alert('Delete user', `Remove ${userName}'s account?`, [
-      {text: 'Cancel', style: 'cancel'},
-      {text: 'Delete', style: 'destructive', onPress: () => deleteSystemUser(id)},
-    ]);
-  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <AppHeader subtitle="User Management" />
+      <AppHeader subtitle="User & Investor Management" />
+
       <View style={styles.topBar}>
         <TextInput
           style={styles.searchInput}
-          placeholder="Search users..."
+          placeholder="Search by name, email, ID, branch..."
           placeholderTextColor="#9CA3AF"
           value={search}
           onChangeText={setSearch}
         />
-        <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Add User</Text>
+        <TouchableOpacity
+          style={styles.addBtn}
+          onPress={() => navigation.navigate('AdminManagement')}>
+          <Text style={styles.addBtnText}>+ Admins</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
-        {filtered.map(user => (
-          <View key={user.id} style={styles.card}>
-            <View style={styles.cardTopRow}>
-              <Text style={styles.name}>{user.name}</Text>
-              <View style={styles.statusPill}>
-                <Text style={styles.statusPillText}>{user.status}</Text>
-              </View>
-            </View>
-            <Text style={styles.email}>{user.email}</Text>
-            <View style={styles.metaRow}>
-              <Text style={styles.metaText}>{user.branch}</Text>
-              <View style={styles.roleTag}>
-                <Text style={styles.roleTagText}>{user.role}</Text>
-              </View>
-            </View>
-            <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.actionChip}>
-                <Text style={styles.actionChipText}>View</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionChip}>
-                <Text style={styles.actionChipText}>Edit</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionChip, styles.deleteChip]}
-                onPress={() => confirmDelete(user.id, user.name)}>
-                <Text style={[styles.actionChipText, styles.deleteChipText]}>Delete</Text>
-              </TouchableOpacity>
-            </View>
+      {/* ERROR BOX */}
+      {error ? (
+        <View style={local.errorBox}>
+          <Text style={local.errorText}>{error}</Text>
+          <TouchableOpacity style={local.retryBtn} onPress={() => loadData(true)}>
+            <Text style={local.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadData(false)}
+            colors={['#0B1E45', '#2563EB']}
+          />
+        }>
+        {loading ? (
+          <View style={local.loadingBox}>
+            <ActivityIndicator size="large" color="#0B1E45" />
+            <Text style={local.loadingText}>Loading registered users...</Text>
           </View>
-        ))}
-        {filtered.length === 0 ? <Text style={styles.emptyText}>No users match your search.</Text> : null}
+        ) : filtered.length === 0 ? (
+          <Text style={styles.emptyText}>No users found.</Text>
+        ) : (
+          filtered.map(user => (
+            <View key={String(user.id)} style={styles.card}>
+              <View style={styles.cardTopRow}>
+                <View style={{flex: 1, marginRight: 8}}>
+                  <Text style={styles.name}>{user.name}</Text>
+                  <Text style={local.subText}>ID: {user.investorId} • {user.email}</Text>
+                </View>
+                <View style={styles.statusPill}>
+                  <Text style={styles.statusPillText}>{user.status}</Text>
+                </View>
+              </View>
+
+              <View style={styles.metaRow}>
+                <Text style={styles.metaText}>{user.branchName}</Text>
+                <View style={styles.roleTag}>
+                  <Text style={styles.roleTagText}>{user.kycStatus === 'Approved' ? 'KYC Verified' : 'KYC Pending'}</Text>
+                </View>
+              </View>
+
+              <View style={styles.actionsRow}>
+                <TouchableOpacity
+                  style={styles.actionChip}
+                  onPress={() => setSelectedUser(user)}>
+                  <Text style={styles.actionChipText}>View Details</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
       </ScrollView>
 
-      <Modal visible={modalVisible} transparent animationType="slide" onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>Add User</Text>
+      {/* VIEW DETAILS MODAL */}
+      <Modal
+        visible={!!selectedUser}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSelectedUser(null)}>
+        <View style={local.modalOverlay}>
+          <View style={local.modalCard}>
+            {selectedUser && (
+              <>
+                <View style={local.modalHeaderRow}>
+                  <Text style={local.modalTitle}>User Details</Text>
+                  <TouchableOpacity onPress={() => setSelectedUser(null)}>
+                    <Text style={local.modalClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
 
-            <Text style={styles.modalLabel}>Full Name</Text>
-            <TextInput style={styles.modalInput} placeholder="e.g. Divya Menon" value={name} onChangeText={setName} />
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>FULL NAME</Text>
+                  <Text style={local.fieldVal}>{selectedUser.name}</Text>
+                </View>
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>INVESTOR ID</Text>
+                  <Text style={local.fieldVal}>{selectedUser.investorId}</Text>
+                </View>
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>EMAIL</Text>
+                  <Text style={local.fieldVal}>{selectedUser.email}</Text>
+                </View>
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>MOBILE</Text>
+                  <Text style={local.fieldVal}>{selectedUser.mobile}</Text>
+                </View>
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>BRANCH</Text>
+                  <Text style={local.fieldVal}>{selectedUser.branchName}</Text>
+                </View>
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>KYC STATUS</Text>
+                  <Text style={local.fieldVal}>{selectedUser.kycStatus}</Text>
+                </View>
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>REGISTERED</Text>
+                  <Text style={local.fieldVal}>{formatSuperAdminDate(selectedUser.registeredDate)}</Text>
+                </View>
 
-            <Text style={styles.modalLabel}>Email</Text>
-            <TextInput
-              style={styles.modalInput}
-              placeholder="name@email.com"
-              autoCapitalize="none"
-              keyboardType="email-address"
-              value={email}
-              onChangeText={setEmail}
-            />
-
-            <Text style={styles.modalLabel}>Branch</Text>
-            <TextInput style={styles.modalInput} placeholder="e.g. Mumbai HQ" value={branch} onChangeText={setBranch} />
-            <View style={styles.branchChipsRow}>
-              {branches.map(b => (
-                <TouchableOpacity key={b.id} style={styles.branchChip} onPress={() => setBranch(b.name)}>
-                  <Text style={styles.branchChipText}>{b.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <Text style={styles.modalLabel}>Role</Text>
-            <View style={styles.roleChipsRow}>
-              {roleOptions.map(r => (
                 <TouchableOpacity
-                  key={r}
-                  style={[styles.roleChip, role === r && styles.roleChipActive]}
-                  onPress={() => setRole(r)}>
-                  <Text style={[styles.roleChipText, role === r && styles.roleChipTextActive]}>{r}</Text>
+                  style={local.doneBtn}
+                  onPress={() => setSelectedUser(null)}>
+                  <Text style={local.doneBtnText}>Close</Text>
                 </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setModalVisible(false)}>
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAdd}>
-                <Text style={styles.modalSaveBtnText}>Save User</Text>
-              </TouchableOpacity>
-            </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
     </SafeAreaView>
   );
 };
+
+const local = StyleSheet.create({
+  subText: {
+    fontSize: 12,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    padding: 14,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    flex: 1,
+    marginRight: 8,
+  },
+  retryBtn: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  loadingBox: {
+    paddingVertical: 40,
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#6B7280',
+    fontSize: 13.5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 460,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0B1E45',
+  },
+  modalClose: {
+    fontSize: 18,
+    color: '#6B7280',
+    padding: 4,
+  },
+  modalField: {
+    marginBottom: 10,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#9CA3AF',
+    letterSpacing: 0.5,
+  },
+  fieldVal: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#111827',
+    marginTop: 2,
+  },
+  doneBtn: {
+    backgroundColor: '#0B1E45',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  doneBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+});
 
 export default UserManagementScreen;
