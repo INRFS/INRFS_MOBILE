@@ -1,795 +1,961 @@
-import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, Modal} from 'react-native';
-import {styles} from '../../styles/superadmin/PaymentQueueScreen.styles';
+import React, {useCallback, useEffect, useState} from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
+
 import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import {useAppData, Payout} from '../../navigation/AppNavigator';
+import {styles} from '../../styles/superadmin/PaymentQueueScreen.styles';
+import {formatIndianNumber, formatSuperAdminDate} from '../../services/superadmin/superAdminDashboardService';
+import {
+  getPaymentQueue,
+  getPaymentDetails,
+  getMonthlyInterestPaymentQueue,
+  getTenureTimeoutSettlements,
+  getTenureTimeoutSettlementDetails,
+  getPrecloseSettlements,
+  getPrecloseSettlementDetails,
+  getAllTenureExtensions,
+  getTenureExtensionDetails,
+  approvePayment,
+  rejectPayment,
+  markPaymentPaid,
+  approveMonthlyInterestPayment,
+  rejectMonthlyInterestPayment,
+  markMonthlyInterestPaymentPaid,
+  approveTenureTimeoutSettlement,
+  rejectTenureTimeoutSettlement,
+  markTenureTimeoutSettlementPaid,
+  approvePrecloseRequest,
+  rejectPrecloseRequest,
+  markPrecloseRequestPaid,
+  approveTenureExtension,
+  rejectTenureExtension,
+  markTenureExtensionPaid,
+  getErrorMessage,
+  SuperAdminPaymentRecord,
+  PaymentCategory,
+} from '../../services/superadmin/superAdminPaymentService';
 
-type TabKey = 'All' | 'Monthly Interest' | 'Tenure Settlement' | 'Pre-Close Settlement';
+const PAGE_SIZE = 10;
 
-const TABS: TabKey[] = ['All', 'Monthly Interest', 'Tenure Settlement', 'Pre-Close Settlement'];
+type TabType =
+  | 'All'
+  | 'Monthly Interest'
+  | 'Tenure Settlement'
+  | 'Pre-Close Settlement'
+  | 'Tenure Extension';
 
-const formatINR = (n: number) => '₹' + n.toLocaleString('en-IN');
+const TABS: TabType[] = [
+  'All',
+  'Monthly Interest',
+  'Tenure Settlement',
+  'Pre-Close Settlement',
+  'Tenure Extension',
+];
 
-// Only payouts that have actually entered the Super Admin approval flow
-// belong on this screen — 'overdue'/'upcoming' haven't been sent yet.
-const QUEUE_STATUSES: Payout['status'][] = ['pending_approval', 'approved', 'rejected', 'paid'];
-
-const displayStatus = (status: Payout['status']) => {
-  switch (status) {
-    case 'pending_approval':
-      return 'Pending';
-    case 'approved':
-      return 'Approved';
-    case 'rejected':
-      return 'Rejected';
-    case 'paid':
-      return 'Paid';
-    default:
-      return 'Pending';
-  }
-};
-
-const statusStyleFor = (status: string) => {
-  switch (status) {
-    case 'Approved':
-      return {pill: styles.pillApproved, text: styles.pillTextApproved};
-    case 'Rejected':
-      return {pill: styles.pillRejected, text: styles.pillTextRejected};
-    case 'Paid':
-      return {pill: styles.pillPaid, text: styles.pillTextPaid};
-    default:
-      return {pill: styles.pillPending, text: styles.pillTextPending};
-  }
-};
-
-// Tenure Extension / Maturity Settlement / Pre-Close requests all share the
-// same status shape once they reach this screen: 'PendingSuperAdmin' |
-// 'Approved' | 'Rejected'. There's no separate "mark paid" step for these
-// three (superAdminApprove... already settles the bond in one action), so
-// the underlying status value is always 'Approved' — but the button that
-// triggers it isn't always labeled "Approve": Maturity Settlement and
-// Pre-Close use "Mark as Paid", so their resulting pill should read "Paid"
-// (Tenure Extension uses "Approve Extension", so it keeps "Approved").
-const settlementStatusInfo = (
-  status: 'PendingSuperAdmin' | 'Approved' | 'Rejected',
-  approvedAs: 'Approved' | 'Paid' = 'Approved',
-) => {
-  switch (status) {
-    case 'Approved':
-      return approvedAs === 'Paid'
-        ? {label: 'Paid', pill: styles.pillPaid, text: styles.pillTextPaid}
-        : {label: 'Approved', pill: styles.pillApproved, text: styles.pillTextApproved};
-    case 'Rejected':
-      return {label: 'Rejected', pill: styles.pillRejected, text: styles.pillTextRejected};
-    default:
-      return {label: 'Pending', pill: styles.pillPending, text: styles.pillTextPending};
-  }
-};
-
-// ---- Generic "are you sure?" confirmation popup config ----------------
-// Every approve / reject / mark-paid action now routes through this same
-// small confirm step instead of firing immediately. Nothing about the
-// underlying context calls (approvePayoutRequest, rejectPayoutRequest,
-// markPayoutPaid, superAdminApprove/RejectTenureExtension,
-// superAdminApprove/RejectMaturitySettlement,
-// superAdminApprove/RejectPreSettlement) has changed — they're only
-// invoked one step later, inside onConfirm.
-type ConfirmVariant = 'approve' | 'reject' | 'markPaid';
-
-type ConfirmState = {
-  title: string;
-  message: string;
-  note?: string;
-  infoRows: {label: string; value: string}[];
-  confirmLabel: string;
-  variant: ConfirmVariant;
-  onConfirm: () => void;
-};
-
-const confirmBtnStyleFor = (variant: ConfirmVariant) => {
-  switch (variant) {
-    case 'approve':
-      return {btn: styles.approveBtn, text: styles.approveBtnText};
-    case 'reject':
-      return {btn: styles.confirmRejectBtn, text: styles.confirmRejectBtnText};
-    case 'markPaid':
-    default:
-      return {btn: styles.markPaidBtn, text: styles.markPaidBtnText};
-  }
-};
-
-const confirmIconStyleFor = (variant: ConfirmVariant) => {
-  switch (variant) {
-    case 'reject':
-      return {wrap: styles.confirmIconWrapRed, text: styles.confirmIconTextRed, glyph: '✕'};
-    default:
-      return {wrap: styles.confirmIconWrapGreen, text: styles.confirmIconTextGreen, glyph: '✓'};
-  }
-};
+const STATUS_OPTIONS = ['All Status', 'Pending', 'Approved', 'Paid', 'Rejected'];
 
 const PaymentQueueScreen = ({navigation}: any) => {
-const {
-    payouts,
-    saNotifications,
-    approvePayoutRequest,
-    rejectPayoutRequest,
-    markPayoutPaid,
-    preSettlementRequests,
-    superAdminApprovePreSettlement,
-    superAdminRejectPreSettlement,
-    tenureExtensionRequests,
-    superAdminApproveTenureExtension,
-    superAdminRejectTenureExtension,
-    maturitySettlementRequests,
-    superAdminApproveMaturitySettlement,
-    superAdminRejectMaturitySettlement,
-    bonds,
-    investors,
-    branches,
-  } = useAppData();
-  const [activeTab, setActiveTab] = useState<TabKey>('Monthly Interest');
-  const [receiptRow, setReceiptRow] = useState<Payout | null>(null);
+  // Default to 'Monthly Interest' to match the active tab in the web screenshot
+  const [activeTab, setActiveTab] = useState<TabType>('Monthly Interest');
+  const [payments, setPayments] = useState<SuperAdminPaymentRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  // Step 1 of the Approve flow for Monthly Interest rows: shows the full
-  // "Review & Approve Payment" detail sheet (mirrors the web reference).
-  const [reviewPayout, setReviewPayout] = useState<Payout | null>(null);
+  // Pagination & Filters
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState<string>('All Status');
+  const [statusModalVisible, setStatusModalVisible] = useState(false);
 
-  // Step 2 (and the only step for Reject / Mark Paid everywhere else):
-  // a small "are you sure?" confirmation popup.
-  const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  // Review / Details Modal
+  const [selectedPayment, setSelectedPayment] = useState<SuperAdminPaymentRecord | null>(null);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
-  // NEW: "Requested By" / "Approved By Admin" — matches the web table's
-  // columns of the same name. There's no per-payout admin identity stored
-  // on Payout itself, so this derives the branch admin the same way the
-  // web reference does: bond -> investor -> the investor's branch -> that
-  // branch's adminName. Requested By and Approved By Admin show the same
-  // derived name (the web reference shows identical values in both
-  // columns for every row too), since a branch's own admin is both who
-  // requests payouts for their branch and whose name is recorded as
-  // approving them.
-  const adminForPayout = (row: Payout): string => {
-    const bond = bonds.find(b => b.seriesId === row.bondId);
-    const investor = bond ? investors.find(i => i.id === bond.investorId) : undefined;
-    const branch = investor ? branches.find(b => b.name === investor.branch) : undefined;
-    return branch?.adminName || '—';
+  // Approve Modal
+  const [approveModalVisible, setApproveModalVisible] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+
+  // Reject Modal
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [rejectionError, setRejectionError] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
+
+  // Mark Paid Modal
+  const [markPaidModalVisible, setMarkPaidModalVisible] = useState(false);
+  const [isMarkingPaid, setIsMarkingPaid] = useState(false);
+
+  /* ==========================================================
+     LOAD PAYMENTS FROM BACKEND BASED ON TAB & FILTERS
+     ========================================================== */
+
+  const loadData = useCallback(async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      else setRefreshing(true);
+      setError('');
+
+      const offset = (page - 1) * PAGE_SIZE;
+      const statusParam = selectedStatus !== 'All Status' ? selectedStatus : undefined;
+      const searchParam = search.trim() || undefined;
+
+      let res: {records: SuperAdminPaymentRecord[]; total: number};
+
+      if (activeTab === 'Monthly Interest') {
+        res = await getMonthlyInterestPaymentQueue({
+          limit: PAGE_SIZE,
+          offset,
+        });
+      } else if (activeTab === 'Tenure Settlement') {
+        res = await getTenureTimeoutSettlements({
+          limit: PAGE_SIZE,
+          offset,
+        });
+      } else if (activeTab === 'Pre-Close Settlement') {
+        res = await getPrecloseSettlements({
+          limit: PAGE_SIZE,
+          offset,
+        });
+      } else if (activeTab === 'Tenure Extension') {
+        res = await getAllTenureExtensions({
+          limit: PAGE_SIZE,
+          offset,
+        });
+      } else {
+        // 'All' category
+        res = await getPaymentQueue({
+          payment_type: 'All',
+          limit: PAGE_SIZE,
+          offset,
+          search: searchParam,
+          status: statusParam,
+        });
+
+        // Fallback: if All queue returned 0 records, query Monthly Interest
+        if (!res.records || res.records.length === 0) {
+          const miRes = await getMonthlyInterestPaymentQueue({limit: PAGE_SIZE, offset});
+          if (miRes.records && miRes.records.length > 0) {
+            res = miRes;
+          }
+        }
+      }
+
+      let records = res.records || [];
+
+      // Deduplicate records by unique key (type + id)
+      const seen = new Set<string>();
+      records = records.filter(p => {
+        const key = `${p.paymentType}-${p.sourceId || p.id}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      // Apply client-side search/status filter if provided
+      if (searchParam) {
+        const q = searchParam.toLowerCase();
+        records = records.filter(
+          p =>
+            p.investorName.toLowerCase().includes(q) ||
+            p.bondId.toLowerCase().includes(q) ||
+            p.branchName.toLowerCase().includes(q) ||
+            p.paymentType.toLowerCase().includes(q) ||
+            p.status.toLowerCase().includes(q) ||
+            String(p.netAmount).includes(q),
+        );
+      }
+
+      if (statusParam) {
+        const s = statusParam.toLowerCase();
+        records = records.filter(p => (p.status || '').toLowerCase() === s);
+      }
+
+      setPayments(records);
+      setTotalCount(res.total || records.length);
+    } catch (err: any) {
+      console.log('Error loading payments:', err);
+      setError(getErrorMessage(err) || 'Failed to load payments.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [activeTab, page, search, selectedStatus]);
+
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
+
+  // Dynamic Pending Summary calculation matching Web
+  const pendingRecords = payments.filter(
+    p => (p.status || '').toLowerCase() === 'pending',
+  );
+  const pendingCount = pendingRecords.length;
+  const pendingAmount = pendingRecords.reduce(
+    (acc, p) => acc + (p.netAmount || 0),
+    0,
+  );
+
+  // Total pages
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  const handlePrevPage = () => {
+    if (page > 1) setPage(p => p - 1);
   };
 
-  // Monthly Interest = real payouts. Tenure Settlement / Pre-Close
-  // Settlement are placeholders for now (Option B).
-  const monthlyInterestRows = payouts.filter(p => QUEUE_STATUSES.includes(p.status));
-
- const rows =
-    activeTab === 'All' || activeTab === 'Monthly Interest' ? monthlyInterestRows : [];
-
-  // Pre-close / tenure extension / maturity settlement requests the admin
-  // has already forwarded — this is the Super Admin's queue for these.
-  // FIX: previously this only kept rows still 'PendingSuperAdmin', so the
-  // moment Approve/Reject fired the row's status changed and it silently
-  // fell out of this filter — the request just vanished instead of
-  // sticking around with an Approved/Rejected pill, unlike Monthly
-  // Interest rows (which stay visible via QUEUE_STATUSES above). Now these
-  // three keep any row that has reached the Super Admin stage at all.
-  const SETTLEMENT_QUEUE_STATUSES = ['PendingSuperAdmin', 'Approved', 'Rejected'];
-  const precloseRows = preSettlementRequests.filter(r => SETTLEMENT_QUEUE_STATUSES.includes(r.status));
-  const tenureExtensionRows = tenureExtensionRequests.filter(r => SETTLEMENT_QUEUE_STATUSES.includes(r.status));
-  const maturitySettlementRows = maturitySettlementRequests.filter(r => SETTLEMENT_QUEUE_STATUSES.includes(r.status));
-  const pendingRows = payouts.filter(p => p.status === 'pending_approval');
-  const pendingTotal = pendingRows.reduce((sum, p) => sum + p.amount, 0);
-
-  // Finds the saNotification tied to a payout, so approve/reject can call
-  // the existing context functions (which key off notification id, not
-  // payout id directly).
-  const findNotificationForPayout = (payoutId: string) =>
-    saNotifications.find(
-      n =>
-        !n.payoutActionTaken &&
-        (n.relatedPayoutId === payoutId || n.relatedPayoutIds?.includes(payoutId)),
-    );
-
-  const handleApprove = (payout: Payout) => {
-    const note = findNotificationForPayout(payout.id);
-    if (note) approvePayoutRequest(note.id);
+  const handleNextPage = () => {
+    if (page < totalPages) setPage(p => p + 1);
   };
 
-  const handleReject = (payout: Payout) => {
-    const note = findNotificationForPayout(payout.id);
-    if (note) rejectPayoutRequest(note.id);
+  const handleSearchSubmit = () => {
+    setSearch(searchInput);
+    setPage(1);
   };
 
-  const handleMarkPaid = (payout: Payout) => {
-    markPayoutPaid(payout.id);
+  const handleReset = () => {
+    setSearchInput('');
+    setSearch('');
+    setSelectedStatus('All Status');
+    setActiveTab('Monthly Interest');
+    setPage(1);
   };
 
-  const closeConfirm = () => setConfirm(null);
+  /* ==========================================================
+     REVIEW DETAILS FLOW (Matching Web implementation)
+     ========================================================== */
 
-  // ---- Popup openers (Monthly Interest rows) ---------------------------
-  const openApproveConfirm = (row: Payout) => {
-    setConfirm({
-      title: 'Approve Payment?',
-      message: `Are you sure you want to approve this payment of ${formatINR(row.amount)} for ${row.investorName}?`,
-      note: 'After approval, this payment can be marked as paid.',
-      confirmLabel: 'Approve Payment',
-      variant: 'approve',
-      infoRows: [
-        {label: 'INVESTOR', value: row.investorName},
-        {label: 'AMOUNT', value: formatINR(row.amount)},
-        {label: 'PAYMENT ID', value: row.id},
-      ],
-      onConfirm: () => {
-        handleApprove(row);
-        setReviewPayout(null);
-        closeConfirm();
-      },
-    });
+  const handleOpenReview = async (item: SuperAdminPaymentRecord) => {
+    setSelectedPayment(item);
+    setReviewModalVisible(true);
+    setDetailsLoading(true);
+
+    try {
+      const sourceId = item.sourceId || item.id;
+      let detailed: SuperAdminPaymentRecord | null = null;
+
+      if (item.paymentType === 'Tenure Extension') {
+        detailed = await getTenureExtensionDetails(sourceId);
+      } else if (item.paymentType === 'Tenure Settlement') {
+        detailed = await getTenureTimeoutSettlementDetails(sourceId);
+      } else if (item.paymentType === 'Pre-Close Settlement') {
+        detailed = await getPrecloseSettlementDetails(sourceId);
+      } else {
+        detailed = await getPaymentDetails(sourceId, 'MONTHLY_INTEREST');
+      }
+
+      if (detailed) setSelectedPayment(detailed);
+    } catch (err) {
+      console.log('Error fetching payment details:', err);
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
-  const openRejectConfirm = (row: Payout, fromReview?: boolean) => {
-    setConfirm({
-      title: 'Reject Payment?',
-      message: `Are you sure you want to reject this payment of ${formatINR(row.amount)} for ${row.investorName}?`,
-      note: 'This action cannot be undone.',
-      confirmLabel: 'Reject Payment',
-      variant: 'reject',
-      infoRows: [
-        {label: 'INVESTOR', value: row.investorName},
-        {label: 'AMOUNT', value: formatINR(row.amount)},
-        {label: 'PAYMENT ID', value: row.id},
-      ],
-      onConfirm: () => {
-        handleReject(row);
-        if (fromReview) setReviewPayout(null);
-        closeConfirm();
-      },
-    });
+  /* ==========================================================
+     ACTION HANDLERS (Approve, Reject, Mark Paid)
+     ========================================================== */
+
+  const handleOpenApprove = (item: SuperAdminPaymentRecord) => {
+    setSelectedPayment(item);
+    setApproveModalVisible(true);
   };
 
-  const openMarkPaidConfirm = (row: Payout) => {
-    setConfirm({
-      title: 'Mark Payment as Paid?',
-      message: `Confirm that the payment of ${formatINR(row.amount)} for ${row.investorName} has been paid?`,
-      note: 'Once confirmed, the payment status will change to Paid.',
-      confirmLabel: 'Mark Paid',
-      variant: 'markPaid',
-      infoRows: [
-        {label: 'INVESTOR', value: row.investorName},
-        {label: 'AMOUNT', value: formatINR(row.amount)},
-        {label: 'PAYMENT ID', value: row.id},
-      ],
-      onConfirm: () => {
-        handleMarkPaid(row);
-        closeConfirm();
-      },
-    });
+  const handleConfirmApprove = async () => {
+    if (!selectedPayment) return;
+
+    try {
+      setIsApproving(true);
+      const sourceId = selectedPayment.sourceId || selectedPayment.id;
+
+      if (selectedPayment.paymentType === 'Tenure Extension') {
+        await approveTenureExtension(sourceId, 'Approved by Super Admin.');
+      } else if (selectedPayment.paymentType === 'Tenure Settlement') {
+        await approveTenureTimeoutSettlement(sourceId);
+      } else if (selectedPayment.paymentType === 'Pre-Close Settlement') {
+        await approvePrecloseRequest(sourceId);
+      } else {
+        await approveMonthlyInterestPayment(sourceId);
+      }
+
+      setApproveModalVisible(false);
+      setReviewModalVisible(false);
+      await loadData(false);
+      Alert.alert('Success', 'Payment approved successfully.');
+    } catch (err: any) {
+      Alert.alert('Approval Failed', getErrorMessage(err));
+    } finally {
+      setIsApproving(false);
+    }
   };
 
-  // ---- Popup openers (Tenure Extension / Maturity Settlement / Pre-Close) --
-  const openTenureExtensionApproveConfirm = (r: (typeof tenureExtensionRows)[number]) => {
-    setConfirm({
-      title: 'Approve Tenure Extension?',
-      message: `Approve extending ${r.investorName}'s bond ${r.bondSeriesId} by ${r.extensionMonths} months?`,
-      confirmLabel: 'Approve Extension',
-      variant: 'approve',
-      infoRows: [
-        {label: 'INVESTOR', value: r.investorName},
-        {label: 'BOND', value: r.bondSeriesId},
-        {label: 'EXTEND BY', value: `${r.extensionMonths} months`},
-      ],
-      onConfirm: () => {
-        superAdminApproveTenureExtension(r.id);
-        closeConfirm();
-      },
-    });
+  const handleOpenReject = (item: SuperAdminPaymentRecord) => {
+    setSelectedPayment(item);
+    setRejectionReason('');
+    setRejectionError('');
+    setRejectModalVisible(true);
   };
 
-  const openTenureExtensionRejectConfirm = (r: (typeof tenureExtensionRows)[number]) => {
-    setConfirm({
-      title: 'Reject Tenure Extension?',
-      message: `Are you sure you want to reject the tenure extension request for ${r.investorName}?`,
-      confirmLabel: 'Reject Extension',
-      variant: 'reject',
-      infoRows: [
-        {label: 'INVESTOR', value: r.investorName},
-        {label: 'BOND', value: r.bondSeriesId},
-      ],
-      onConfirm: () => {
-        superAdminRejectTenureExtension(r.id);
-        closeConfirm();
-      },
-    });
+  const handleConfirmReject = async () => {
+    if (!selectedPayment) return;
+
+    if (!rejectionReason.trim()) {
+      setRejectionError('Rejection reason is mandatory');
+      return;
+    }
+
+    try {
+      setIsRejecting(true);
+      const sourceId = selectedPayment.sourceId || selectedPayment.id;
+      const reason = rejectionReason.trim();
+
+      if (selectedPayment.paymentType === 'Tenure Extension') {
+        await rejectTenureExtension(sourceId, reason);
+      } else if (selectedPayment.paymentType === 'Tenure Settlement') {
+        await rejectTenureTimeoutSettlement(sourceId, reason);
+      } else if (selectedPayment.paymentType === 'Pre-Close Settlement') {
+        await rejectPrecloseRequest(sourceId, reason);
+      } else {
+        await rejectMonthlyInterestPayment(sourceId, reason);
+      }
+
+      setRejectModalVisible(false);
+      setReviewModalVisible(false);
+      await loadData(false);
+      Alert.alert('Success', 'Payment request rejected.');
+    } catch (err: any) {
+      Alert.alert('Rejection Failed', getErrorMessage(err));
+    } finally {
+      setIsRejecting(false);
+    }
   };
 
-  const openMaturitySettlementApproveConfirm = (r: (typeof maturitySettlementRows)[number]) => {
-    setConfirm({
-      title: 'Mark Payment as Paid?',
-      message: `Confirm that the maturity settlement of ${formatINR(r.netSettlement)} for ${r.investorName} has been paid?`,
-      note: 'Once confirmed, the payment status will change to Paid.',
-      confirmLabel: 'Mark Paid',
-      variant: 'markPaid',
-      infoRows: [
-        {label: 'INVESTOR', value: r.investorName},
-        {label: 'BOND', value: r.bondSeriesId},
-        {label: 'NET SETTLEMENT', value: formatINR(r.netSettlement)},
-      ],
-      onConfirm: () => {
-        superAdminApproveMaturitySettlement(r.id);
-        closeConfirm();
-      },
-    });
+  const handleOpenMarkPaid = (item: SuperAdminPaymentRecord) => {
+    setSelectedPayment(item);
+    setMarkPaidModalVisible(true);
   };
 
-  const openMaturitySettlementRejectConfirm = (r: (typeof maturitySettlementRows)[number]) => {
-    setConfirm({
-      title: 'Reject Settlement?',
-      message: `Are you sure you want to reject the maturity settlement for ${r.investorName}?`,
-      confirmLabel: 'Reject Settlement',
-      variant: 'reject',
-      infoRows: [
-        {label: 'INVESTOR', value: r.investorName},
-        {label: 'BOND', value: r.bondSeriesId},
-      ],
-      onConfirm: () => {
-        superAdminRejectMaturitySettlement(r.id);
-        closeConfirm();
-      },
-    });
+  const handleConfirmMarkPaid = async () => {
+    if (!selectedPayment) return;
+
+    try {
+      setIsMarkingPaid(true);
+      const sourceId = selectedPayment.sourceId || selectedPayment.id;
+
+      if (selectedPayment.paymentType === 'Tenure Extension') {
+        await markTenureExtensionPaid(sourceId);
+      } else if (selectedPayment.paymentType === 'Tenure Settlement') {
+        await markTenureTimeoutSettlementPaid(sourceId);
+      } else if (selectedPayment.paymentType === 'Pre-Close Settlement') {
+        await markPrecloseRequestPaid(sourceId);
+      } else {
+        await markMonthlyInterestPaymentPaid(sourceId);
+      }
+
+      setMarkPaidModalVisible(false);
+      setReviewModalVisible(false);
+      await loadData(false);
+      Alert.alert('Success', 'Payment marked as Paid successfully.');
+    } catch (err: any) {
+      Alert.alert('Action Failed', getErrorMessage(err));
+    } finally {
+      setIsMarkingPaid(false);
+    }
   };
 
-  const openPrecloseApproveConfirm = (r: (typeof precloseRows)[number]) => {
-    setConfirm({
-      title: 'Mark Payment as Paid?',
-      message: `Confirm that the pre-close settlement of ${formatINR(r.netAmount)} for ${r.investorName} has been paid?`,
-      note: 'Once confirmed, the payment status will change to Paid.',
-      confirmLabel: 'Mark Paid',
-      variant: 'markPaid',
-      infoRows: [
-        {label: 'INVESTOR', value: r.investorName},
-        {label: 'BOND', value: r.bondSeriesId},
-        {label: 'NET PAYABLE', value: formatINR(r.netAmount)},
-      ],
-      onConfirm: () => {
-        superAdminApprovePreSettlement(r.id);
-        closeConfirm();
-      },
-    });
+  const getStatusBadgeStyle = (status: string) => {
+    const s = (status || '').toLowerCase().trim();
+    if (s === 'paid' || s === 'completed' || s === 'settled') {
+      return {
+        badge: styles.statusBadgePaid,
+        text: styles.statusTextPaid,
+        dotColor: '#059669',
+        label: 'Paid',
+      };
+    }
+    if (s === 'approved' || s === 'active') {
+      return {
+        badge: styles.statusBadgeApproved,
+        text: styles.statusTextApproved,
+        dotColor: '#1D4ED8',
+        label: 'Approved',
+      };
+    }
+    if (s === 'rejected' || s === 'declined') {
+      return {
+        badge: styles.statusBadgeRejected,
+        text: styles.statusTextRejected,
+        dotColor: '#DC2626',
+        label: 'Rejected',
+      };
+    }
+    return {
+      badge: styles.statusBadgePending,
+      text: styles.statusTextPending,
+      dotColor: '#D97706',
+      label: 'Pending',
+    };
   };
 
-  const openPrecloseRejectConfirm = (r: (typeof precloseRows)[number]) => {
-    setConfirm({
-      title: 'Reject Settlement?',
-      message: `Are you sure you want to reject the pre-close settlement for ${r.investorName}?`,
-      confirmLabel: 'Reject Settlement',
-      variant: 'reject',
-      infoRows: [
-        {label: 'INVESTOR', value: r.investorName},
-        {label: 'BOND', value: r.bondSeriesId},
-      ],
-      onConfirm: () => {
-        superAdminRejectPreSettlement(r.id);
-        closeConfirm();
-      },
-    });
-  };
+  const isFiltered =
+    search.length > 0 ||
+    selectedStatus !== 'All Status';
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <AppHeader subtitle="Payment Queue" />
+      <AppHeader subtitle="Payments" />
 
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Payment Queue</Text>
-        <Text style={styles.subtitle}>Approved payment requests from all branch admins</Text>
+      {/* HEADER TITLE & SUBTITLE */}
+      <View style={styles.headerSection}>
+        <Text style={styles.headerTitle}>Payments</Text>
+        <Text style={styles.headerSubtitle}>
+          Super Admin • Payment Approval & Settlement Queue
+        </Text>
+      </View>
 
+      {/* TOP PENDING SUMMARY CARD (Matches Web Screenshot) */}
+      <View style={styles.pendingCardWrap}>
         <View style={styles.pendingCard}>
-          <Text style={styles.pendingLabel}>{pendingRows.length} PENDING</Text>
-          <Text style={styles.pendingValue}>{formatINR(pendingTotal)}</Text>
+          <View style={styles.pendingBadge}>
+            <Text style={styles.pendingBadgeText}>{pendingCount} Pending</Text>
+          </View>
+          <Text style={styles.pendingAmount}>
+            ₹{formatIndianNumber(pendingAmount)}
+          </Text>
         </View>
+      </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsRow}>
+      {/* CATEGORY TABS BAR (Horizontal Scroll matching Web) */}
+      <View style={styles.tabBarContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.tabScroll}>
           {TABS.map(tab => (
             <TouchableOpacity
               key={tab}
-              style={[styles.tabChip, activeTab === tab && styles.tabChipActive]}
-              onPress={() => setActiveTab(tab)}>
-              <Text style={[styles.tabChipText, activeTab === tab && styles.tabChipTextActive]}>
+              style={[styles.tabBtn, activeTab === tab && styles.tabBtnActive]}
+              onPress={() => {
+                setActiveTab(tab);
+                setPage(1);
+              }}>
+              <Text
+                style={[
+                  styles.tabBtnText,
+                  activeTab === tab && styles.tabBtnTextActive,
+                ]}>
                 {tab}
               </Text>
             </TouchableOpacity>
           ))}
         </ScrollView>
+      </View>
 
-           {activeTab === 'Tenure Settlement' && (
-          <>
-            {maturitySettlementRows.length === 0 && (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyText}>No tenure settlements awaiting approval.</Text>
-              </View>
+      {/* SEARCH & FILTER BAR */}
+      <View style={styles.filterSection}>
+        {/* SEARCH INPUT + SEARCH BUTTON */}
+        <View style={styles.searchRow}>
+          <View style={styles.searchContainer}>
+            <Text style={styles.searchIcon}>🔍</Text>
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by investor, bond, amount..."
+              placeholderTextColor="#94A3B8"
+              value={searchInput}
+              onChangeText={setSearchInput}
+              onSubmitEditing={handleSearchSubmit}
+              returnKeyType="search"
+            />
+            {searchInput.length > 0 && (
+              <TouchableOpacity
+                style={styles.clearSearchBtn}
+                onPress={() => {
+                  setSearchInput('');
+                  setSearch('');
+                  setPage(1);
+                }}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Text style={styles.clearSearchText}>✕</Text>
+              </TouchableOpacity>
             )}
+          </View>
 
-            {maturitySettlementRows.map(r => {
-              const statusInfo = settlementStatusInfo(r.status as 'PendingSuperAdmin' | 'Approved' | 'Rejected', 'Paid');
-              return (
-              <View key={r.id} style={styles.card}>
-                <View style={styles.cardTopRow}>
-                  <Text style={styles.investorName}>{r.investorName}</Text>
-                  <View style={[styles.pill, statusInfo.pill]}>
-                    <Text style={[styles.pillText, statusInfo.text]}>{statusInfo.label}</Text>
-                  </View>
-                </View>
+          <TouchableOpacity
+            style={styles.searchBtn}
+            activeOpacity={0.8}
+            onPress={handleSearchSubmit}>
+            <Text style={styles.searchBtnText}>Search</Text>
+          </TouchableOpacity>
+        </View>
 
-                <View style={styles.typePillRow}>
-                  <View style={styles.typePill}>
-                    <Text style={styles.typePillText}>Bond Maturity Settlement</Text>
-                  </View>
-                </View>
+        {/* STATUS FILTER BUTTON + RESET */}
+        <View style={styles.filterButtonsRow}>
+          <TouchableOpacity
+            style={[
+              styles.filterDropdownBtn,
+              selectedStatus !== 'All Status' && styles.filterDropdownBtnActive,
+            ]}
+            activeOpacity={0.8}
+            onPress={() => setStatusModalVisible(true)}>
+            <Text
+              style={[
+                styles.filterDropdownText,
+                selectedStatus !== 'All Status' && styles.filterDropdownTextActive,
+              ]}
+              numberOfLines={1}>
+              {selectedStatus}
+            </Text>
+            <Text style={styles.dropdownArrow}>▼</Text>
+          </TouchableOpacity>
 
-                <View style={styles.cardGrid}>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>BOND</Text>
-                    <Text style={styles.cardValueLink}>{r.bondSeriesId}</Text>
-                  </View>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>NET SETTLEMENT</Text>
-                    <Text style={styles.cardValue}>{formatINR(r.netSettlement)}</Text>
-                  </View>
-                </View>
+          <TouchableOpacity
+            style={styles.resetBtn}
+            activeOpacity={0.8}
+            onPress={handleReset}>
+            <Text style={styles.resetBtnText}>↺ Reset</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-                <View style={styles.cardGrid}>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>PRINCIPAL</Text>
-                    <Text style={styles.cardValueSm}>{formatINR(r.principal)}</Text>
-                  </View>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>INTEREST EARNED</Text>
-                    <Text style={styles.cardValueSm}>{formatINR(r.totalInterest)}</Text>
-                  </View>
-                </View>
+      {/* ERROR BANNER */}
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => loadData(true)}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
-                {r.status === 'PendingSuperAdmin' && (
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={styles.rejectBtn}
-                      onPress={() => openMaturitySettlementRejectConfirm(r)}>
-                      <Text style={styles.rejectBtnText}>Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.markPaidBtn}
-                      onPress={() => openMaturitySettlementApproveConfirm(r)}>
-                      <Text style={styles.markPaidBtnText}>Mark as Paid</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-              );
-            })}
-          </>
-        )}
-
-         
-
-        {activeTab === 'Pre-Close Settlement' && (
-          <>
-            {precloseRows.length === 0 && (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyText}>No pre-close requests awaiting settlement.</Text>
-              </View>
-            )}
-            {precloseRows.map(r => {
-              const statusInfo = settlementStatusInfo(r.status as 'PendingSuperAdmin' | 'Approved' | 'Rejected', 'Paid');
-              return (
-              <View key={r.id} style={styles.card}>
-                <View style={styles.cardTopRow}>
-                  <Text style={styles.investorName}>{r.investorName}</Text>
-                  <View style={[styles.pill, statusInfo.pill]}>
-                    <Text style={[styles.pillText, statusInfo.text]}>{statusInfo.label}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.typePillRow}>
-                  <View style={styles.typePill}>
-                    <Text style={styles.typePillText}>Pre-Close Settlement</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardGrid}>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>BOND</Text>
-                    <Text style={styles.cardValueLink}>{r.bondSeriesId}</Text>
-                  </View>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>NET PAYABLE</Text>
-                    <Text style={styles.cardValue}>{formatINR(r.netAmount)}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.cardGrid}>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>PRINCIPAL</Text>
-                    <Text style={styles.cardValueSm}>{formatINR(r.principal)}</Text>
-                  </View>
-                  <View style={styles.cardCol}>
-                    <Text style={styles.cardLabel}>PENALTY</Text>
-                    <Text style={styles.cardValueSm}>{formatINR(r.penalty)}</Text>
-                  </View>
-                </View>
-
-                {r.reason ? (
-                  <View style={styles.cardGrid}>
-                    <View style={styles.cardCol}>
-                      <Text style={styles.cardLabel}>REASON</Text>
-                      <Text style={styles.cardValueSm}>{r.reason}</Text>
-                    </View>
-                  </View>
-                ) : null}
-
-                {r.status === 'PendingSuperAdmin' && (
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity
-                      style={styles.rejectBtn}
-                      onPress={() => openPrecloseRejectConfirm(r)}>
-                      <Text style={styles.rejectBtnText}>Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.markPaidBtn}
-                      onPress={() => openPrecloseApproveConfirm(r)}>
-                      <Text style={styles.markPaidBtnText}>Mark as Paid</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </View>
-              );
-            })}
-          </>
-        )}
-        {rows.length === 0 && (activeTab === 'All' || activeTab === 'Monthly Interest') && (
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadData(false)}
+            colors={['#0B1E45', '#2563EB']}
+          />
+        }>
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#0B1E45" />
+            <Text style={styles.loadingText}>Loading payment records...</Text>
+          </View>
+        ) : payments.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No payments in this category</Text>
+            <View style={styles.emptyIconWrap}>
+              <Text style={styles.emptyIcon}>💳</Text>
+            </View>
+            <Text style={styles.emptyTitle}>No payments found</Text>
+            <Text style={styles.emptyText}>
+              {isFiltered
+                ? 'No payments match your current search or filter criteria.'
+                : `There are currently no records under ${activeTab}.`}
+            </Text>
+          </View>
+        ) : (
+          payments.map((payment, index) => {
+            const statusBadge = getStatusBadgeStyle(payment.status);
+            const initial =
+              payment.investorName && payment.investorName !== '—'
+                ? payment.investorName.trim().charAt(0).toUpperCase()
+                : 'P';
+
+            const cardKey = `payment-${payment.paymentType}-${payment.sourceId || payment.id}-${payment.bondId || ''}-${payment.paymentMonth || ''}-${index}`;
+
+            return (
+              <View
+                key={cardKey}
+                style={[
+                  styles.card,
+                  {borderLeftColor: statusBadge.dotColor},
+                ]}>
+                {/* CARD HEADER: AVATAR INITIAL + INVESTOR NAME & BOND LINK + STATUS BADGE */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.avatarWrap}>
+                    <Text style={styles.avatarText}>{initial}</Text>
+                  </View>
+                  <View style={styles.headerInfo}>
+                    <Text style={styles.investorName} numberOfLines={1}>
+                      {payment.investorName}
+                    </Text>
+                    <Text style={styles.bondLinkTag} numberOfLines={1}>
+                      {payment.bondId}
+                    </Text>
+                  </View>
+                  <View style={[styles.statusBadge, statusBadge.badge]}>
+                    <View
+                      style={[
+                        styles.statusDot,
+                        {backgroundColor: statusBadge.dotColor},
+                      ]}
+                    />
+                    <Text style={[styles.statusBadgeText, statusBadge.text]}>
+                      {statusBadge.label}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* TYPE BADGE ROW */}
+                <View style={styles.typeBadgeRow}>
+                  <View style={styles.typeBadge}>
+                    <Text style={styles.typeBadgeText}>{payment.paymentType}</Text>
+                  </View>
+                  {payment.paymentMonth && payment.paymentMonth !== '—' ? (
+                    <Text style={styles.monthTag}>Month: {payment.paymentMonth}</Text>
+                  ) : null}
+                </View>
+
+                <View style={styles.cardDivider} />
+
+                {/* INFO GRID ROW 1: AMOUNT & GST */}
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>AMOUNT</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      ₹{formatIndianNumber(payment.amount || 0)}
+                    </Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>GST</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      ₹{formatIndianNumber(payment.gstAmount || 0)}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* INFO GRID ROW 2: NET AMOUNT & REQUESTED BY */}
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>NET AMOUNT</Text>
+                    <Text style={styles.netAmountValue} numberOfLines={1}>
+                      ₹{formatIndianNumber(payment.netAmount || 0)}
+                    </Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>REQUESTED BY</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {payment.requestedBy}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* INFO GRID ROW 3: APPROVED BY & DATE */}
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>APPROVED BY ADMIN</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {payment.approvedBy}
+                    </Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>DATE</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {payment.createdDate !== '—'
+                        ? formatSuperAdminDate(payment.createdDate)
+                        : '—'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* CARD ACTIONS (Matches Web Screenshot Table Actions) */}
+                {!(payment.status.toLowerCase() === 'approved' && payment.paymentType === 'Tenure Extension') && (
+                  <>
+                    <View style={styles.cardDivider} />
+                    <View style={styles.cardActions}>
+                      {payment.status.toLowerCase() === 'pending' ? (
+                        <>
+                          <TouchableOpacity
+                            style={styles.actionBtnReview}
+                            activeOpacity={0.7}
+                            onPress={() => handleOpenReview(payment)}>
+                            <Text style={styles.actionBtnReviewText}>👁️ Review</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.actionBtnReject}
+                            activeOpacity={0.7}
+                            onPress={() => handleOpenReject(payment)}>
+                            <Text style={styles.actionBtnRejectText}>⛔ Reject</Text>
+                          </TouchableOpacity>
+                        </>
+                      ) : payment.status.toLowerCase() === 'approved' ? (
+                        <TouchableOpacity
+                          style={styles.actionBtnApprove}
+                          activeOpacity={0.7}
+                          onPress={() => handleOpenMarkPaid(payment)}>
+                          <Text style={styles.actionBtnApproveText}>💳 Mark Paid</Text>
+                        </TouchableOpacity>
+                      ) : payment.status.toLowerCase() === 'paid' ? (
+                        <View style={styles.actionBadgePaid}>
+                          <Text style={styles.actionBadgePaidText}>✓ Paid</Text>
+                        </View>
+                      ) : payment.status.toLowerCase() === 'rejected' ? (
+                        <View style={styles.actionBadgeRejected}>
+                          <Text style={styles.actionBadgeRejectedText}>✕ Rejected</Text>
+                        </View>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.actionBtnReview}
+                          activeOpacity={0.7}
+                          onPress={() => handleOpenReview(payment)}>
+                          <Text style={styles.actionBtnReviewText}>👁️ Review</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </>
+                )}
+              </View>
+            );
+          })
+        )}
+
+        {/* PAGINATION CONTROLS */}
+        {!loading && totalCount > 0 && (
+          <View style={styles.paginationBar}>
+            <Text style={styles.pageInfoText}>
+              Showing {(page - 1) * PAGE_SIZE + 1} -{' '}
+              {Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+            </Text>
+
+            <View style={styles.paginationBtnGroup}>
+              <TouchableOpacity
+                style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
+                disabled={page <= 1}
+                onPress={handlePrevPage}>
+                <Text style={[styles.pageBtnText, page <= 1 && styles.pageBtnTextDisabled]}>
+                  ◀ Prev
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.pageBtn, page >= totalPages && styles.pageBtnDisabled]}
+                disabled={page >= totalPages}
+                onPress={handleNextPage}>
+                <Text style={[styles.pageBtnText, page >= totalPages && styles.pageBtnTextDisabled]}>
+                  Next ▶
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
-
-        {rows.map(row => {
-          const status = displayStatus(row.status);
-          const statusStyle = statusStyleFor(status);
-          const adminName = adminForPayout(row);
-          return (
-            <View key={row.id} style={styles.card}>
-              <View style={styles.cardTopRow}>
-                <Text style={styles.investorName}>{row.investorName}</Text>
-                <View style={[styles.pill, statusStyle.pill]}>
-                  <Text style={[styles.pillText, statusStyle.text]}>{status}</Text>
-                </View>
-              </View>
-
-              <View style={styles.typePillRow}>
-                <View style={styles.typePill}>
-                  <Text style={styles.typePillText}>Monthly Interest</Text>
-                </View>
-              </View>
-
-              <View style={styles.cardGrid}>
-                <View style={styles.cardCol}>
-                  <Text style={styles.cardLabel}>BOND</Text>
-                  <Text style={styles.cardValueLink}>{row.bondId}</Text>
-                </View>
-                <View style={styles.cardCol}>
-                  <Text style={styles.cardLabel}>AMOUNT</Text>
-                  <Text style={styles.cardValue}>{formatINR(row.amount)}</Text>
-                </View>
-              </View>
-
-              {/* NEW: Requested By / Approved By Admin — matches the web
-                  table's columns of the same name (replaces the old Due
-                  Date / Reference row; Reference has been removed). */}
-              <View style={styles.cardGrid}>
-                <View style={styles.cardCol}>
-                  <Text style={styles.cardLabel}>REQUESTED BY</Text>
-                  <Text style={styles.cardValueSm}>{adminName}</Text>
-                </View>
-                <View style={styles.cardCol}>
-                  <Text style={styles.cardLabel}>APPROVED BY ADMIN</Text>
-                  <Text style={styles.cardValueSm}>{adminName}</Text>
-                </View>
-              </View>
-
-              <View style={styles.cardGrid}>
-                <View style={styles.cardCol}>
-                  <Text style={styles.cardLabel}>DATE</Text>
-                  <Text style={styles.cardValueSm}>{row.dueDate}</Text>
-                </View>
-              </View>
-
-              {status === 'Pending' && (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.rejectBtn}
-                    onPress={() => openRejectConfirm(row)}>
-                    <Text style={styles.rejectBtnText}>Reject</Text>
-                  </TouchableOpacity>
-                  {/* Opens the Review & Approve Payment detail sheet first,
-                      same as the web reference — the actual approve call
-                      only fires once the user confirms inside it. */}
-                  <TouchableOpacity
-                    style={styles.approveBtn}
-                    onPress={() => setReviewPayout(row)}>
-                    <Text style={styles.approveBtnText}>Approve</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {status === 'Approved' && (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity
-                    style={styles.markPaidBtn}
-                    onPress={() => openMarkPaidConfirm(row)}>
-                    <Text style={styles.markPaidBtnText}>Mark Paid</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {status === 'Paid' && (
-                <View style={styles.actionRow}>
-                  <TouchableOpacity style={styles.receiptBtn} onPress={() => setReceiptRow(row)}>
-                    <Text style={styles.receiptBtnText}>📄  Receipt</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </View>
-          );
-        })}
       </ScrollView>
 
-      {/* ---- Step 1: Review & Approve Payment detail sheet (Monthly Interest) ---- */}
+      {/* ======================================================
+          STATUS FILTER MODAL
+          ====================================================== */}
       <Modal
-        visible={!!reviewPayout}
+        visible={statusModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setReviewPayout(null)}>
+        onRequestClose={() => setStatusModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Review & Approve Payment</Text>
-              <TouchableOpacity onPress={() => setReviewPayout(null)}>
+              <Text style={styles.modalTitle}>Select Status</Text>
+              <TouchableOpacity
+                onPress={() => setStatusModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.reviewIntroRow}>
-              <View style={styles.reviewIntroIconWrap}>
-                <Text style={styles.reviewIntroIconText}>🛡️</Text>
-              </View>
-              <View style={{flex: 1}}>
-                <Text style={styles.reviewIntroTitle}>Payment approval request</Text>
-                <Text style={styles.reviewIntroSubtext}>
-                  Review the payment details submitted by the branch admin before approving this
-                  request.
-                </Text>
-              </View>
-            </View>
-
-            {reviewPayout && (
-              <>
-                <View style={styles.amountBoxRow}>
-                  <View>
-                    <Text style={styles.amountBoxLabel}>PAYMENT AMOUNT</Text>
-                    <Text style={styles.amountBoxValue}>{formatINR(reviewPayout.amount)}</Text>
-                  </View>
-                  <View style={[styles.pill, styles.pillPending]}>
-                    <Text style={[styles.pillText, styles.pillTextPending]}>Pending</Text>
-                  </View>
-                </View>
-
-                <View style={styles.modalGrid}>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>INVESTOR</Text>
-                    <Text style={styles.modalValue}>{reviewPayout.investorName}</Text>
-                  </View>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>BOND NUMBER</Text>
-                    <Text style={styles.modalValue}>{reviewPayout.bondId}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.modalGrid}>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>PAYMENT TYPE</Text>
-                    <View style={styles.modalTypePill}>
-                      <Text style={styles.modalTypePillText}>Monthly Interest</Text>
-                    </View>
-                  </View>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>REQUEST DATE</Text>
-                    <Text style={styles.modalValue}>{reviewPayout.dueDate}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.modalGrid}>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>REQUESTED BY</Text>
-                    <Text style={styles.modalValue}>{adminForPayout(reviewPayout)}</Text>
-                  </View>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>BRANCH ADMIN APPROVAL</Text>
-                    <Text style={styles.modalValue}>{adminForPayout(reviewPayout)}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.modalGrid}>
-                  <View style={styles.modalCol}>
-                    <Text style={styles.modalLabel}>PAYMENT REQUEST ID</Text>
-                    <Text style={styles.modalValue}>{reviewPayout.id}</Text>
-                  </View>
-                </View>
-
-                <View style={styles.noteBox}>
-                  <Text style={styles.noteText}>
-                    Approving this request will move it to Approved. The payment can then be
-                    processed using Mark Paid.
+            <ScrollView style={{maxHeight: 320}} showsVerticalScrollIndicator={false}>
+              {STATUS_OPTIONS.map(s => (
+                <TouchableOpacity
+                  key={s}
+                  style={[
+                    styles.filterOptionItem,
+                    selectedStatus === s && styles.filterOptionItemActive,
+                  ]}
+                  onPress={() => {
+                    setSelectedStatus(s);
+                    setPage(1);
+                    setStatusModalVisible(false);
+                  }}>
+                  <Text
+                    style={[
+                      styles.filterOptionText,
+                      selectedStatus === s && styles.filterOptionTextActive,
+                    ]}>
+                    {s}
                   </Text>
-                </View>
-
-                <View style={styles.reviewActionRow}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={() => setReviewPayout(null)}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.rejectBtn}
-                    onPress={() => openRejectConfirm(reviewPayout, true)}>
-                    <Text style={styles.rejectBtnText}>Reject</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.approveBtn}
-                    onPress={() => openApproveConfirm(reviewPayout)}>
-                    <Text style={styles.approveBtnText}>Approve Payment</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           </View>
         </View>
       </Modal>
 
-      {/* ---- Step 2: generic "are you sure?" confirmation popup ---- */}
-      <Modal visible={!!confirm} transparent animationType="fade" onRequestClose={closeConfirm}>
+      {/* ======================================================
+          REVIEW & DETAILS MODAL
+          ====================================================== */}
+      <Modal
+        visible={reviewModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setReviewModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <View style={{flex: 1}} />
-              <TouchableOpacity onPress={closeConfirm}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            {confirm && (
+            {selectedPayment && (
               <>
-                <View style={confirmIconStyleFor(confirm.variant).wrap}>
-                  <Text style={confirmIconStyleFor(confirm.variant).text}>
-                    {confirmIconStyleFor(confirm.variant).glyph}
-                  </Text>
-                </View>
-
-                <Text style={styles.confirmTitle}>{confirm.title}</Text>
-                <Text style={styles.confirmMessage}>{confirm.message}</Text>
-                {confirm.note ? <Text style={styles.confirmSubtext}>{confirm.note}</Text> : null}
-
-                <View style={styles.confirmInfoRow}>
-                  {confirm.infoRows.map(item => (
-                    <View key={item.label} style={styles.confirmInfoCol}>
-                      <Text style={styles.confirmInfoLabel}>{item.label}</Text>
-                      <Text style={styles.confirmInfoValue}>{item.value}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                <View style={styles.reviewActionRow}>
-                  <TouchableOpacity style={styles.cancelBtn} onPress={closeConfirm}>
-                    <Text style={styles.cancelBtnText}>Cancel</Text>
-                  </TouchableOpacity>
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Payment Review</Text>
                   <TouchableOpacity
-                    style={confirmBtnStyleFor(confirm.variant).btn}
-                    onPress={confirm.onConfirm}>
-                    <Text style={confirmBtnStyleFor(confirm.variant).text}>
-                      {confirm.confirmLabel}
+                    onPress={() => setReviewModalVisible(false)}
+                    hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                    <Text style={styles.modalClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {detailsLoading ? (
+                  <View style={{paddingVertical: 30, alignItems: 'center'}}>
+                    <ActivityIndicator size="small" color="#0B1E45" />
+                    <Text style={{marginTop: 8, color: '#64748B', fontSize: 13}}>
+                      Loading details...
                     </Text>
+                  </View>
+                ) : (
+                  <ScrollView style={{maxHeight: 380}} showsVerticalScrollIndicator={false}>
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>INVESTOR NAME</Text>
+                      <Text style={styles.detailVal}>{selectedPayment.investorName}</Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>BOND NUMBER</Text>
+                      <Text style={styles.detailVal}>{selectedPayment.bondId}</Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>PAYMENT TYPE</Text>
+                      <Text style={styles.detailVal}>{selectedPayment.paymentType}</Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>STATUS</Text>
+                      <Text
+                        style={[
+                          styles.detailVal,
+                          {
+                            color: getStatusBadgeStyle(selectedPayment.status).dotColor,
+                            fontWeight: '700',
+                          },
+                        ]}>
+                        {selectedPayment.status}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>AMOUNT</Text>
+                      <Text style={styles.detailVal}>
+                        ₹{formatIndianNumber(selectedPayment.amount || 0)}
+                      </Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>GST AMOUNT</Text>
+                      <Text style={styles.detailVal}>
+                        ₹{formatIndianNumber(selectedPayment.gstAmount || 0)}
+                      </Text>
+                    </View>
+
+                    {/* NET SETTLEMENT HIGHLIGHT BOX */}
+                    <View style={styles.amountBox}>
+                      <Text style={styles.amountBoxLabel}>NET AMOUNT</Text>
+                      <Text style={styles.amountBoxValue}>
+                        ₹{formatIndianNumber(selectedPayment.netAmount || 0)}
+                      </Text>
+                    </View>
+
+                    {selectedPayment.bankName !== '—' && (
+                      <View style={styles.detailField}>
+                        <Text style={styles.detailLabel}>BANK / ACCOUNT</Text>
+                        <Text style={styles.detailVal}>
+                          {selectedPayment.bankName} • {selectedPayment.accountNumber} ({selectedPayment.ifscCode})
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>REQUESTED BY</Text>
+                      <Text style={styles.detailVal}>{selectedPayment.requestedBy}</Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>APPROVED BY ADMIN</Text>
+                      <Text style={styles.detailVal}>{selectedPayment.approvedBy}</Text>
+                    </View>
+
+                    <View style={styles.detailField}>
+                      <Text style={styles.detailLabel}>DATE</Text>
+                      <Text style={styles.detailVal}>
+                        {selectedPayment.createdDate !== '—'
+                          ? formatSuperAdminDate(selectedPayment.createdDate)
+                          : '—'}
+                      </Text>
+                    </View>
+
+                    {selectedPayment.remarks ? (
+                      <View style={styles.detailField}>
+                        <Text style={styles.detailLabel}>REMARKS</Text>
+                        <Text style={styles.detailVal}>{selectedPayment.remarks}</Text>
+                      </View>
+                    ) : null}
+                  </ScrollView>
+                )}
+
+                <View style={styles.modalBtnRow}>
+                  {selectedPayment.status.toLowerCase() === 'pending' && (
+                    <>
+                      <TouchableOpacity
+                        style={styles.modalConfirmApproveBtn}
+                        onPress={() => {
+                          setReviewModalVisible(false);
+                          handleOpenApprove(selectedPayment);
+                        }}>
+                        <Text style={styles.btnTextWhite}>Approve</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalConfirmRejectBtn}
+                        onPress={() => {
+                          setReviewModalVisible(false);
+                          handleOpenReject(selectedPayment);
+                        }}>
+                        <Text style={styles.btnTextWhite}>Reject</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+
+                  {selectedPayment.status.toLowerCase() === 'approved' &&
+                    selectedPayment.paymentType !== 'Tenure Extension' && (
+                      <TouchableOpacity
+                        style={styles.modalConfirmMarkPaidBtn}
+                        onPress={() => {
+                          setReviewModalVisible(false);
+                          handleOpenMarkPaid(selectedPayment);
+                        }}>
+                        <Text style={styles.btnTextWhite}>Mark Paid</Text>
+                      </TouchableOpacity>
+                    )}
+
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setReviewModalVisible(false)}>
+                    <Text style={styles.modalCancelBtnText}>Close</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -798,70 +964,167 @@ const {
         </View>
       </Modal>
 
-      <Modal visible={!!receiptRow} transparent animationType="fade" onRequestClose={() => setReceiptRow(null)}>
+      {/* ======================================================
+          APPROVE CONFIRMATION MODAL
+          ====================================================== */}
+      <Modal
+        visible={approveModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setApproveModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>{receiptRow?.bondId}</Text>
-              <TouchableOpacity onPress={() => setReceiptRow(null)}>
+              <Text style={styles.modalTitle}>Approve Payment</Text>
+              <TouchableOpacity
+                onPress={() => setApproveModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
                 <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <View style={styles.modalGrid}>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>INVESTOR</Text>
-                <Text style={styles.modalValue}>{receiptRow?.investorName}</Text>
-              </View>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>BOND</Text>
-                <Text style={styles.modalValue}>{receiptRow?.bondId}</Text>
-              </View>
-            </View>
+            <Text style={styles.confirmMessage}>
+              Are you sure you want to approve the payout of{' '}
+              <Text style={{fontWeight: '800', color: '#0F172A'}}>
+                ₹{formatIndianNumber(selectedPayment?.netAmount || 0)}
+              </Text>{' '}
+              for <Text style={{fontWeight: '700'}}>{selectedPayment?.investorName}</Text>?
+            </Text>
 
-            <View style={styles.modalGrid}>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>PAYMENT TYPE</Text>
-                <View style={styles.modalTypePill}>
-                  <Text style={styles.modalTypePillText}>Monthly Interest</Text>
-                </View>
-              </View>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>AMOUNT</Text>
-                <Text style={styles.modalValue}>{receiptRow ? formatINR(receiptRow.amount) : ''}</Text>
-              </View>
-            </View>
-
-            {/* NEW: Requested By / Approved By Admin — replaces the old
-                Due Date / Reference row; Reference has been removed. */}
-            <View style={styles.modalGrid}>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>REQUESTED BY</Text>
-                <Text style={styles.modalValue}>{receiptRow ? adminForPayout(receiptRow) : ''}</Text>
-              </View>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>APPROVED BY ADMIN</Text>
-                <Text style={styles.modalValue}>{receiptRow ? adminForPayout(receiptRow) : ''}</Text>
-              </View>
-            </View>
-
-            <View style={styles.modalGrid}>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>DATE</Text>
-                <Text style={styles.modalValue}>{receiptRow?.dueDate}</Text>
-              </View>
-              <View style={styles.modalCol}>
-                <Text style={styles.modalLabel}>STATUS</Text>
-                <View style={styles.modalStatusPill}>
-                  <Text style={styles.modalStatusPillText}>Paid</Text>
-                </View>
-              </View>
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                disabled={isApproving}
+                onPress={() => setApproveModalVisible(false)}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmApproveBtn, isApproving && {opacity: 0.6}]}
+                disabled={isApproving}
+                onPress={handleConfirmApprove}>
+                {isApproving ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.btnTextWhite}>Confirm Approval</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* <SuperAdminBottomTabBar navigation={navigation} active="Notifications" /> */}
+      {/* ======================================================
+          REJECT CONFIRMATION MODAL
+          ====================================================== */}
+      <Modal
+        visible={rejectModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRejectModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Reject Payment Request</Text>
+              <TouchableOpacity
+                onPress={() => setRejectModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.confirmMessage}>
+              Please enter the reason for rejecting this payment for{' '}
+              <Text style={{fontWeight: '700'}}>{selectedPayment?.investorName}</Text>:
+            </Text>
+
+            <TextInput
+              style={[styles.reasonInput, rejectionError ? styles.inputError : null]}
+              placeholder="e.g. Discrepancy in bank account details..."
+              placeholderTextColor="#94A3B8"
+              multiline
+              numberOfLines={3}
+              value={rejectionReason}
+              onChangeText={val => {
+                setRejectionReason(val);
+                if (rejectionError) setRejectionError('');
+              }}
+            />
+            {rejectionError ? (
+              <Text style={styles.errorTextSmall}>{rejectionError}</Text>
+            ) : null}
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                disabled={isRejecting}
+                onPress={() => setRejectModalVisible(false)}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmRejectBtn, isRejecting && {opacity: 0.6}]}
+                disabled={isRejecting}
+                onPress={handleConfirmReject}>
+                {isRejecting ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.btnTextWhite}>Confirm Rejection</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================
+          MARK PAID CONFIRMATION MODAL
+          ====================================================== */}
+      <Modal
+        visible={markPaidModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMarkPaidModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Mark Payment as Paid</Text>
+              <TouchableOpacity
+                onPress={() => setMarkPaidModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.confirmMessage}>
+              Confirm that the amount of{' '}
+              <Text style={{fontWeight: '800', color: '#059669'}}>
+                ₹{formatIndianNumber(selectedPayment?.netAmount || 0)}
+              </Text>{' '}
+              has been transferred to <Text style={{fontWeight: '700'}}>{selectedPayment?.investorName}</Text>?
+            </Text>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.modalCancelBtn}
+                disabled={isMarkingPaid}
+                onPress={() => setMarkPaidModalVisible(false)}>
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalConfirmMarkPaidBtn, isMarkingPaid && {opacity: 0.6}]}
+                disabled={isMarkingPaid}
+                onPress={handleConfirmMarkPaid}>
+                {isMarkingPaid ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.btnTextWhite}>Confirm Paid</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <SuperAdminBottomTabBar navigation={navigation} active="Payments" />
     </SafeAreaView>
   );
 };

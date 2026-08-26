@@ -2277,8 +2277,9 @@ updateInvestorBranch,
             {/* <Stack.Screen name="RolesPermissions" component={RolesPermissionsScreen} /> */}
             {/* <Stack.Screen name="AuditLogs" component={AuditLogsScreen} /> */}
             <Stack.Screen name="SuperAdminReports" component={SuperAdminReportsScreen} />
-            <Stack.Screen name="SystemSettings" component={SystemSettingsScreen} />
-           <Stack.Screen name="Notifications" component={PaymentQueueScreen} />
+            <Stack.Screen name="PaymentQueue" component={PaymentQueueScreen} />
+            <Stack.Screen name="Payments" component={PaymentQueueScreen} />
+            <Stack.Screen name="Notifications" component={PaymentQueueScreen} />
             <Stack.Screen name="SuperAdminProfile" component={SuperAdminProfileScreen} />
             <Stack.Screen name="InvestorManagement" component={InvestorManagementScreen} />
 <Stack.Screen name="InvestmentManagement" component={InvestmentManagementScreen} />

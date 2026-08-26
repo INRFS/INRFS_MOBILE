@@ -272,6 +272,71 @@ export const styles = StyleSheet.create({
   bondMetaValue: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   bondReturnValue: {fontSize: 13.5, fontWeight: '800', color: GREEN},
 
+  bondActionDivider: {
+    height: 1,
+    backgroundColor: BORDER,
+    marginTop: 12,
+    marginBottom: 10,
+  },
+  bondActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  bondActionTitle: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#6B7280',
+    letterSpacing: 0.2,
+  },
+  bondActionButtonsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bondActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  bondActionBtnPrimary: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  bondActionBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  bondActionBtnTextPrimary: {
+    color: PRIMARY,
+    fontWeight: '700',
+  },
+  bondPendingWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  bondActionPendingText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#D97706',
+  },
+  bondActionMutedText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+
   // ---- Quick Actions: solid colour tiles in a single row ----
   quickActionsGrid: {
     flexDirection: 'row',
@@ -327,4 +392,67 @@ export const styles = StyleSheet.create({
   txTitle: {fontSize: 13.5, fontWeight: '700', color: '#111827'},
   txDate: {fontSize: 11.5, color: GRAY, marginTop: 2},
   txChevron: {color: GRAY},
+
+  // Modal styles for Investment Details
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 20,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.15,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  modalHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    paddingBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 7,
+  },
+  modalRowLabel: {
+    fontSize: 13,
+    color: GRAY,
+    fontWeight: '500',
+  },
+  modalRowValue: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  modalConfirmBtn: {
+    backgroundColor: PRIMARY,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 18,
+  },
+  modalConfirmBtnText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 });

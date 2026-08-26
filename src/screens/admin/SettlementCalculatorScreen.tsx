@@ -1,283 +1,532 @@
-import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, Alert, StyleSheet} from 'react-native';
+import React, {useCallback, useEffect, useState} from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+  RefreshControl,
+} from 'react-native';
+
 import {useAppData} from '../../navigation/AppNavigator';
-import {styles} from '../../styles/admin/SettlementCalculatorScreen.styles';
+import {
+  styles,
+  local,
+} from '../../styles/admin/SettlementCalculatorScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
+import AppHeader from '../../components/AppHeader';
+import {
+  getTenureTimeoutSettlements,
+  getPrecloseRequests,
+  getClosedSettlements,
+  approveTenureTimeoutSettlement,
+  rejectTenureTimeoutSettlement,
+  approvePrecloseRequest,
+  rejectPrecloseRequest,
+  getErrorMessage,
+  SettlementRecord,
+} from '../../services/admin/settlementService';
 
-// ---------------------------------------------------------------------------
-// This screen is a queue of REAL pending settlement work, split into the
-// same two tabs as web:
-//   - "Tenure Timeout"   → bonds that have matured (maturityDate has
-//                          passed) and are still 'Active', awaiting the
-//                          admin's final settlement approval. This now
-//                          reacts purely to the date — no investor request
-//                          is required for a bond to land here.
-//   - "Pre-Close Requests" → investor-submitted early-exit requests, each
-//                            carrying the reason the investor entered in
-//                            the mobile/web Pre-Close modal.
-// ---------------------------------------------------------------------------
+type Tab = 'timeout' | 'preclose' | 'closed';
 
-type Tab = 'timeout' | 'preclose';
+const formatINR = (n: number) =>
+  '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
 
-const formatINR = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
-
-// ---------------------------------------------------------------------------
-// Maturity date handling
-// AppNavigator stores maturityDate as dd-mm-yyyy (see formatDDMMYYYY /
-// parseDDMMYYYY there). parseAppDate mirrors that exact format so this
-// screen agrees with the rest of the app on what a stored date means.
-// isMaturityCrossed compares only calendar dates (time zeroed out) so a
-// bond becomes "Tenure Timeout" starting the day it matures, not before.
-// ---------------------------------------------------------------------------
-const parseAppDate = (dateStr?: string): Date | null => {
-  if (!dateStr) return null;
-  const parts = dateStr.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
-  const [d, m, y] = parts;
-  const dt = new Date(y, m - 1, d);
-  return isNaN(dt.getTime()) ? null : dt;
+const formatDate = (dateStr?: string) => {
+  if (!dateStr || dateStr === '—' || dateStr === '-') return '—';
+  try {
+    const dt = new Date(dateStr);
+    if (!isNaN(dt.getTime())) {
+      const day = String(dt.getDate()).padStart(2, '0');
+      const month = String(dt.getMonth() + 1).padStart(2, '0');
+      const year = dt.getFullYear();
+      return `${day}-${month}-${year}`;
+    }
+  } catch {}
+  return dateStr;
 };
 
-const isMaturityCrossed = (maturityDate?: string): boolean => {
-  const dt = parseAppDate(maturityDate);
-  if (!dt) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  dt.setHours(0, 0, 0, 0);
-  return dt.getTime() <= today.getTime();
-};
+/* ============================================================
+   SCREEN COMPONENT
+   ============================================================ */
 
 const SettlementCalculatorScreen = ({navigation}: any) => {
-const {
-    bonds,
-    investors,
-    preSettlementRequests,
+  const {
     approvePreSettlement,
     rejectPreSettlement,
-    maturitySettlementRequests,
     requestMaturitySettlement,
   } = useAppData();
 
   const [tab, setTab] = useState<Tab>('timeout');
 
-  // Same lookup pattern BondTrackingScreen uses — match on id first, fall
-  // back to name, so branch/investor-id display works whichever field a
-  // given record happens to have populated.
-  const norm = (s?: string) => (s || '').trim().toLowerCase();
-  const getInvestor = (id?: string, name?: string) =>
-    investors.find(i => (id && i.id === id) || (name && norm(i.name) === norm(name)));
+  const [timeoutRows, setTimeoutRows] = useState<SettlementRecord[]>([]);
+  const [preCloseRows, setPreCloseRows] = useState<SettlementRecord[]>([]);
+  const [closedRows, setClosedRows] = useState<SettlementRecord[]>([]);
 
-  // ---- Tenure Timeout: bonds whose maturity date has passed ----
-  // A bond belongs here the moment its maturityDate is today or earlier,
-  // as long as it's still 'Active' — i.e. nobody has settled it yet,
-  // whether via this tab's Approve Settlement or via a pre-close approval
-  // (both of which flip status to 'Settled', which removes it from here).
-const timeoutBonds = bonds.filter(
-    b =>
-      b.status === 'Active' &&
-      isMaturityCrossed(b.maturityDate) &&
-      !maturitySettlementRequests.some(
-        r => r.bondSeriesId === b.seriesId && r.status === 'PendingSuperAdmin',
-      ),
-  );
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | number | null>(null);
+  const [error, setError] = useState('');
 
-  const timeoutRows = timeoutBonds.map(b => {
-    const inv = getInvestor(b.investorId, b.investorName);
-    const tenureMonths =
-      b.tenureMonths ??
-      Math.max(
-        (new Date(b.maturityDate).getFullYear() - new Date(b.investedDate).getFullYear()) * 12 +
-          (new Date(b.maturityDate).getMonth() - new Date(b.investedDate).getMonth()),
-        1,
-      );
-    const totalInterest = b.amount * (b.interestRate / 100) * (tenureMonths / 12);
-    const netSettlement = b.amount + totalInterest;
-    return {
-      bond: b,
-      investorName: inv?.name || b.investorName,
-      investorRefId: inv?.id || '—',
-      branch: inv?.branch && inv.branch !== '—' ? inv.branch : '—',
-      principal: b.amount,
-      totalInterest,
-      netSettlement,
-    };
-  });
+  /* ==========================================================
+     LOAD ALL 3 SETTLEMENT APIs FROM BACKEND
+     ========================================================== */
 
-  // ---- Pre-Close Requests: investor-submitted early exits ----
-  const pendingPreClose = preSettlementRequests.filter(r => r.status === 'Pending');
+  const loadSettlementData = useCallback(async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      else setRefreshing(true);
+      setError('');
 
-const handleApproveTimeout = (row: (typeof timeoutRows)[number]) => {
+      const [timeoutRes, preCloseRes, closedRes] = await Promise.all([
+        getTenureTimeoutSettlements({limit: 100, offset: 0}),
+        getPrecloseRequests({limit: 100, offset: 0}),
+        getClosedSettlements({limit: 100, offset: 0}),
+      ]);
+
+      setTimeoutRows(timeoutRes.items || []);
+      setPreCloseRows(preCloseRes.items || []);
+      setClosedRows(closedRes.items || []);
+    } catch (err: any) {
+      console.error('Settlement API error:', err);
+      setError(getErrorMessage(err) || 'Unable to load settlement data.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSettlementData(true);
+  }, [loadSettlementData]);
+
+  /* ==========================================================
+     ACTION HANDLERS
+     ========================================================== */
+
+  // 1. TENURE TIMEOUT APPROVAL (SEND TO SUPER ADMIN)
+  const handleApproveTimeout = (row: SettlementRecord) => {
+    const settlementId = row.settlementId || row.id;
+
     Alert.alert(
       'Approve settlement',
-      `Send ${formatINR(row.netSettlement)} settlement for ${row.investorName} (${row.bond.seriesId}) to Super Admin for final approval?`,
+      `Send ${formatINR(
+        row.netSettlementAmount,
+      )} settlement for ${row.investorName} (${row.bondNumber}) to Super Admin for final approval?`,
       [
         {text: 'Cancel', style: 'cancel'},
         {
           text: 'Send to Super Admin',
-          onPress: () =>
-            requestMaturitySettlement({
-              bondSeriesId: row.bond.seriesId,
-              investorId: row.bond.investorId,
-              investorName: row.investorName,
-              principal: row.principal,
-              totalInterest: row.totalInterest,
-              netSettlement: row.netSettlement,
-            }),
+          onPress: async () => {
+            try {
+              setActionLoadingId(row.id);
+              if (settlementId) {
+                await approveTenureTimeoutSettlement(settlementId);
+              }
+
+              if (requestMaturitySettlement) {
+                requestMaturitySettlement({
+                  bondSeriesId: row.bondNumber,
+                  investorId: row.investorId,
+                  investorName: row.investorName,
+                  principal: row.principal,
+                  totalInterest: row.interestEarned,
+                  netSettlement: row.netSettlementAmount,
+                });
+              }
+
+              await loadSettlementData(false);
+              Alert.alert(
+                'Success',
+                `Settlement for ${row.investorName} sent to Super Admin.`,
+              );
+            } catch (apiErr: any) {
+              console.log('Approve tenure timeout error:', apiErr);
+              Alert.alert('Action Failed', getErrorMessage(apiErr));
+            } finally {
+              setActionLoadingId(null);
+            }
+          },
         },
       ],
     );
   };
 
- const handleApprovePreClose = (id: string, bondSeriesId: string, netAmount: number, investorName: string) => {
+  // 2. PRE-CLOSE APPROVAL (SEND TO SUPER ADMIN)
+  const handleApprovePreClose = (r: SettlementRecord) => {
+    const requestId = r.requestId || r.id;
+
     Alert.alert(
       'Approve pre-close',
-      `Send ${bondSeriesId} (${formatINR(netAmount)} to ${investorName}) to Super Admin for final settlement?`,
+      `Send ${r.bondNumber} (${formatINR(r.netSettlementAmount)} to ${
+        r.investorName
+      }) to Super Admin for final settlement?`,
       [
         {text: 'Cancel', style: 'cancel'},
-        {text: 'Send to Super Admin', onPress: () => approvePreSettlement(id)},
+        {
+          text: 'Send to Super Admin',
+          onPress: async () => {
+            try {
+              setActionLoadingId(r.id);
+              if (requestId) {
+                await approvePrecloseRequest(requestId);
+              }
+
+              if (approvePreSettlement) {
+                approvePreSettlement(String(r.id));
+              }
+
+              await loadSettlementData(false);
+              Alert.alert(
+                'Success',
+                `Pre-close request for ${r.investorName} sent to Super Admin.`,
+              );
+            } catch (apiErr: any) {
+              console.log('Approve pre-close error:', apiErr);
+              Alert.alert('Action Failed', getErrorMessage(apiErr));
+            } finally {
+              setActionLoadingId(null);
+            }
+          },
+        },
       ],
     );
   };
 
-  const handleRejectPreClose = (id: string, bondSeriesId: string) => {
+  // 3. PRE-CLOSE REJECTION
+  const handleRejectPreClose = (r: SettlementRecord) => {
+    const requestId = r.requestId || r.id;
+
     Alert.alert(
       'Reject pre-close',
-      `Reject the pre-close request for ${bondSeriesId}?`,
+      `Reject the pre-close request for ${r.bondNumber} (${r.investorName})?`,
       [
         {text: 'Cancel', style: 'cancel'},
-        {text: 'Reject', style: 'destructive', onPress: () => rejectPreSettlement(id)},
+        {
+          text: 'Reject',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActionLoadingId(r.id);
+              if (requestId) {
+                await rejectPrecloseRequest(requestId);
+              }
+
+              if (rejectPreSettlement) {
+                rejectPreSettlement(String(r.id));
+              }
+
+              await loadSettlementData(false);
+              Alert.alert('Success', 'Pre-close request rejected.');
+            } catch (apiErr: any) {
+              console.log('Reject pre-close error:', apiErr);
+              Alert.alert('Action Failed', getErrorMessage(apiErr));
+            } finally {
+              setActionLoadingId(null);
+            }
+          },
+        },
       ],
     );
   };
+
+  /* ==========================================================
+     RENDER HELPER: STATUS BADGE
+     ========================================================== */
+
+  const renderStatusBadge = (status: string) => {
+    const s = status.toLowerCase();
+    if (s.includes('paid') || s.includes('settled') || s.includes('completed')) {
+      return (
+        <View style={local.closedBadge}>
+          <Text style={local.closedBadgeText}>Settled</Text>
+        </View>
+      );
+    }
+    if (s.includes('pending super admin') || s.includes('awaiting')) {
+      return (
+        <View style={local.pendingBadge}>
+          <Text style={local.pendingBadgeText}>Pending Super Admin</Text>
+        </View>
+      );
+    }
+    if (s.includes('rejected')) {
+      return (
+        <View style={[local.pendingBadge, {backgroundColor: '#FEE2E2'}]}>
+          <Text style={[local.pendingBadgeText, {color: '#DC2626'}]}>Rejected</Text>
+        </View>
+      );
+    }
+    if (s.includes('approved')) {
+      return (
+        <View style={[local.pendingBadge, {backgroundColor: '#DCFCE7'}]}>
+          <Text style={[local.pendingBadgeText, {color: '#16A34A'}]}>Approved</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={local.pendingBadge}>
+        <Text style={local.pendingBadgeText}>Pending</Text>
+      </View>
+    );
+  };
+
+  /* ==========================================================
+     MAIN RENDER
+     ========================================================== */
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <AppHeader subtitle="Settlement Management" />
+        <View style={local.loadingWrap}>
+          <ActivityIndicator size="large" color="#0B1E45" />
+          <Text style={local.loadingText}>Loading settlement data...</Text>
+        </View>
+        <AdminBottomTabBar active="More" navigation={navigation} />
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backArrow}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>🏦  INRFS</Text>
-        <View style={{width: 20}} />
-      </View>
+      <AppHeader subtitle="Settlement Management" />
 
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadSettlementData(false)}
+            colors={['#0B1E45', '#2563EB']}
+          />
+        }>
         <Text style={styles.title}>Settlement Management</Text>
-        <Text style={styles.subtitle}>Review and approve settlement requests</Text>
+        <Text style={styles.subtitle}>
+          Review and approve settlement requests
+        </Text>
 
-        <View style={local.tabRow}>
-          <TouchableOpacity
-            style={[local.tabPill, tab === 'timeout' && local.tabPillActive]}
-            onPress={() => setTab('timeout')}>
-            <Text style={[local.tabText, tab === 'timeout' && local.tabTextActive]}>
-              Tenure Timeout
-            </Text>
-            {timeoutRows.length > 0 && (
-              <View style={local.tabBadge}>
-                <Text style={local.tabBadgeText}>{timeoutRows.length}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[local.tabPill, tab === 'preclose' && local.tabPillActive]}
-            onPress={() => setTab('preclose')}>
-            <Text style={[local.tabText, tab === 'preclose' && local.tabTextActive]}>
-              Pre-Close Requests
-            </Text>
-            {pendingPreClose.length > 0 && (
-              <View style={local.tabBadge}>
-                <Text style={local.tabBadgeText}>{pendingPreClose.length}</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
+        {error ? (
+          <View style={local.errorBox}>
+            <Text style={local.errorTitle}>Unable to load settlements</Text>
+            <Text style={local.errorText}>{error}</Text>
+            <TouchableOpacity
+              style={local.retryButton}
+              onPress={() => loadSettlementData(true)}>
+              <Text style={local.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
-        {/* ===================== TENURE TIMEOUT ===================== */}
+        {/* ----------------- TABS ----------------- */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={local.tabScroll}
+          contentContainerStyle={local.tabScrollContent}>
+          <View style={local.tabRow}>
+            {/* Tab 1: Tenure Timeout */}
+            <TouchableOpacity
+              style={[
+                local.tabPill,
+                tab === 'timeout' && local.tabPillActive,
+              ]}
+              onPress={() => setTab('timeout')}>
+              <Text
+                style={[
+                  local.tabText,
+                  tab === 'timeout' && local.tabTextActive,
+                ]}>
+                Tenure Timeout
+              </Text>
+              {timeoutRows.length > 0 && (
+                <View style={local.tabBadge}>
+                  <Text style={local.tabBadgeText}>{timeoutRows.length}</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Tab 2: Pre-Close Requests */}
+            <TouchableOpacity
+              style={[
+                local.tabPill,
+                tab === 'preclose' && local.tabPillActive,
+              ]}
+              onPress={() => setTab('preclose')}>
+              <Text
+                style={[
+                  local.tabText,
+                  tab === 'preclose' && local.tabTextActive,
+                ]}>
+                Pre-Close Requests
+              </Text>
+              {preCloseRows.length > 0 && (
+                <View style={local.tabBadge}>
+                  <Text style={local.tabBadgeText}>
+                    {preCloseRows.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Tab 3: Closed Settlements */}
+            <TouchableOpacity
+              style={[
+                local.tabPill,
+                tab === 'closed' && local.tabPillActive,
+              ]}
+              onPress={() => setTab('closed')}>
+              <Text
+                style={[
+                  local.tabText,
+                  tab === 'closed' && local.tabTextActive,
+                ]}>
+                Closed Settlements
+              </Text>
+              {closedRows.length > 0 && (
+                <View style={local.tabBadge}>
+                  <Text style={local.tabBadgeText}>
+                    {closedRows.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* ================================================================
+            TAB 1: TENURE TIMEOUT
+        ================================================================ */}
         {tab === 'timeout' && (
           <>
             {timeoutRows.length === 0 && (
               <View style={local.emptyWrap}>
-                <Text style={local.emptyText}>No matured bonds awaiting settlement.</Text>
+                <Text style={local.emptyText}>
+                  No matured bonds awaiting settlement.
+                </Text>
               </View>
             )}
-            {timeoutRows.map(row => (
-              <View key={row.bond.seriesId} style={local.card}>
-                <View style={local.cardTopRow}>
-                  <View style={local.cardTopLeft}>
-                    <Text style={local.bondId}>{row.bond.seriesId}</Text>
-                    <View style={local.pendingBadge}>
-                      <Text style={local.pendingBadgeText}>Pending</Text>
+
+            {timeoutRows.map(row => {
+              const isActionLoading = actionLoadingId === row.id;
+              const isPending = row.status === 'Pending';
+
+              return (
+                <View key={String(row.id)} style={local.card}>
+                  <View style={local.cardTopRow}>
+                    <View style={local.cardTopLeft}>
+                      <Text style={local.bondId}>{row.bondNumber}</Text>
+                      {renderStatusBadge(row.status)}
+                    </View>
+
+                    {isPending && (
+                      <TouchableOpacity
+                        disabled={isActionLoading}
+                        style={[
+                          local.approveBtn,
+                          isActionLoading && {opacity: 0.6},
+                        ]}
+                        onPress={() => handleApproveTimeout(row)}>
+                        {isActionLoading ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={local.approveBtnText}>
+                            → Send to Super Admin
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <View style={local.metaGrid}>
+                    <View style={local.metaCol}>
+                      <Text style={local.metaLabel}>Investor</Text>
+                      <Text style={local.metaValue}>{row.investorName}</Text>
+                    </View>
+
+                    <View style={local.metaCol}>
+                      <Text style={local.metaLabel}>Investor ID</Text>
+                      <Text style={local.metaValue}>{row.investorId}</Text>
                     </View>
                   </View>
-               <TouchableOpacity
-                    style={local.approveBtn}
-                    onPress={() => handleApproveTimeout(row)}>
-                    <Text style={local.approveBtnText}>→  Send to Super Admin</Text>
-                  </TouchableOpacity>
-                </View>
 
-                <View style={local.metaGrid}>
-                  <View style={local.metaCol}>
-                    <Text style={local.metaLabel}>Investor</Text>
-                    <Text style={local.metaValue}>{row.investorName}</Text>
-                  </View>
-                  <View style={local.metaCol}>
-                    <Text style={local.metaLabel}>Investor ID</Text>
-                    <Text style={local.metaValue}>{row.investorRefId}</Text>
-                  </View>
-                </View>
-                <View style={local.metaGrid}>
-                  <View style={local.metaCol}>
-                    <Text style={local.metaLabel}>Branch</Text>
-                    <Text style={local.metaValue}>{row.branch}</Text>
-                  </View>
-                  <View style={local.metaCol}>
-                    <Text style={local.metaLabel}>Matured On</Text>
-                    <Text style={local.metaValue}>{row.bond.maturityDate}</Text>
-                  </View>
-                </View>
+                  <View style={local.metaGrid}>
+                    <View style={local.metaCol}>
+                      <Text style={local.metaLabel}>Branch</Text>
+                      <Text style={local.metaValue}>{row.branch}</Text>
+                    </View>
 
-                <View style={local.breakdown}>
-                  <View style={local.breakdownRow}>
-                    <Text style={local.breakdownLabel}>Principal</Text>
-                    <Text style={local.breakdownValue}>{formatINR(row.principal)}</Text>
+                    <View style={local.metaCol}>
+                      <Text style={local.metaLabel}>Matured On</Text>
+                      <Text style={local.metaValue}>
+                        {formatDate(row.maturedOn)}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={local.breakdownRow}>
-                    <Text style={local.breakdownLabel}>Total Interest Earned</Text>
-                    <Text style={local.breakdownValue}>{formatINR(row.totalInterest)}</Text>
-                  </View>
-                  <View style={local.breakdownRowLast}>
-                    <Text style={local.netLabel}>Net Settlement Amount</Text>
-                    <Text style={local.netValue}>{formatINR(row.netSettlement)}</Text>
+
+                  <View style={local.breakdown}>
+                    <View style={local.breakdownRow}>
+                      <Text style={local.breakdownLabel}>Principal</Text>
+                      <Text style={local.breakdownValue}>
+                        {formatINR(row.principal)}
+                      </Text>
+                    </View>
+
+                    <View style={local.breakdownRow}>
+                      <Text style={local.breakdownLabel}>Total Interest Earned</Text>
+                      <Text style={local.breakdownValue}>
+                        {formatINR(row.interestEarned)}
+                      </Text>
+                    </View>
+
+                    {row.gstAmount > 0 && (
+                      <View style={local.breakdownRow}>
+                        <Text style={local.breakdownLabel}>GST (18%)</Text>
+                        <Text style={local.breakdownValueNegative}>
+                          -{formatINR(row.gstAmount)}
+                        </Text>
+                      </View>
+                    )}
+
+                    <View style={local.breakdownRowLast}>
+                      <Text style={local.netLabel}>Net Settlement Amount</Text>
+                      <Text style={local.netValue}>
+                        {formatINR(row.netSettlementAmount)}
+                      </Text>
+                    </View>
                   </View>
                 </View>
-              </View>
-            ))}
+              );
+            })}
           </>
         )}
 
-        {/* ===================== PRE-CLOSE REQUESTS ===================== */}
+        {/* ================================================================
+            TAB 2: PRE-CLOSE REQUESTS
+        ================================================================ */}
         {tab === 'preclose' && (
           <>
-            {pendingPreClose.length === 0 && (
+            {preCloseRows.length === 0 && (
               <View style={local.emptyWrap}>
-                <Text style={local.emptyText}>No pre-close requests pending.</Text>
+                <Text style={local.emptyText}>
+                  No pre-close requests pending.
+                </Text>
               </View>
             )}
-            {pendingPreClose.map(r => {
-              const inv = getInvestor(r.investorId, r.investorName);
-              const branch = inv?.branch && inv.branch !== '—' ? inv.branch : '—';
-              // `reason` is a first-class field on PreSettlementRequest
-              // (populated from the investor's Pre-Close modal).
-              const reason = r.reason;
+
+            {preCloseRows.map(r => {
+              const isActionLoading = actionLoadingId === r.id;
+              const isPending = r.status === 'Pending';
+
               return (
-                <View key={r.id} style={local.card}>
+                <View key={String(r.id)} style={local.card}>
                   <View style={local.cardTopRow}>
                     <View style={local.cardTopLeft}>
-                      <Text style={local.bondId}>{r.bondSeriesId}</Text>
-                      <View style={local.pendingBadge}>
-                        <Text style={local.pendingBadgeText}>Pending</Text>
-                      </View>
+                      <Text style={local.bondId}>{r.bondNumber}</Text>
+                      {renderStatusBadge(r.status)}
                       <View style={local.precloseBadge}>
                         <Text style={local.precloseBadgeText}>Pre-Close</Text>
                       </View>
@@ -289,61 +538,205 @@ const handleApproveTimeout = (row: (typeof timeoutRows)[number]) => {
                       <Text style={local.metaLabel}>Investor</Text>
                       <Text style={local.metaValue}>{r.investorName}</Text>
                     </View>
+
                     <View style={local.metaCol}>
-                      <Text style={local.metaLabel}>Branch</Text>
-                      <Text style={local.metaValue}>{branch}</Text>
-                    </View>
-                  </View>
-                  <View style={local.metaGrid}>
-                    <View style={local.metaCol}>
-                      <Text style={local.metaLabel}>Requested On</Text>
-                      <Text style={local.metaValue}>{r.requestedOn}</Text>
+                      <Text style={local.metaLabel}>Investor ID</Text>
+                      <Text style={local.metaValue}>{r.investorId}</Text>
                     </View>
                   </View>
 
-                  {reason ? (
+                  <View style={local.metaGrid}>
+                    <View style={local.metaCol}>
+                      <Text style={local.metaLabel}>Branch</Text>
+                      <Text style={local.metaValue}>{r.branch}</Text>
+                    </View>
+
+                    <View style={local.metaCol}>
+                      <Text style={local.metaLabel}>Requested On</Text>
+                      <Text style={local.metaValue}>
+                        {formatDate(r.requestedDate)}
+                      </Text>
+                    </View>
+                  </View>
+
+                  {r.reason && r.reason !== '—' ? (
                     <View style={local.reasonBox}>
                       <Text style={local.reasonLabel}>Reason: </Text>
-                      <Text style={local.reasonText}>{reason}</Text>
+                      <Text style={local.reasonText}>{r.reason}</Text>
                     </View>
                   ) : null}
 
                   <View style={local.breakdown}>
                     <View style={local.breakdownRow}>
                       <Text style={local.breakdownLabel}>Principal</Text>
-                      <Text style={local.breakdownValue}>{formatINR(r.principal)}</Text>
+                      <Text style={local.breakdownValue}>
+                        {formatINR(r.principal)}
+                      </Text>
                     </View>
+
                     <View style={local.breakdownRow}>
                       <Text style={local.breakdownLabel}>Interest Earned</Text>
-                      <Text style={local.breakdownValue}>{formatINR(r.earned)}</Text>
+                      <Text style={local.breakdownValue}>
+                        {formatINR(r.interestEarned)}
+                      </Text>
                     </View>
-                    <View style={local.breakdownRow}>
-                      <Text style={local.breakdownLabel}>Early Penalty</Text>
-                      <Text style={local.breakdownValueNegative}>-{formatINR(r.penalty)}</Text>
-                    </View>
+
+                    {r.penalty > 0 && (
+                      <View style={local.breakdownRow}>
+                        <Text style={local.breakdownLabel}>Early Penalty</Text>
+                        <Text style={local.breakdownValueNegative}>
+                          -{formatINR(r.penalty)}
+                        </Text>
+                      </View>
+                    )}
+
+                    {r.gstAmount > 0 && (
+                      <View style={local.breakdownRow}>
+                        <Text style={local.breakdownLabel}>GST (18%)</Text>
+                        <Text style={local.breakdownValueNegative}>
+                          -{formatINR(r.gstAmount)}
+                        </Text>
+                      </View>
+                    )}
+
                     <View style={local.breakdownRowLast}>
                       <Text style={local.netLabel}>Net Pre-Close Amount</Text>
-                      <Text style={local.netValue}>{formatINR(r.netAmount)}</Text>
+                      <Text style={local.netValue}>
+                        {formatINR(r.netSettlementAmount)}
+                      </Text>
                     </View>
                   </View>
 
-                  <View style={local.actionsRow}>
-                    <TouchableOpacity
-                      style={local.rejectBtn}
-                      onPress={() => handleRejectPreClose(r.id, r.bondSeriesId)}>
-                      <Text style={local.rejectBtnText}>Reject</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={local.approveBtn}
-                      onPress={() =>
-                        handleApprovePreClose(r.id, r.bondSeriesId, r.netAmount, r.investorName)
-                      }>
-                       <Text style={local.approveBtnText}>→  Send to Super Admin</Text>
-                    </TouchableOpacity>
-                  </View>
+                  {isPending && (
+                    <View style={local.actionsRow}>
+                      <TouchableOpacity
+                        disabled={isActionLoading}
+                        style={[
+                          local.rejectBtn,
+                          isActionLoading && {opacity: 0.6},
+                        ]}
+                        onPress={() => handleRejectPreClose(r)}>
+                        <Text style={local.rejectBtnText}>Reject</Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        disabled={isActionLoading}
+                        style={[
+                          local.approveBtn,
+                          isActionLoading && {opacity: 0.6},
+                        ]}
+                        onPress={() => handleApprovePreClose(r)}>
+                        {isActionLoading ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : (
+                          <Text style={local.approveBtnText}>
+                            → Send to Super Admin
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  )}
                 </View>
               );
             })}
+          </>
+        )}
+
+        {/* ================================================================
+            TAB 3: CLOSED SETTLEMENTS
+        ================================================================ */}
+        {tab === 'closed' && (
+          <>
+            {closedRows.length === 0 && (
+              <View style={local.emptyWrap}>
+                <Text style={local.emptyText}>
+                  No closed settlements yet.
+                </Text>
+              </View>
+            )}
+
+            {closedRows.map(row => (
+              <View key={String(row.id)} style={local.card}>
+                <View style={local.cardTopRow}>
+                  <View style={local.cardTopLeft}>
+                    <Text style={local.bondId}>{row.bondNumber}</Text>
+                    {renderStatusBadge(row.status)}
+                    {row.type === 'PRECLOSE' && (
+                      <View style={local.precloseBadge}>
+                        <Text style={local.precloseBadgeText}>Pre-Close</Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+
+                <View style={local.metaGrid}>
+                  <View style={local.metaCol}>
+                    <Text style={local.metaLabel}>Investor</Text>
+                    <Text style={local.metaValue}>{row.investorName}</Text>
+                  </View>
+
+                  <View style={local.metaCol}>
+                    <Text style={local.metaLabel}>Investor ID</Text>
+                    <Text style={local.metaValue}>{row.investorId}</Text>
+                  </View>
+                </View>
+
+                <View style={local.metaGrid}>
+                  <View style={local.metaCol}>
+                    <Text style={local.metaLabel}>Branch</Text>
+                    <Text style={local.metaValue}>{row.branch}</Text>
+                  </View>
+
+                  <View style={local.metaCol}>
+                    <Text style={local.metaLabel}>Settlement Date</Text>
+                    <Text style={local.metaValue}>
+                      {formatDate(row.date)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={local.breakdown}>
+                  <View style={local.breakdownRow}>
+                    <Text style={local.breakdownLabel}>Principal</Text>
+                    <Text style={local.breakdownValue}>
+                      {formatINR(row.principal)}
+                    </Text>
+                  </View>
+
+                  <View style={local.breakdownRow}>
+                    <Text style={local.breakdownLabel}>Total Interest</Text>
+                    <Text style={local.breakdownValue}>
+                      {formatINR(row.interestEarned)}
+                    </Text>
+                  </View>
+
+                  {row.penalty > 0 && (
+                    <View style={local.breakdownRow}>
+                      <Text style={local.breakdownLabel}>Early Penalty</Text>
+                      <Text style={local.breakdownValueNegative}>
+                        -{formatINR(row.penalty)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {row.gstAmount > 0 && (
+                    <View style={local.breakdownRow}>
+                      <Text style={local.breakdownLabel}>GST (18%)</Text>
+                      <Text style={local.breakdownValueNegative}>
+                        -{formatINR(row.gstAmount)}
+                      </Text>
+                    </View>
+                  )}
+
+                  <View style={local.breakdownRowLast}>
+                    <Text style={local.netLabel}>Net Settled Amount</Text>
+                    <Text style={local.netValue}>
+                      {formatINR(row.netSettlementAmount)}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            ))}
           </>
         )}
       </ScrollView>
@@ -352,216 +745,5 @@ const handleApproveTimeout = (row: (typeof timeoutRows)[number]) => {
     </SafeAreaView>
   );
 };
-
-const local = StyleSheet.create({
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 10,
-    padding: 4,
-    marginTop: 16,
-    marginBottom: 16,
-  },
-  tabPill: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    borderRadius: 8,
-    gap: 6,
-  },
-  tabPillActive: {
-    backgroundColor: '#FFFFFF',
-  },
-  tabText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  tabTextActive: {
-    color: '#0B1E45',
-  },
-  tabBadge: {
-    backgroundColor: '#0B1E45',
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 5,
-  },
-  tabBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  emptyWrap: {
-    padding: 24,
-    alignItems: 'center',
-  },
-  emptyText: {
-    color: '#6B7280',
-    fontSize: 13,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    padding: 14,
-    marginBottom: 14,
-  },
-  cardTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  cardTopLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  bondId: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#1D4ED8',
-  },
-  pendingBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  pendingBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#B45309',
-  },
-  precloseBadge: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  precloseBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  metaGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  metaCol: {
-    flex: 1,
-  },
-  metaLabel: {
-    fontSize: 11,
-    color: '#6B7280',
-  },
-  metaValue: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 2,
-  },
-  reasonBox: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 10,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  reasonLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#DC2626',
-  },
-  reasonText: {
-    fontSize: 12,
-    color: '#374151',
-  },
-  breakdown: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 4,
-  },
-  breakdownRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 6,
-  },
-  breakdownRowLast: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingTop: 10,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-  },
-  breakdownLabel: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  breakdownValue: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  breakdownValueNegative: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
-  netLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  netValue: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#16A34A',
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-  },
-  approveBtn: {
-    backgroundColor: '#16A34A',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 8,
-    alignItems: 'center',
-    flex: 1,
-  },
-  approveBtnText: {
-    color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  rejectBtn: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-    borderRadius: 8,
-    alignItems: 'center',
-    flex: 1,
-  },
-  rejectBtnText: {
-    color: '#DC2626',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-});
 
 export default SettlementCalculatorScreen;

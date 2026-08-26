@@ -1,448 +1,766 @@
-import React, {useState} from 'react';
-import {View, Text, ScrollView, TouchableOpacity, TextInput, Modal, Alert, StyleSheet} from 'react-native';
-import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
-import {useAppData, SAAdmin} from '../../navigation/AppNavigator';
-import AppHeader from '../../components/AppHeader';
+import React, {useCallback, useEffect, useState} from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 
+import AppHeader from '../../components/AppHeader';
+import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
+import {
+  getAdmins,
+  createAdmin,
+  updateAdmin,
+  suspendAdmin,
+  getAdminBranchesFilter,
+  getAdminRolesFilter,
+  getAdminStatusesFilter,
+  getErrorMessage,
+  AdminRecord,
+  AdminFilterOption,
+} from '../../services/superadmin/superAdminAdminService';
+
 const AdminManagementScreen = ({navigation}: any) => {
-  const {saAdmins, branches, addSAAdmin, updateSAAdmin, deleteSAAdmin} = useAppData();
+  const [admins, setAdmins] = useState<AdminRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
+
   const [search, setSearch] = useState('');
+  const [branches, setBranches] = useState<AdminFilterOption[]>([]);
+  const [roles, setRoles] = useState<AdminFilterOption[]>([]);
+  const [statuses, setStatuses] = useState<AdminFilterOption[]>([]);
 
   // ---- Add Admin modal ----
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [mobile, setMobile] = useState('');
-  const [branch, setBranch] = useState('');
-  const [role, setRole] = useState<SAAdmin['role']>('Admin');
-  const [addStatus, setAddStatus] = useState<'Active' | 'Inactive'>('Active');
+  const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
+  const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
+  const [password, setPassword] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
 
   // ---- View Details modal ----
   const [viewModalVisible, setViewModalVisible] = useState(false);
-  const [viewingAdmin, setViewingAdmin] = useState<SAAdmin | null>(null);
+  const [viewingAdmin, setViewingAdmin] = useState<AdminRecord | null>(null);
 
   // ---- Edit Admin modal ----
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [editingAdmin, setEditingAdmin] = useState<SAAdmin | null>(null);
+  const [editingAdmin, setEditingAdmin] = useState<AdminRecord | null>(null);
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editMobile, setEditMobile] = useState('');
-  const [editBranch, setEditBranch] = useState('');
-  const [editRole, setEditRole] = useState<SAAdmin['role']>('Admin');
-  const [editStatus, setEditStatus] = useState<'Active' | 'Inactive'>('Active');
+  const [editBranchId, setEditBranchId] = useState<number | null>(null);
+  const [editRoleId, setEditRoleId] = useState<number | null>(null);
+  const [editStatusId, setEditStatusId] = useState<number>(2); // 2 = Active
+  const [isUpdating, setIsUpdating] = useState(false);
 
-  // ---- Delete confirm modal ----
-  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
-  const [deletingAdmin, setDeletingAdmin] = useState<SAAdmin | null>(null);
+  // ---- Suspend Confirm Modal ----
+  const [suspendModalVisible, setSuspendModalVisible] = useState(false);
+  const [suspendingAdmin, setSuspendingAdmin] = useState<AdminRecord | null>(null);
+  const [isSuspending, setIsSuspending] = useState(false);
 
-  const filtered = saAdmins.filter(
+  /* ==========================================================
+     LOAD DATA
+     ========================================================== */
+
+  const loadData = useCallback(async (showLoader = true) => {
+    try {
+      if (showLoader) setLoading(true);
+      else setRefreshing(true);
+      setError('');
+
+      const [adminRes, bRes, rRes, sRes] = await Promise.all([
+        getAdmins({limit: 100, offset: 0, search: search.trim() || undefined}),
+        getAdminBranchesFilter(),
+        getAdminRolesFilter(),
+        getAdminStatusesFilter(),
+      ]);
+
+      setAdmins(adminRes.records || []);
+      setBranches(bRes || []);
+      setRoles(rRes || []);
+      setStatuses(sRes || []);
+    } catch (err: any) {
+      console.log('Error loading admins:', err);
+      setError(getErrorMessage(err) || 'Failed to load admins.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [search]);
+
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
+
+  const filtered = admins.filter(
     a =>
       a.name.toLowerCase().includes(search.toLowerCase()) ||
       a.email.toLowerCase().includes(search.toLowerCase()) ||
-      a.branch.toLowerCase().includes(search.toLowerCase()),
+      a.branchName.toLowerCase().includes(search.toLowerCase()) ||
+      a.mobile.includes(search),
   );
 
-  // FIX: mobile number is now required, same as name/email/branch. Before,
-  // it was optional and silently fell back to '—' if left blank, so the
-  // value shown everywhere downstream (card list, View Details, Edit modal)
-  // wasn't guaranteed to be the number the person actually entered here.
-  const handleAdd = () => {
-    if (!name.trim() || !email.trim() || !mobile.trim() || !branch.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email, mobile number and branch.');
+  /* ==========================================================
+     HANDLERS
+     ========================================================== */
+
+  const handleAdd = async () => {
+    if (!name.trim() || !email.trim() || !mobile.trim() || !password.trim()) {
+      Alert.alert('Missing details', 'Please fill in name, email, mobile and password.');
       return;
     }
-    addSAAdmin({name: name.trim(), email: email.trim(), mobile: mobile.trim(), branch: branch.trim(), role});
-    setName('');
-    setEmail('');
-    setMobile('');
-    setBranch('');
-    setRole('Admin');
-    setAddStatus('Active');
-    setAddModalVisible(false);
+    if (!selectedBranchId) {
+      Alert.alert('Validation Error', 'Please select a branch.');
+      return;
+    }
+
+    try {
+      setIsCreating(true);
+      await createAdmin({
+        full_name: name.trim(),
+        email: email.trim(),
+        mobile: mobile.trim(),
+        branch_id: selectedBranchId,
+        role_id: selectedRoleId || 2,
+        status_id: 2,
+        password: password.trim(),
+      });
+
+      setName('');
+      setEmail('');
+      setMobile('');
+      setPassword('');
+      setSelectedBranchId(null);
+      setSelectedRoleId(null);
+      setAddModalVisible(false);
+      await loadData(false);
+      Alert.alert('Success', 'Admin created successfully.');
+    } catch (err: any) {
+      Alert.alert('Creation Failed', getErrorMessage(err));
+    } finally {
+      setIsCreating(false);
+    }
   };
 
-  const openView = (admin: SAAdmin) => {
+  const openView = (admin: AdminRecord) => {
     setViewingAdmin(admin);
     setViewModalVisible(true);
   };
 
-  const openEdit = (admin: SAAdmin) => {
+  const openEdit = (admin: AdminRecord) => {
     setEditingAdmin(admin);
     setEditName(admin.name);
     setEditEmail(admin.email);
     setEditMobile(admin.mobile === '—' ? '' : admin.mobile);
-    setEditBranch(admin.branch);
-    setEditRole(admin.role);
-    setEditStatus(admin.status);
+    setEditBranchId(admin.branchId || (branches[0]?.id ?? 1));
+    setEditRoleId(admin.roleId || (roles[0]?.id ?? 2));
+    setEditStatusId(admin.statusId || (admin.status.toLowerCase() === 'active' ? 2 : 3));
     setEditModalVisible(true);
   };
 
-  // FIX: mobile is now required on Edit too, so a previously blank/'—'
-  // record can't be re-saved without a real number, and can't be cleared
-  // back out to '—' either.
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!editingAdmin) return;
-    if (!editName.trim() || !editEmail.trim() || !editMobile.trim() || !editBranch.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email, mobile number and branch.');
+    if (!editName.trim() || !editEmail.trim() || !editMobile.trim()) {
+      Alert.alert('Missing details', 'Please fill in name, email, and mobile number.');
       return;
     }
 
-    updateSAAdmin(editingAdmin.id, {
-      name: editName.trim(),
-      email: editEmail.trim(),
-      mobile: editMobile.trim(),
-      branch: editBranch.trim(),
-      role: editRole,
-      status: editStatus,
-    });
+    try {
+      setIsUpdating(true);
+      await updateAdmin(editingAdmin.id, {
+        full_name: editName.trim(),
+        email: editEmail.trim(),
+        mobile: editMobile.trim(),
+        branch_id: editBranchId || 1,
+        role_id: editRoleId || 2,
+        status_id: editStatusId,
+      });
 
-    setEditModalVisible(false);
-    setEditingAdmin(null);
-    Alert.alert('Saved', 'Admin details updated.');
+      setEditModalVisible(false);
+      setEditingAdmin(null);
+      await loadData(false);
+      Alert.alert('Success', 'Admin details updated.');
+    } catch (err: any) {
+      Alert.alert('Update Failed', getErrorMessage(err));
+    } finally {
+      setIsUpdating(false);
+    }
   };
 
-  const openDelete = (admin: SAAdmin) => {
-    setDeletingAdmin(admin);
-    setDeleteModalVisible(true);
+  const openSuspend = (admin: AdminRecord) => {
+    setSuspendingAdmin(admin);
+    setSuspendModalVisible(true);
   };
 
-  const handleConfirmDelete = () => {
-    if (!deletingAdmin) return;
-    deleteSAAdmin(deletingAdmin.id);
-    setDeleteModalVisible(false);
-    setDeletingAdmin(null);
+  const handleConfirmSuspend = async () => {
+    if (!suspendingAdmin) return;
+    try {
+      setIsSuspending(true);
+      await suspendAdmin(suspendingAdmin.id);
+      setSuspendModalVisible(false);
+      setSuspendingAdmin(null);
+      await loadData(false);
+      Alert.alert('Success', `Admin ${suspendingAdmin.name} suspended.`);
+    } catch (err: any) {
+      Alert.alert('Action Failed', getErrorMessage(err));
+    } finally {
+      setIsSuspending(false);
+    }
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader subtitle="Admin Management" />
+
+      {/* HEADER TITLE & SUMMARY */}
+      <View style={styles.headerSection}>
+        <Text style={styles.headerTitle}>Admin Management</Text>
+        <Text style={styles.headerSubtitle}>
+          Administrators & branch managers — {filtered.length} {filtered.length === 1 ? 'record' : 'records'}
+        </Text>
+      </View>
+
+      {/* TOP SEARCH & ACTION TOOLBAR */}
       <View style={styles.topBar}>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search admins..."
-          placeholderTextColor="#9CA3AF"
-          value={search}
-          onChangeText={setSearch}
-        />
-        <TouchableOpacity style={styles.addBtn} onPress={() => setAddModalVisible(true)}>
-          <Text style={styles.addBtnText}>+ Add Admin</Text>
+        <View style={styles.searchContainer}>
+          <Text style={styles.searchIcon}>🔍</Text>
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name, email, branch..."
+            placeholderTextColor="#94A3B8"
+            value={search}
+            onChangeText={setSearch}
+          />
+          {search.length > 0 && (
+            <TouchableOpacity
+              style={styles.clearSearchBtn}
+              onPress={() => setSearch('')}
+              hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+              <Text style={styles.clearSearchText}>✕</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <TouchableOpacity
+          style={styles.addBtn}
+          activeOpacity={0.8}
+          onPress={() => setAddModalVisible(true)}>
+          <Text style={styles.addBtnText}>+ Add</Text>
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
-        {filtered.map(admin => (
-          <View
-            key={admin.id}
-            style={[
-              styles.card,
-              {borderLeftColor: admin.status === 'Active' ? '#075370' : '#DC2626'},
-            ]}>
-            <View style={styles.cardTopRow}>
-              <Text style={styles.name}>{admin.name}</Text>
-              <View style={[styles.statusPill, admin.status === 'Inactive' && styles.statusPillInactive]}>
-                <Text style={[styles.statusPillText, admin.status === 'Inactive' && styles.statusPillTextInactive]}>
-                  {admin.status}
-                </Text>
-              </View>
-            </View>
+      {/* ERROR BANNER */}
+      {error ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryBtn} onPress={() => loadData(true)}>
+            <Text style={styles.retryBtnText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
-            <View style={styles.cardGrid}>
-              <View style={styles.cardCol}>
-                <Text style={styles.cardLabel}>EMAIL</Text>
-                <Text style={styles.cardValueSm}>{admin.email}</Text>
-              </View>
-              <View style={styles.cardCol}>
-                <Text style={styles.cardLabel}>MOBILE</Text>
-                <Text style={styles.cardValueSm}>{admin.mobile}</Text>
-              </View>
-            </View>
-
-            <View style={styles.cardGrid}>
-              <View style={styles.cardCol}>
-                <Text style={styles.cardLabel}>BRANCH</Text>
-                <Text style={styles.cardValueSm}>{admin.branch}</Text>
-              </View>
-              <View style={styles.cardCol}>
-                <Text style={styles.cardLabel}>ROLE</Text>
-                <Text style={styles.cardValueSm}>{admin.role}</Text>
-              </View>
-            </View>
-
-            <View style={styles.actionsRow}>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => openView(admin)}>
-                <Text style={styles.iconText}>👁️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.iconBtn} onPress={() => openEdit(admin)}>
-                <Text style={styles.iconText}>✏️</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.iconBtn, styles.iconBtnDelete]} onPress={() => openDelete(admin)}>
-                <Text style={styles.iconText}>🗑️</Text>
-              </TouchableOpacity>
-            </View>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadData(false)}
+            colors={['#0B1E45', '#2563EB']}
+          />
+        }>
+        {loading ? (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator size="large" color="#0B1E45" />
+            <Text style={styles.loadingText}>Loading administrators...</Text>
           </View>
-        ))}
-        {filtered.length === 0 ? <Text style={styles.emptyText}>No admins match your search.</Text> : null}
-      </ScrollView>
+        ) : filtered.length === 0 ? (
+          <View style={styles.emptyWrap}>
+            <View style={styles.emptyIconWrap}>
+              <Text style={styles.emptyIcon}>👤</Text>
+            </View>
+            <Text style={styles.emptyTitle}>No administrators found</Text>
+            <Text style={styles.emptyText}>
+              {search
+                ? 'No admin records match your search criteria.'
+                : 'No administrators registered in the system.'}
+            </Text>
+            {search ? (
+              <TouchableOpacity
+                style={styles.clearFilterBtn}
+                onPress={() => setSearch('')}>
+                <Text style={styles.clearFilterBtnText}>Clear Search</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        ) : (
+          filtered.map(admin => {
+            const isActive = admin.status.toLowerCase() === 'active';
+            const initial =
+              admin.name && admin.name !== '—'
+                ? admin.name.trim().charAt(0).toUpperCase()
+                : 'A';
 
-      {/* ---- View Details modal ---- */}
-      {/* Restyled to match InvestorManagementScreen's details popup: a
-          2-column label/value grid (uppercase, letter-spaced label on top,
-          bold value below) instead of the old single-column detailRow list. */}
-      <Modal visible={viewModalVisible} transparent animationType="fade" onRequestClose={() => setViewModalVisible(false)}>
-        <TouchableOpacity style={modalStyles.overlay} activeOpacity={1} onPress={() => setViewModalVisible(false)}>
-          <TouchableOpacity activeOpacity={1} style={modalStyles.card} onPress={() => {}}>
-            {viewingAdmin ? (
-              <>
-                <View style={modalStyles.headerRow}>
-                  <Text style={modalStyles.headerTitle}>{viewingAdmin.name}</Text>
-                  <TouchableOpacity onPress={() => setViewModalVisible(false)} hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-                    <Text style={modalStyles.closeIcon}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={modalStyles.grid}>
-                  <View style={modalStyles.col}>
-                    <Text style={modalStyles.label}>EMAIL</Text>
-                    <Text style={modalStyles.value}>{viewingAdmin.email}</Text>
+            return (
+              <View
+                key={String(admin.id)}
+                style={[
+                  styles.card,
+                  {borderLeftColor: isActive ? '#059669' : '#DC2626'},
+                ]}>
+                {/* CARD HEADER: AVATAR INITIAL + NAME / EMAIL + STATUS BADGE */}
+                <View style={styles.cardHeader}>
+                  <View style={styles.avatarWrap}>
+                    <Text style={styles.avatarText}>{initial}</Text>
                   </View>
-                  <View style={modalStyles.col}>
-                    <Text style={modalStyles.label}>MOBILE</Text>
-                    <Text style={modalStyles.value}>{viewingAdmin.mobile}</Text>
+                  <View style={styles.headerInfo}>
+                    <Text style={styles.adminName} numberOfLines={1}>
+                      {admin.name}
+                    </Text>
+                    <Text style={styles.adminEmail} numberOfLines={1}>
+                      {admin.email}
+                    </Text>
                   </View>
-                </View>
-
-                <View style={modalStyles.grid}>
-                  <View style={modalStyles.col}>
-                    <Text style={modalStyles.label}>BRANCH</Text>
-                    <Text style={modalStyles.value}>{viewingAdmin.branch}</Text>
-                  </View>
-                  <View style={modalStyles.col}>
-                    <Text style={modalStyles.label}>ROLE</Text>
-                    <Text style={modalStyles.value}>{viewingAdmin.role}</Text>
-                  </View>
-                </View>
-
-                <View style={modalStyles.grid}>
-                  <View style={modalStyles.col}>
-                    <Text style={modalStyles.label}>STATUS</Text>
+                  <View
+                    style={[
+                      styles.statusBadge,
+                      isActive
+                        ? styles.statusBadgeActive
+                        : styles.statusBadgeInactive,
+                    ]}>
                     <View
                       style={[
-                        modalStyles.pill,
-                        viewingAdmin.status === 'Active' ? modalStyles.pillActive : modalStyles.pillInactive,
-                        modalStyles.pillSpacing,
+                        styles.statusDot,
+                        {backgroundColor: isActive ? '#059669' : '#DC2626'},
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.statusBadgeText,
+                        isActive
+                          ? styles.statusTextActive
+                          : styles.statusTextInactive,
                       ]}>
-                      <Text
-                        style={[
-                          modalStyles.pillText,
-                          viewingAdmin.status === 'Active' ? modalStyles.pillTextActive : modalStyles.pillTextInactive,
-                        ]}>
-                        {viewingAdmin.status}
+                      {admin.status}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardDivider} />
+
+                {/* INFO GRID: BRANCH & ROLE */}
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>BRANCH</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {admin.branchName}
+                    </Text>
+                  </View>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>ROLE</Text>
+                    <View style={styles.roleTag}>
+                      <Text style={styles.roleTagText} numberOfLines={1}>
+                        {admin.role}
                       </Text>
                     </View>
                   </View>
                 </View>
 
-                <TouchableOpacity style={styles.closeBtn} onPress={() => setViewModalVisible(false)}>
-                  <Text style={styles.closeBtnText}>Close</Text>
+                {/* INFO GRID: MOBILE */}
+                <View style={styles.infoGrid}>
+                  <View style={styles.infoItem}>
+                    <Text style={styles.infoLabel}>MOBILE</Text>
+                    <Text style={styles.infoValue} numberOfLines={1}>
+                      {admin.mobile}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.cardDivider} />
+
+                {/* ACTION BUTTONS */}
+                <View style={styles.cardActions}>
+                  <TouchableOpacity
+                    style={styles.actionBtnView}
+                    activeOpacity={0.7}
+                    onPress={() => openView(admin)}>
+                    <Text style={styles.actionBtnViewText}>👁️ View</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.actionBtnEdit}
+                    activeOpacity={0.7}
+                    onPress={() => openEdit(admin)}>
+                    <Text style={styles.actionBtnEditText}>✏️ Edit</Text>
+                  </TouchableOpacity>
+
+                  {isActive && (
+                    <TouchableOpacity
+                      style={styles.actionBtnSuspend}
+                      activeOpacity={0.7}
+                      onPress={() => openSuspend(admin)}>
+                      <Text style={styles.actionBtnSuspendText}>⛔ Suspend</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            );
+          })
+        )}
+      </ScrollView>
+
+      {/* ======================================================
+          VIEW ADMIN DETAILS MODAL
+          ====================================================== */}
+      <Modal
+        visible={viewModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setViewModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            {viewingAdmin && (
+              <>
+                <View style={styles.modalHeaderRow}>
+                  <Text style={styles.modalTitle}>Admin Details</Text>
+                  <TouchableOpacity
+                    onPress={() => setViewModalVisible(false)}
+                    hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                    <Text style={styles.modalClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={{maxHeight: 380}}>
+                  <View style={styles.detailField}>
+                    <Text style={styles.detailLabel}>FULL NAME</Text>
+                    <Text style={styles.detailVal}>{viewingAdmin.name}</Text>
+                  </View>
+                  <View style={styles.detailField}>
+                    <Text style={styles.detailLabel}>EMAIL</Text>
+                    <Text style={styles.detailVal}>{viewingAdmin.email}</Text>
+                  </View>
+                  <View style={styles.detailField}>
+                    <Text style={styles.detailLabel}>MOBILE</Text>
+                    <Text style={styles.detailVal}>{viewingAdmin.mobile}</Text>
+                  </View>
+                  <View style={styles.detailField}>
+                    <Text style={styles.detailLabel}>BRANCH</Text>
+                    <Text style={styles.detailVal}>{viewingAdmin.branchName}</Text>
+                  </View>
+                  <View style={styles.detailField}>
+                    <Text style={styles.detailLabel}>ROLE</Text>
+                    <Text style={styles.detailVal}>{viewingAdmin.role}</Text>
+                  </View>
+                  <View style={styles.detailField}>
+                    <Text style={styles.detailLabel}>STATUS</Text>
+                    <Text
+                      style={[
+                        styles.detailVal,
+                        {
+                          color:
+                            viewingAdmin.status.toLowerCase() === 'active'
+                              ? '#059669'
+                              : '#DC2626',
+                          fontWeight: '700',
+                        },
+                      ]}>
+                      {viewingAdmin.status}
+                    </Text>
+                  </View>
+                </ScrollView>
+
+                <TouchableOpacity
+                  style={styles.doneBtn}
+                  activeOpacity={0.8}
+                  onPress={() => setViewModalVisible(false)}>
+                  <Text style={styles.doneBtnText}>Close</Text>
                 </TouchableOpacity>
               </>
-            ) : null}
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* ---- Edit Admin modal ---- */}
-      <Modal visible={editModalVisible} transparent animationType="fade" onRequestClose={() => setEditModalVisible(false)}>
-        <View style={styles.centeredOverlay}>
-          <View style={styles.centeredCard}>
-            <View style={styles.centeredHeaderRow}>
-              <Text style={styles.modalTitle}>Edit Admin</Text>
-              <TouchableOpacity onPress={() => setEditModalVisible(false)}>
-                <Text style={styles.closeX}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.editScroll}>
-              <Text style={styles.modalLabel}>Name</Text>
-              <TextInput style={styles.modalInput} value={editName} onChangeText={setEditName} />
-
-              <Text style={styles.modalLabel}>Email</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={editEmail}
-                onChangeText={setEditEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-
-              <Text style={styles.modalLabel}>Mobile</Text>
-              <TextInput
-                style={styles.modalInput}
-                value={editMobile}
-                onChangeText={setEditMobile}
-                keyboardType="phone-pad"
-                placeholder="+91 98765 43210"
-              />
-
-              <Text style={styles.modalLabel}>Branch</Text>
-              <View style={styles.branchChipsRow}>
-                {branches.map(b => (
-                  <TouchableOpacity
-                    key={b.id}
-                    style={[styles.branchChip, editBranch === b.name && styles.branchChipActive]}
-                    onPress={() => setEditBranch(b.name)}>
-                    <Text style={[styles.branchChipText, editBranch === b.name && styles.branchChipTextActive]}>
-                      {b.name}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.modalLabel}>Role</Text>
-              <View style={styles.roleToggleRow}>
-                {(['Admin', 'Branch Manager'] as SAAdmin['role'][]).map(r => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[styles.roleToggle, editRole === r && styles.roleToggleActive]}
-                    onPress={() => setEditRole(r)}>
-                    <Text style={[styles.roleToggleText, editRole === r && styles.roleToggleTextActive]}>{r}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.modalLabel}>Status</Text>
-              <View style={styles.roleToggleRow}>
-                {(['Active', 'Inactive'] as const).map(s => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[styles.roleToggle, editStatus === s && styles.roleToggleActive]}
-                    onPress={() => setEditStatus(s)}>
-                    <Text style={[styles.roleToggleText, editStatus === s && styles.roleToggleTextActive]}>{s}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setEditModalVisible(false)}>
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSaveEdit}>
-                <Text style={styles.modalSaveBtnText}>Save Changes</Text>
-              </TouchableOpacity>
-            </View>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* ---- Delete confirm modal ---- */}
-      <Modal visible={deleteModalVisible} transparent animationType="fade" onRequestClose={() => setDeleteModalVisible(false)}>
-        <View style={styles.centeredOverlay}>
-          <View style={styles.centeredCard}>
-            <View style={styles.centeredHeaderRow}>
-              <Text style={styles.modalTitle}>Remove Admin</Text>
-              <TouchableOpacity onPress={() => setDeleteModalVisible(false)}>
-                <Text style={styles.closeX}>✕</Text>
+      {/* ======================================================
+          ADD ADMIN MODAL
+          ====================================================== */}
+      <Modal
+        visible={addModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setAddModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Create New Admin</Text>
+              <TouchableOpacity
+                onPress={() => setAddModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Text style={styles.modalClose}>✕</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.deleteMessage}>
-              Are you sure you want to remove <Text style={styles.deleteMessageBold}>{deletingAdmin?.name}</Text>?
-              This can't be undone.
-            </Text>
-
-            <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setDeleteModalVisible(false)}>
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalRemoveBtn} onPress={handleConfirmDelete}>
-                <Text style={styles.modalRemoveBtnText}>Remove</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ---- Add Admin modal ---- */}
-      <Modal visible={addModalVisible} transparent animationType="fade" onRequestClose={() => setAddModalVisible(false)}>
-        <View style={styles.centeredOverlay}>
-          <View style={styles.centeredCard}>
-            <View style={styles.centeredHeaderRow}>
-              <Text style={styles.modalTitle}>Add Admin</Text>
-              <TouchableOpacity onPress={() => setAddModalVisible(false)}>
-                <Text style={styles.closeX}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.editScroll}>
-              <Text style={styles.modalLabel}>Name</Text>
-              <TextInput style={styles.modalInput} placeholder="Full name" value={name} onChangeText={setName} />
-
-              <Text style={styles.modalLabel}>Email</Text>
+            <ScrollView style={{maxHeight: 380}} showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Full Name *</Text>
               <TextInput
-                style={styles.modalInput}
-                placeholder="name@inrfs.in"
-                autoCapitalize="none"
+                style={styles.textInput}
+                placeholder="e.g. Rahul Sharma"
+                placeholderTextColor="#94A3B8"
+                value={name}
+                onChangeText={setName}
+              />
+
+              <Text style={styles.inputLabel}>Email Address *</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="e.g. rahul@inrfs.com"
+                placeholderTextColor="#94A3B8"
                 keyboardType="email-address"
+                autoCapitalize="none"
                 value={email}
                 onChangeText={setEmail}
               />
 
-              <Text style={styles.modalLabel}>Mobile</Text>
+              <Text style={styles.inputLabel}>Mobile Number *</Text>
               <TextInput
-                style={styles.modalInput}
-                placeholder="+91 98765 43210"
+                style={styles.textInput}
+                placeholder="e.g. 9876543210"
+                placeholderTextColor="#94A3B8"
                 keyboardType="phone-pad"
                 value={mobile}
                 onChangeText={setMobile}
               />
 
-              <Text style={styles.modalLabel}>Branch</Text>
-              <View style={styles.branchChipsRow}>
+              <Text style={styles.inputLabel}>Password *</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Minimum 8 characters"
+                placeholderTextColor="#94A3B8"
+                secureTextEntry
+                value={password}
+                onChangeText={setPassword}
+              />
+
+              <Text style={styles.inputLabel}>Assign Branch *</Text>
+              <View style={styles.pillRow}>
                 {branches.map(b => (
                   <TouchableOpacity
-                    key={b.id}
-                    style={[styles.branchChip, branch === b.name && styles.branchChipActive]}
-                    onPress={() => setBranch(b.name)}>
-                    <Text style={[styles.branchChipText, branch === b.name && styles.branchChipTextActive]}>
+                    key={String(b.id)}
+                    style={[
+                      styles.selectPill,
+                      selectedBranchId === b.id && styles.selectPillActive,
+                    ]}
+                    onPress={() => setSelectedBranchId(b.id)}>
+                    <Text
+                      style={[
+                        styles.selectPillText,
+                        selectedBranchId === b.id && styles.selectPillTextActive,
+                      ]}>
                       {b.name}
                     </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.modalLabel}>Role</Text>
-              <View style={styles.roleToggleRow}>
-                {(['Admin', 'Branch Manager'] as SAAdmin['role'][]).map(r => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[styles.roleToggle, role === r && styles.roleToggleActive]}
-                    onPress={() => setRole(r)}>
-                    <Text style={[styles.roleToggleText, role === r && styles.roleToggleTextActive]}>{r}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.modalLabel}>Status</Text>
-              <View style={styles.roleToggleRow}>
-                {(['Active', 'Inactive'] as const).map(s => (
-                  <TouchableOpacity
-                    key={s}
-                    style={[styles.roleToggle, addStatus === s && styles.roleToggleActive]}
-                    onPress={() => setAddStatus(s)}>
-                    <Text style={[styles.roleToggleText, addStatus === s && styles.roleToggleTextActive]}>{s}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </ScrollView>
 
             <View style={styles.modalBtnRow}>
-              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setAddModalVisible(false)}>
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setAddModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleAdd}>
-                <Text style={styles.modalSaveBtnText}>Add Admin</Text>
+              <TouchableOpacity
+                style={[styles.submitBtn, isCreating && {opacity: 0.6}]}
+                disabled={isCreating}
+                activeOpacity={0.8}
+                onPress={handleAdd}>
+                {isCreating ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.submitBtnText}>Create Admin</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================
+          EDIT ADMIN MODAL
+          ====================================================== */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={styles.modalTitle}>Edit Admin</Text>
+              <TouchableOpacity
+                onPress={() => setEditModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={{maxHeight: 380}} showsVerticalScrollIndicator={false}>
+              <Text style={styles.inputLabel}>Full Name *</Text>
+              <TextInput
+                style={styles.textInput}
+                value={editName}
+                onChangeText={setEditName}
+              />
+
+              <Text style={styles.inputLabel}>Email Address *</Text>
+              <TextInput
+                style={styles.textInput}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                value={editEmail}
+                onChangeText={setEditEmail}
+              />
+
+              <Text style={styles.inputLabel}>Mobile Number *</Text>
+              <TextInput
+                style={styles.textInput}
+                keyboardType="phone-pad"
+                value={editMobile}
+                onChangeText={setEditMobile}
+              />
+
+              <Text style={styles.inputLabel}>Branch *</Text>
+              <View style={styles.pillRow}>
+                {branches.map(b => (
+                  <TouchableOpacity
+                    key={String(b.id)}
+                    style={[
+                      styles.selectPill,
+                      editBranchId === b.id && styles.selectPillActive,
+                    ]}
+                    onPress={() => setEditBranchId(b.id)}>
+                    <Text
+                      style={[
+                        styles.selectPillText,
+                        editBranchId === b.id && styles.selectPillTextActive,
+                      ]}>
+                      {b.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.inputLabel}>Status</Text>
+              <View style={styles.statusToggleRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.statusToggleBtn,
+                    editStatusId === 2 && styles.statusToggleBtnActiveGreen,
+                  ]}
+                  onPress={() => setEditStatusId(2)}>
+                  <Text
+                    style={[
+                      styles.statusToggleText,
+                      editStatusId === 2 && styles.statusToggleTextActiveGreen,
+                    ]}>
+                    ✓ Active
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.statusToggleBtn,
+                    editStatusId === 3 && styles.statusToggleBtnActiveRed,
+                  ]}
+                  onPress={() => setEditStatusId(3)}>
+                  <Text
+                    style={[
+                      styles.statusToggleText,
+                      editStatusId === 3 && styles.statusToggleTextActiveRed,
+                    ]}>
+                    ✕ Inactive
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={() => setEditModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.submitBtn, isUpdating && {opacity: 0.6}]}
+                disabled={isUpdating}
+                activeOpacity={0.8}
+                onPress={handleSaveEdit}>
+                {isUpdating ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.submitBtnText}>Save Changes</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================
+          SUSPEND CONFIRM MODAL
+          ====================================================== */}
+      <Modal
+        visible={suspendModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSuspendModalVisible(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeaderRow}>
+              <Text style={[styles.modalTitle, {color: '#DC2626'}]}>
+                Suspend Admin
+              </Text>
+              <TouchableOpacity
+                onPress={() => setSuspendModalVisible(false)}
+                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
+                <Text style={styles.modalClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.confirmText}>
+              Are you sure you want to suspend administrator{' '}
+              <Text style={{fontWeight: '800', color: '#0F172A'}}>
+                {suspendingAdmin?.name}
+              </Text>
+              ? They will no longer be able to log in to the admin portal.
+            </Text>
+
+            <View style={styles.modalBtnRow}>
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                disabled={isSuspending}
+                onPress={() => setSuspendModalVisible(false)}>
+                <Text style={styles.cancelBtnText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.dangerBtn, isSuspending && {opacity: 0.6}]}
+                disabled={isSuspending}
+                activeOpacity={0.8}
+                onPress={handleConfirmSuspend}>
+                {isSuspending ? (
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                ) : (
+                  <Text style={styles.dangerBtnText}>Suspend</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -451,81 +769,5 @@ const AdminManagementScreen = ({navigation}: any) => {
     </SafeAreaView>
   );
 };
-
-// Same label/value grid pattern as InvestorManagementScreen's details
-// popup, so both "View Details" modals across Admin Management and
-// Investor Management look and align the same way.
-const modalStyles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-  },
-  card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
-  },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  closeIcon: {
-    fontSize: 18,
-    color: '#6B7280',
-  },
-  grid: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  col: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#9CA3AF',
-    marginBottom: 4,
-    letterSpacing: 0.5,
-  },
-  value: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  pillSpacing: {
-    alignSelf: 'flex-start',
-    marginTop: 2,
-  },
-  pill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  pillActive: {
-    backgroundColor: '#DCFCE7',
-  },
-  pillInactive: {
-    backgroundColor: '#FEE2E2',
-  },
-  pillText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  pillTextActive: {
-    color: '#16A34A',
-  },
-  pillTextInactive: {
-    color: '#DC2626',
-  },
-});
 
 export default AdminManagementScreen;

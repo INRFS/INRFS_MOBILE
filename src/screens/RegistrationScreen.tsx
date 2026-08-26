@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useMemo, useState} from 'react';
 import {
   View,
   Text,
@@ -7,8 +7,10 @@ import {
   Image,
   ScrollView,
   Modal,
+  StyleSheet,
 } from 'react-native';
 import {launchImageLibrary} from 'react-native-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {useAppData} from '../navigation/AppNavigator';
 import {styles} from '../styles/RegistrartionScreen.styles';
@@ -16,11 +18,43 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 
 const steps = ['Personal info', 'Review & submit'];
 
-// Matches the states currently offered on the web portal.
-const STATE_OPTIONS = ['Telangana', 'Andhra Pradesh', 'Chennai'];
+// -----------------------------------------------------------------------
+// Backend config
+// -----------------------------------------------------------------------
+const API_BASE_URL = 'http://187.52.115.32:8000';
 
-// Matches the branches currently offered on the web portal.
-const BRANCH_OPTIONS = ['Vijayawada', 'Hyderabad', 'Bengaluru', 'Chennai'];
+// Keys used by LoginScreen.tsx to persist the access_token returned by
+// POST /auth/admin/login and POST /auth/superadmin/login. Registration
+// for these two roles is a protected endpoint and needs this token sent
+// as `Authorization: Bearer <token>`.
+const ADMIN_TOKEN_KEY = 'ADMIN_ACCESS_TOKEN';
+const SUPERADMIN_TOKEN_KEY = 'SUPERADMIN_ACCESS_TOKEN';
+
+type Role = 'investor' | 'admin' | 'superadmin';
+
+const ROLE_OPTIONS: {key: Role; label: string}[] = [
+  {key: 'investor', label: 'Investor'},
+  {key: 'admin', label: 'Admin'},
+  {key: 'superadmin', label: 'Super Admin'},
+];
+
+// Source of truth: GET /masters/states
+const STATE_OPTIONS: {id: number; name: string}[] = [
+  {id: 1, name: 'Andhra Pradesh'},
+  {id: 2, name: 'Telangana'},
+  {id: 3, name: 'Tamil Nadu'},
+  {id: 4, name: 'Karnataka'},
+  {id: 5, name: 'Kerala'},
+];
+
+// Source of truth: GET /masters/branches
+const BRANCH_OPTIONS: {id: number; name: string; stateId: number}[] = [
+  {id: 1, name: 'Vijayawada Branch', stateId: 1},
+  {id: 2, name: 'Hyderabad Branch', stateId: 2},
+  {id: 3, name: 'Chennai Branch', stateId: 3},
+  {id: 4, name: 'Bangalore Branch', stateId: 4},
+  // Note: backend currently returns no branch for Kerala (state_id 5).
+];
 
 // Soft blurred blob with layered ring outlines, top-right corner —
 // plain Views only, no native SVG dependency required.
@@ -38,38 +72,129 @@ const BottomDecor = () => (
   </View>
 );
 
+// Local styles for the small number of new elements (role selector,
+// username field spacing, error banner). Kept separate from the existing
+// styles file so the original design system is untouched.
+const local = StyleSheet.create({
+  roleRow: {
+    flexDirection: 'row',
+    marginBottom: 16,
+  },
+  roleBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    marginRight: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+  },
+  roleBtnLast: {
+    marginRight: 0,
+  },
+  roleBtnActive: {
+    borderColor: '#3B5BFF',
+    backgroundColor: '#EEF1FF',
+  },
+  roleBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  roleBtnTextActive: {
+    color: '#3B5BFF',
+  },
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FCA5A5',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 12,
+  },
+  errorText: {
+    color: '#B91C1C',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+});
+
+const emptyForm = {
+  fullName: '',
+  mobile: '',
+  email: '',
+  password: '',
+  username: '',
+  dob: '',
+  aadhaar: '',
+  address: '',
+  city: '',
+  stateId: null as number | null,
+  stateName: '',
+  pin: '',
+  branchId: null as number | null,
+  branchName: '',
+};
+
+// Converts a DD-MM-YYYY string (as used by the existing UI) into the
+// YYYY-MM-DD format required by the backend. Returns null if the input
+// doesn't match the expected shape.
+const toApiDate = (dob: string): string | null => {
+  const match = dob.trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (!match) return null;
+  const [, dd, mm, yyyy] = match;
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 const RegistrationScreen = ({navigation}: any) => {
   const {registerInvestor} = useAppData();
   const [step, setStep] = useState(1);
 
-  const [form, setForm] = useState({
-    fullName: '',
-    mobile: '',
-    email: '',
-    dob: '',
-    aadhaar: '',
-    address: '',
-    city: '',
-    state: '',
-    pin: '',
-    branch: '',
-  });
+  const [role, setRole] = useState<Role>('investor');
+
+  const [form, setForm] = useState({...emptyForm});
 
   const [stateDropdownOpen, setStateDropdownOpen] = useState(false);
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
 
   const [agreed, setAgreed] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  // Shown after Submit. No Investor ID is generated here — that only
-  // happens once a Branch Admin approves the request (see admin approval
-  // flow). Until then the request sits as "Pending". Per team decision,
-  // the ID is NOT surfaced to the investor at this step even in demo mode
-  // — it stays hidden until the real approval/notification flow delivers
-  // it, matching production behavior.
+  // Shown after Submit succeeds against the real backend. No Investor ID
+  // is generated here — that only happens once a Branch Admin approves
+  // the request (see admin approval flow). Until then the request sits
+  // as "Pending". Per team decision, the ID is NOT surfaced to the
+  // investor at this step even in demo mode — it stays hidden until the
+  // real approval/notification flow delivers it, matching production
+  // behavior.
   const [submittedModalVisible, setSubmittedModalVisible] = useState(false);
 
-  const update = (key: keyof typeof form, value: string) =>
+  const update = (key: keyof typeof form, value: any) =>
     setForm(prev => ({...prev, [key]: value}));
+
+  // Branches available for the Investor flow are filtered by the
+  // selected state. Admin / Super Admin can pick from every branch.
+  const availableBranches = useMemo(() => {
+    if (role !== 'investor' || !form.stateId) return BRANCH_OPTIONS;
+    return BRANCH_OPTIONS.filter(b => b.stateId === form.stateId);
+  }, [role, form.stateId]);
+
+  const selectRole = (next: Role) => {
+    setRole(next);
+    setErrorMessage(null);
+    // Reset role-specific fields so a leftover value from one role never
+    // gets sent to another role's endpoint.
+    setForm(prev => ({
+      ...emptyForm,
+      fullName: prev.fullName,
+      mobile: prev.mobile,
+      email: prev.email,
+      password: prev.password,
+    }));
+    setStateDropdownOpen(false);
+    setBranchDropdownOpen(false);
+  };
 
   // Opens the phone's photo/file picker so the user can upload an image
   const pickPhoto = (setter: (uri: string) => void) => {
@@ -87,27 +212,204 @@ const RegistrationScreen = ({navigation}: any) => {
     );
   };
 
-  const handleSubmit = () => {
-    if (!agreed) return;
-    // Actually persist the registration into the shared app data so it
-    // shows up correctly (name, mobile, branch, address, etc.) on the
-    // Investor Management and KYC Approval screens, instead of being
-    // dropped on the floor with a console.log. registerInvestor() still
-    // returns the real Investor ID internally (needed so admin approval /
-    // login validation works later) — it's just no longer shown here.
-    registerInvestor({
-      name: form.fullName,
+  // Pulls a human-readable message out of a FastAPI-style error body.
+  // Handles both `{"detail": "..."}` and `{"detail": [{"msg": "..."}]}`.
+  const extractErrorMessage = (status: number, data: any): string => {
+    const detail = data?.detail;
+    if (typeof detail === 'string' && detail.trim()) {
+      return detail;
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      return detail
+        .map((d: any) => (typeof d?.msg === 'string' ? d.msg : JSON.stringify(d)))
+        .join('\n');
+    }
+    switch (status) {
+      case 400:
+        return 'Some of the details you entered are invalid. Please check and try again.';
+      case 401:
+        return 'You are not authorized to perform this action.';
+      case 403:
+        return 'This action is not permitted.';
+      case 409:
+        return 'An account with these details already exists.';
+      case 422:
+        return 'Some fields failed validation. Please check your entries.';
+      case 500:
+        return 'The server ran into a problem. Please try again later.';
+      default:
+        return 'Registration failed. Please try again.';
+    }
+  };
+
+  const validateStep1 = (): string | null => {
+    if (!form.fullName.trim()) return 'Full name is required.';
+    if (!form.mobile.trim()) return 'Mobile number is required.';
+    if (!form.password.trim()) return 'Password is required.';
+
+    if (role === 'investor') {
+      if (!form.dob.trim()) return 'Date of birth is required.';
+      if (!toApiDate(form.dob)) return 'Date of birth must be in DD-MM-YYYY format.';
+      if (!form.aadhaar.trim()) return 'Aadhaar number is required.';
+      if (!form.address.trim()) return 'Address is required.';
+      if (!form.city.trim()) return 'City is required.';
+      if (!form.pin.trim()) return 'PIN code is required.';
+      if (!form.stateId) return 'Please select a state.';
+      if (!form.branchId) return 'Please select a branch.';
+    } else {
+      if (!form.username.trim()) return 'Username is required.';
+      if (!form.branchId) return 'Please select a branch.';
+    }
+    return null;
+  };
+
+  const buildPayload = () => {
+    if (role === 'investor') {
+      return {
+        full_name: form.fullName,
+        mobile: form.mobile,
+        email: form.email,
+        password: form.password,
+        date_of_birth: toApiDate(form.dob),
+        aadhaar_number: form.aadhaar,
+        address: form.address,
+        city: form.city,
+        state_id: form.stateId,
+        pincode: form.pin,
+        branch_id: form.branchId,
+      };
+    }
+    // Admin and Super Admin share the same payload shape.
+    return {
+      full_name: form.fullName,
       mobile: form.mobile,
       email: form.email,
-      dob: form.dob,
-      aadhaar: form.aadhaar,
-      address: form.address,
-      city: form.city,
-      state: form.state,
-      pincode: form.pin,
-      branch: form.branch,
-    });
-    setSubmittedModalVisible(true);
+      username: form.username,
+      password: form.password,
+      branch_id: form.branchId,
+    };
+  };
+
+  const endpointForRole = (r: Role) => {
+    if (r === 'investor') return '/auth/investor/register';
+    if (r === 'admin') return '/auth/admin/register';
+    return '/auth/superadmin/register';
+  };
+
+  // Admin and Super Admin registration are protected endpoints — the
+  // caller must already be logged in as that role. Investor registration
+  // needs no token, so this resolves to `undefined` for that role.
+  const resolveAuthToken = async (r: Role): Promise<string | null | undefined> => {
+    if (r === 'investor') return undefined;
+    const key = r === 'admin' ? ADMIN_TOKEN_KEY : SUPERADMIN_TOKEN_KEY;
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch {
+      // Treat a storage read failure the same as "no token found" —
+      // registration must not proceed without a confirmed token.
+      return null;
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!agreed || isSubmitting) return;
+
+    const validationError = validateStep1();
+    if (validationError) {
+      setErrorMessage(validationError);
+      return;
+    }
+
+    setErrorMessage(null);
+
+    // For Admin / Super Admin, fetch the stored access_token *before*
+    // entering the submitting state. If it's missing, do NOT call the
+    // registration API — show a clear error and let the user re-login.
+    const token = await resolveAuthToken(role);
+    if (role !== 'investor' && !token) {
+      setErrorMessage(
+        role === 'admin'
+          ? 'Admin authentication required. Please login again.'
+          : 'Super Admin authentication required. Please login again.',
+      );
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const endpoint = endpointForRole(role);
+      const payload = buildPayload();
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+      let data: any = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        // Surface "Not authenticated" / 401 explicitly rather than
+        // hiding it behind a generic message, per the auth requirement.
+        if (response.status === 401) {
+          setErrorMessage(
+            data?.detail ||
+              (role === 'admin'
+                ? 'Admin authentication required. Please login again.'
+                : role === 'superadmin'
+                ? 'Super Admin authentication required. Please login again.'
+                : 'You are not authorized to perform this action.'),
+          );
+        } else {
+          setErrorMessage(extractErrorMessage(response.status, data));
+        }
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Success — only now do we touch local app state / show the modal.
+      if (role === 'investor') {
+        // registerInvestor() still updates local UI state (e.g. for the
+        // Investor Management / KYC Approval screens in this demo app),
+        // but it is no longer the source of truth for registration —
+        // the backend call above is.
+        registerInvestor({
+          name: form.fullName,
+          mobile: form.mobile,
+          email: form.email,
+          dob: form.dob,
+          aadhaar: form.aadhaar,
+          address: form.address,
+          city: form.city,
+          state: form.stateName,
+          pincode: form.pin,
+          branch: form.branchName,
+        });
+      }
+
+      setIsSubmitting(false);
+      setSubmittedModalVisible(true);
+    } catch (err: any) {
+      setIsSubmitting(false);
+      setErrorMessage(
+        err?.message
+          ? `Network error: ${err.message}`
+          : 'Could not reach the server. Please check your connection and try again.',
+      );
+    }
   };
 
   const goToLogin = () => {
@@ -119,6 +421,8 @@ const RegistrationScreen = ({navigation}: any) => {
     setSubmittedModalVisible(false);
     navigation.navigate('Landing');
   };
+
+  const roleLabel = ROLE_OPTIONS.find(r => r.key === role)?.label ?? 'Investor';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -182,6 +486,30 @@ const RegistrationScreen = ({navigation}: any) => {
         {step === 1 && (
           <View style={styles.card}>
             <Text style={styles.label}>
+              Register as <Text style={styles.required}>*</Text>
+            </Text>
+            <View style={local.roleRow}>
+              {ROLE_OPTIONS.map((opt, idx) => (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[
+                    local.roleBtn,
+                    idx === ROLE_OPTIONS.length - 1 && local.roleBtnLast,
+                    role === opt.key && local.roleBtnActive,
+                  ]}
+                  onPress={() => selectRole(opt.key)}>
+                  <Text
+                    style={[
+                      local.roleBtnText,
+                      role === opt.key && local.roleBtnTextActive,
+                    ]}>
+                    {opt.label}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.label}>
               Full name <Text style={styles.required}>*</Text>
             </Text>
             <View style={styles.inputWrapper}>
@@ -224,115 +552,161 @@ const RegistrationScreen = ({navigation}: any) => {
             </View>
 
             <Text style={styles.label}>
-              Date of birth <Text style={styles.required}>*</Text>
+              Password <Text style={styles.required}>*</Text>
             </Text>
             <View style={styles.inputWrapper}>
-              <Icon name="calendar-blank-outline" size={18} color="#3B5BFF" />
+              <Icon name="lock-outline" size={18} color="#3B5BFF" />
               <TextInput
                 style={styles.inputField}
-                placeholder="dd-mm-yyyy"
+                placeholder="Choose a password"
                 placeholderTextColor="#9CA3AF"
-                value={form.dob}
-                onChangeText={v => update('dob', v)}
-              />
-              <Icon name="calendar-month-outline" size={18} color="#9CA3AF" />
-            </View>
-
-            <Text style={styles.label}>
-              Aadhaar number <Text style={styles.required}>*</Text>
-            </Text>
-            <View style={styles.inputWrapper}>
-              <Icon name="card-account-details-outline" size={18} color="#3B5BFF" />
-              <TextInput
-                style={styles.inputField}
-                placeholder="XXXX XXXX XXXX"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="number-pad"
-                value={form.aadhaar}
-                onChangeText={v => update('aadhaar', v)}
+                secureTextEntry
+                value={form.password}
+                onChangeText={v => update('password', v)}
               />
             </View>
 
-            <Text style={styles.label}>
-              Address <Text style={styles.required}>*</Text>
-            </Text>
-            <View style={styles.inputWrapper}>
-              <Icon name="map-marker-outline" size={18} color="#3B5BFF" />
-              <TextInput
-                style={styles.inputField}
-                placeholder="Street address"
-                placeholderTextColor="#9CA3AF"
-                value={form.address}
-                onChangeText={v => update('address', v)}
-              />
-            </View>
-
-            <View style={styles.row3}>
-              <View style={styles.col}>
+            {role !== 'investor' && (
+              <>
                 <Text style={styles.label}>
-                  City <Text style={styles.required}>*</Text>
+                  Username <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputWrapper}>
-                  <Icon name="office-building-outline" size={18} color="#3B5BFF" />
+                  <Icon name="account-key-outline" size={18} color="#3B5BFF" />
                   <TextInput
                     style={styles.inputField}
-                    placeholder="City"
+                    placeholder="Login username"
                     placeholderTextColor="#9CA3AF"
-                    value={form.city}
-                    onChangeText={v => update('city', v)}
+                    autoCapitalize="none"
+                    value={form.username}
+                    onChangeText={v => update('username', v)}
                   />
                 </View>
-              </View>
-              <View style={styles.col}>
+              </>
+            )}
+
+            {role === 'investor' && (
+              <>
                 <Text style={styles.label}>
-                  PIN code <Text style={styles.required}>*</Text>
+                  Date of birth <Text style={styles.required}>*</Text>
                 </Text>
                 <View style={styles.inputWrapper}>
-                  <Icon name="numeric" size={18} color="#3B5BFF" />
+                  <Icon name="calendar-blank-outline" size={18} color="#3B5BFF" />
                   <TextInput
                     style={styles.inputField}
-                    placeholder="400001"
+                    placeholder="dd-mm-yyyy"
+                    placeholderTextColor="#9CA3AF"
+                    value={form.dob}
+                    onChangeText={v => update('dob', v)}
+                  />
+                  <Icon name="calendar-month-outline" size={18} color="#9CA3AF" />
+                </View>
+
+                <Text style={styles.label}>
+                  Aadhaar number <Text style={styles.required}>*</Text>
+                </Text>
+                <View style={styles.inputWrapper}>
+                  <Icon name="card-account-details-outline" size={18} color="#3B5BFF" />
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="XXXX XXXX XXXX"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="number-pad"
-                    value={form.pin}
-                    onChangeText={v => update('pin', v)}
+                    value={form.aadhaar}
+                    onChangeText={v => update('aadhaar', v)}
                   />
                 </View>
-              </View>
-            </View>
 
-            <Text style={styles.label}>
-              State <Text style={styles.required}>*</Text>
-            </Text>
-            <TouchableOpacity
-              style={styles.inputWrapper}
-              onPress={() => {
-                setStateDropdownOpen(prev => !prev);
-                setBranchDropdownOpen(false);
-              }}>
-              <Icon name="map-outline" size={18} color="#3B5BFF" />
-              <Text style={form.state ? styles.inputField : styles.inputPlaceholder}>
-                {form.state || 'Select state'}
-              </Text>
-              <Icon name="chevron-down" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-            {stateDropdownOpen && (
-              <View style={styles.dropdownList}>
-                {STATE_OPTIONS.map(opt => (
-                  <TouchableOpacity
-                    key={opt}
-                    style={[
-                      styles.dropdownOption,
-                      form.state === opt && styles.dropdownOptionActive,
-                    ]}
-                    onPress={() => {
-                      update('state', opt);
-                      setStateDropdownOpen(false);
-                    }}>
-                    <Text style={styles.dropdownOptionText}>{opt}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+                <Text style={styles.label}>
+                  Address <Text style={styles.required}>*</Text>
+                </Text>
+                <View style={styles.inputWrapper}>
+                  <Icon name="map-marker-outline" size={18} color="#3B5BFF" />
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Street address"
+                    placeholderTextColor="#9CA3AF"
+                    value={form.address}
+                    onChangeText={v => update('address', v)}
+                  />
+                </View>
+
+                <View style={styles.row3}>
+                  <View style={styles.col}>
+                    <Text style={styles.label}>
+                      City <Text style={styles.required}>*</Text>
+                    </Text>
+                    <View style={styles.inputWrapper}>
+                      <Icon name="office-building-outline" size={18} color="#3B5BFF" />
+                      <TextInput
+                        style={styles.inputField}
+                        placeholder="City"
+                        placeholderTextColor="#9CA3AF"
+                        value={form.city}
+                        onChangeText={v => update('city', v)}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.col}>
+                    <Text style={styles.label}>
+                      PIN code <Text style={styles.required}>*</Text>
+                    </Text>
+                    <View style={styles.inputWrapper}>
+                      <Icon name="numeric" size={18} color="#3B5BFF" />
+                      <TextInput
+                        style={styles.inputField}
+                        placeholder="400001"
+                        placeholderTextColor="#9CA3AF"
+                        keyboardType="number-pad"
+                        value={form.pin}
+                        onChangeText={v => update('pin', v)}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                <Text style={styles.label}>
+                  State <Text style={styles.required}>*</Text>
+                </Text>
+                <TouchableOpacity
+                  style={styles.inputWrapper}
+                  onPress={() => {
+                    setStateDropdownOpen(prev => !prev);
+                    setBranchDropdownOpen(false);
+                  }}>
+                  <Icon name="map-outline" size={18} color="#3B5BFF" />
+                  <Text style={form.stateName ? styles.inputField : styles.inputPlaceholder}>
+                    {form.stateName || 'Select state'}
+                  </Text>
+                  <Icon name="chevron-down" size={20} color="#9CA3AF" />
+                </TouchableOpacity>
+                {stateDropdownOpen && (
+                  <View style={styles.dropdownList}>
+                    {STATE_OPTIONS.map(opt => (
+                      <TouchableOpacity
+                        key={opt.id}
+                        style={[
+                          styles.dropdownOption,
+                          form.stateId === opt.id && styles.dropdownOptionActive,
+                        ]}
+                        onPress={() => {
+                          // Changing state invalidates any previously
+                          // selected branch from a different state.
+                          setForm(prev => ({
+                            ...prev,
+                            stateId: opt.id,
+                            stateName: opt.name,
+                            branchId: null,
+                            branchName: '',
+                          }));
+                          setStateDropdownOpen(false);
+                        }}>
+                        <Text style={styles.dropdownOptionText}>{opt.name}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </>
             )}
 
             <Text style={styles.label}>
@@ -345,25 +719,36 @@ const RegistrationScreen = ({navigation}: any) => {
                 setStateDropdownOpen(false);
               }}>
               <Icon name="bank-outline" size={18} color="#3B5BFF" />
-              <Text style={form.branch ? styles.inputField : styles.inputPlaceholder}>
-                {form.branch || 'Select branch'}
+              <Text style={form.branchName ? styles.inputField : styles.inputPlaceholder}>
+                {form.branchName || 'Select branch'}
               </Text>
               <Icon name="chevron-down" size={20} color="#9CA3AF" />
             </TouchableOpacity>
             {branchDropdownOpen && (
               <View style={styles.dropdownList}>
-                {BRANCH_OPTIONS.map(opt => (
+                {availableBranches.length === 0 && (
+                  <View style={styles.dropdownOption}>
+                    <Text style={styles.dropdownOptionText}>
+                      No branches available for this state
+                    </Text>
+                  </View>
+                )}
+                {availableBranches.map(opt => (
                   <TouchableOpacity
-                    key={opt}
+                    key={opt.id}
                     style={[
                       styles.dropdownOption,
-                      form.branch === opt && styles.dropdownOptionActive,
+                      form.branchId === opt.id && styles.dropdownOptionActive,
                     ]}
                     onPress={() => {
-                      update('branch', opt);
+                      setForm(prev => ({
+                        ...prev,
+                        branchId: opt.id,
+                        branchName: opt.name,
+                      }));
                       setBranchDropdownOpen(false);
                     }}>
-                    <Text style={styles.dropdownOptionText}>{opt}</Text>
+                    <Text style={styles.dropdownOptionText}>{opt.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -377,17 +762,24 @@ const RegistrationScreen = ({navigation}: any) => {
               <Text style={styles.reviewCheck}>✅</Text>
               <Text style={styles.reviewTitle}>Review your application</Text>
             </View>
+
             {[
+              ['Register as', roleLabel],
               ['Full name', form.fullName || '—'],
               ['Mobile number', form.mobile || '—'],
               ['Email address', form.email || '—'],
-              ['Date of birth', form.dob || '—'],
-              ['Aadhaar number', form.aadhaar || '—'],
-              ['Address', form.address || '—'],
-              ['City', form.city || '—'],
-              ['State', form.state || '—'],
-              ['PIN code', form.pin || '—'],
-              ['Branch', form.branch || '—'],
+              ...(role !== 'investor' ? [['Username', form.username || '—']] : []),
+              ...(role === 'investor'
+                ? [
+                    ['Date of birth', form.dob || '—'],
+                    ['Aadhaar number', form.aadhaar || '—'],
+                    ['Address', form.address || '—'],
+                    ['City', form.city || '—'],
+                    ['State', form.stateName || '—'],
+                    ['PIN code', form.pin || '—'],
+                  ]
+                : []),
+              ['Branch', form.branchName || '—'],
             ].map(([label, value]) => (
               <View key={label} style={styles.reviewRow}>
                 <Text style={styles.reviewLabel}>{label}</Text>
@@ -405,12 +797,23 @@ const RegistrationScreen = ({navigation}: any) => {
                 I agree to the <Text style={styles.agreeLink}>Terms & Conditions</Text>
               </Text>
             </TouchableOpacity>
+
+            {errorMessage && (
+              <View style={local.errorBox}>
+                <Text style={local.errorText}>{errorMessage}</Text>
+              </View>
+            )}
           </View>
         )}
 
         <View style={styles.navRow}>
           {step > 1 ? (
-            <TouchableOpacity style={styles.prevBtn} onPress={() => setStep(step - 1)}>
+            <TouchableOpacity
+              style={styles.prevBtn}
+              onPress={() => {
+                setErrorMessage(null);
+                setStep(step - 1);
+              }}>
               <Icon name="arrow-left" size={16} color="#3B5BFF" />
               <Text style={styles.prevBtnText}>Previous</Text>
             </TouchableOpacity>
@@ -422,17 +825,32 @@ const RegistrationScreen = ({navigation}: any) => {
           )}
 
           {step < 2 ? (
-            <TouchableOpacity style={styles.nextBtn} onPress={() => setStep(step + 1)}>
+            <TouchableOpacity
+              style={styles.nextBtn}
+              onPress={() => {
+                const validationError = validateStep1();
+                if (validationError) {
+                  setErrorMessage(validationError);
+                  return;
+                }
+                setErrorMessage(null);
+                setStep(step + 1);
+              }}>
               <Text style={styles.nextBtnText}>Next step</Text>
               <Icon name="arrow-right" size={16} color="#fff" />
             </TouchableOpacity>
           ) : (
             <TouchableOpacity
-              style={[styles.nextBtn, !agreed && styles.nextBtnDisabled]}
-              disabled={!agreed}
+              style={[
+                styles.nextBtn,
+                (!agreed || isSubmitting) && styles.nextBtnDisabled,
+              ]}
+              disabled={!agreed || isSubmitting}
               onPress={handleSubmit}>
-              <Text style={styles.nextBtnText}>Submit application</Text>
-              <Icon name="arrow-right" size={16} color="#fff" />
+              <Text style={styles.nextBtnText}>
+                {isSubmitting ? 'Submitting...' : 'Submit application'}
+              </Text>
+              {!isSubmitting && <Icon name="arrow-right" size={16} color="#fff" />}
             </TouchableOpacity>
           )}
         </View>

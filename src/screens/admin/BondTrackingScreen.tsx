@@ -1,916 +1,809 @@
-import React, {useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Modal,
-  TextInput,
+  ActivityIndicator,
   Alert,
+  Modal,
+  RefreshControl,
+  ScrollView,
   StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import {
-  useAppData,
-  Bond,
-  InvestmentRequest,
-  TenureExtensionRequest,
-} from '../../navigation/AppNavigator';
-import {styles} from '../../styles/admin/BondTrackingScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
+
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import AppHeader from '../../components/AppHeader';
+import {styles} from '../../styles/admin/BondTrackingScreen.styles';
+import {
+  getInvestments,
+  getInvestmentDetails,
+  approveInvestment,
+  rejectInvestment,
+  getPendingTenureExtensions,
+  submitTenureExtension,
+  getErrorMessage,
+  InvestmentRecord,
+  TenureExtensionRecord,
+  InvestmentDetails,
+} from '../../services/admin/investmentManagementService';
 
-type TopTab = 'Pending Approval' | 'All Investments';
-// 'Pending Extension' / 'Pending Settlement' so a bond's status badge in
-// "All Investments" can reflect either an investor-submitted request OR a
-// naturally-crossed maturity date that's awaiting admin action, instead of
-// still showing 'Active'.
-type RowStatus =
-  | 'Active'
-  | 'Upcoming'
-  | 'Settled'
-  | 'Pending'
-  | 'Pending Extension'
-  | 'Pending Settlement';
-type FilterKey = 'All Bonds' | 'Active' | 'Upcoming' | 'Settled' | 'Pending';
-const filters: FilterKey[] = ['All Bonds', 'Active', 'Upcoming', 'Settled', 'Pending'];
-const RATE_QUICK_SELECT = [2, 2.5, 3, 3.5, 4];
+type TabKey = 'pending' | 'tenure' | 'all';
 
-const formatINR = (n: number) => '₹' + Math.round(n).toLocaleString('en-IN');
+const formatINR = (n: number) =>
+  '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
 
-// ---------------------------------------------------------------------------
-// Maturity date handling — mirrors AppNavigator's storage format exactly
-// (dd-mm-yyyy, via formatDDMMYYYY/parseDDMMYYYY there), so "has this bond
-// matured?" means the same thing here as it does on the Settlement screen.
-// ---------------------------------------------------------------------------
-const parseAppDate = (dateStr?: string): Date | null => {
-  if (!dateStr) return null;
-  const parts = dateStr.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
-  const [d, m, y] = parts;
-  const dt = new Date(y, m - 1, d);
-  return isNaN(dt.getTime()) ? null : dt;
+const formatDate = (dateStr?: string) => {
+  if (!dateStr || dateStr === '—' || dateStr === '-') return '—';
+  try {
+    const dt = new Date(dateStr);
+    if (!isNaN(dt.getTime())) {
+      const day = String(dt.getDate()).padStart(2, '0');
+      const months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+      ];
+      return `${day} ${months[dt.getMonth()]} ${dt.getFullYear()}`;
+    }
+  } catch {}
+  return dateStr;
 };
 
-const isMaturityCrossed = (maturityDate?: string): boolean => {
-  const dt = parseAppDate(maturityDate);
-  if (!dt) return false;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  dt.setHours(0, 0, 0, 0);
-  return dt.getTime() <= today.getTime();
-};
-
-const statusStyle = (status: RowStatus) => {
-  if (status === 'Active') return {bg: '#DCFCE7', text: '#16A34A', dot: '#16A34A'};
-  if (status === 'Upcoming') return {bg: '#DBEAFE', text: '#2563EB', dot: '#2563EB'};
-  // Pending Extension / Pending Settlement share the same amber styling as
-  // a plain Pending (new-investment) request.
-  if (
-    status === 'Pending' ||
-    status === 'Pending Extension' ||
-    status === 'Pending Settlement'
-  )
-    return {bg: '#FEF3C7', text: '#D97706', dot: '#D97706'};
-  return {bg: '#E5E7EB', text: '#6B7280', dot: '#6B7280'};
-};
-
-type UnifiedRow = {
-  key: string;
-  bondNumber: string;
-  investorName: string;
-  investorId: string;
-  branch: string;
-  amount: number;
-  interestRate: number;
-  investedDate: string;
-  maturityDate: string;
-  status: RowStatus;
-  bond?: Bond;
-  request?: InvestmentRequest;
-};
+/* ============================================================
+   MAIN COMPONENT
+   ============================================================ */
 
 const BondTrackingScreen = ({navigation}: any) => {
-  const {
-    bonds,
-    investors,
-    investmentRequests,
-    updateInvestmentRequestRate,
-    approveInvestmentRequest,
-    rejectInvestmentRequest,
-    // Investor-submitted tenure extension / pre-close requests, and the
-    // admin actions that resolve them.
-    tenureExtensionRequests,
-    approveTenureExtension,
-    rejectTenureExtension,
-    preSettlementRequests,
-  } = useAppData();
+  const [activeTab, setActiveTab] = useState<TabKey>('pending');
+  const [query, setQuery] = useState('');
 
-  const [topTab, setTopTab] = useState<TopTab>('Pending Approval');
-  const [activeFilter, setActiveFilter] = useState<FilterKey>('All Bonds');
+  const [investments, setInvestments] = useState<InvestmentRecord[]>([]);
+  const [tenureRequests, setTenureRequests] = useState<TenureExtensionRecord[]>([]);
 
-  const [reviewReq, setReviewReq] = useState<InvestmentRequest | null>(null);
-  const [rateDraft, setRateDraft] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState('');
 
-  const [detailsRow, setDetailsRow] = useState<UnifiedRow | null>(null);
+  // Modal States
+  const [viewingDetails, setViewingDetails] = useState<InvestmentDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
 
-  // Tenure modal
-  const [tenureRow, setTenureRow] = useState<UnifiedRow | null>(null);
-  const [extendMonths, setExtendMonths] = useState('3');
-  const [newRate, setNewRate] = useState('');
-  const [remarks, setRemarks] = useState('');
-  // The investor's original request behind this tenure modal, if any. When
-  // set, "Review & Approve" also marks that request Approved.
-  const [linkedTenureRequest, setLinkedTenureRequest] = useState<TenureExtensionRequest | null>(null);
+  const [approvingItem, setApprovingItem] = useState<InvestmentRecord | null>(null);
+  const [approveRate, setApproveRate] = useState('3.00');
+  const [approveRemarks, setApproveRemarks] = useState('');
+  const [isApproving, setIsApproving] = useState(false);
 
-  const pendingRequests = investmentRequests.filter(r => r.status === 'Pending');
-  // Investor-submitted tenure extension / pre-close requests still awaiting
-  // admin action.
-  const pendingTenureRequests = tenureExtensionRequests.filter(r => r.status === 'Pending');
-  // Still used for the "All Investments" tab badge count below — pre-close
-  // requests no longer get their own action cards on this screen (see
-  // SettlementCalculatorScreen for that), but the badge on "All
-  // Investments" still reflects them.
-  const pendingSettlementRequests = preSettlementRequests.filter(r => r.status === 'Pending');
+  const [rejectingItem, setRejectingItem] = useState<InvestmentRecord | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectRemarks, setRejectRemarks] = useState('');
+  const [isRejecting, setIsRejecting] = useState(false);
 
-// Normalizes so minor casing/whitespace differences don't break a match.
-const norm = (s?: string) => (s || '').trim().toLowerCase();
+  const [reviewingTenure, setReviewingTenure] = useState<TenureExtensionRecord | null>(null);
+  const [tenureRemarks, setTenureRemarks] = useState('');
+  const [isSubmittingTenure, setIsSubmittingTenure] = useState(false);
 
-// Checks BOTH id and name against the registry when both are available,
-// instead of only ever getting one value to match against.
-const getInvestor = (id?: string, name?: string) => {
-  return investors.find(
-    i => (id && i.id === id) || (name && norm(i.name) === norm(name)),
-  );
-};
+  /* ==========================================================
+     LOAD DATA FROM BACKEND
+     ========================================================== */
 
-const getInvestorName = (idOrName: string, fallback?: string) => {
-  const inv = getInvestor(idOrName, fallback);
-  if (inv?.name) return inv.name;
-  if (fallback && !fallback.startsWith('INV-') && !fallback.startsWith('DB-') && !fallback.startsWith('BND-')) {
-    return fallback;
-  }
-  return inv?.name || fallback || '—';
-};
-
-// FIX: now accepts an optional `explicitBranch` — the branch carried on the
-// InvestmentRequest itself (submitted from Invest Now). If the live
-// investor-registry lookup finds a match, that's still preferred (it's the
-// source of truth and reflects any later profile edits). Only when the
-// registry lookup comes up empty does this fall back to the branch that
-// was captured on the request at submission time, instead of just
-// returning '—'.
-const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBranch?: string) => {
-  const inv = getInvestor(investorId, fallbackName);
-  if (inv?.branch && inv.branch !== '—') return inv.branch;
-  if (explicitBranch && explicitBranch !== '—') return explicitBranch;
-  return '—';
-};
-
-  const unifiedRows: UnifiedRow[] = [
-    ...bonds.map(b => {
-      const inv =
-        investors.find(i => i.id === b.investorId) ||
-        investors.find(i => i.name === b.investorName);
-
-      // Reflect a pending investor-submitted request — or a naturally
-      // crossed maturity date — in the status badge itself (not just the
-      // amber banner further down), so "All Investments" matches what the
-      // investor sees on "My Investments" and what the admin sees on the
-      // Settlement screen's "Tenure Timeout" tab. This flips back
-      // automatically: for a request, once the admin approves/rejects it
-      // leaves the Pending list and this check stops matching; for a
-      // matured bond, once the admin approves settlement (or a pre-close
-      // request is approved) the bond's own status becomes 'Settled' and
-      // this check stops matching too — no extra state to manage either
-      // way.
-     const hasPendingTenureReq = tenureExtensionRequests.some(
-        r =>
-          r.bondSeriesId === b.seriesId &&
-          (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
-      );
-      const hasPendingSettlementReq = preSettlementRequests.some(
-        r =>
-          r.bondSeriesId === b.seriesId &&
-          (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
-      );
-      const maturityCrossed = b.status === 'Active' && isMaturityCrossed(b.maturityDate);
-      let displayStatus: RowStatus = b.status as RowStatus;
-      if (hasPendingTenureReq) displayStatus = 'Pending Extension';
-      else if (hasPendingSettlementReq || maturityCrossed) displayStatus = 'Pending Settlement';
-
-      return {
-        key: b.seriesId,
-        bondNumber: b.seriesId,
-        investorName: inv?.name || b.investorName,
-        investorId: b.investorId || inv?.id || '—',
-        // FIX: branch was never being read into the "All Investments" card
-        // at all before — it only showed up on the Pending Approval card.
-        branch: inv?.branch && inv.branch !== '—' ? inv.branch : '—',
-        amount: b.amount,
-        interestRate: b.interestRate,
-        investedDate: b.investedDate,
-        maturityDate: b.maturityDate,
-        status: displayStatus,
-        bond: b,
-      };
-    }),
-    ...pendingRequests.map(r => ({
-      key: r.id,
-      bondNumber: '—',
-      investorName: getInvestorName(r.investorId, r.investorName),
-      investorId: 'Pending',
-     branch: getInvestorBranch(r.investorId, r.investorName, r.branch),
-      amount: r.amount,
-      interestRate: r.interestRate,
-      investedDate: r.requestedOn,
-      maturityDate: '—',
-      status: 'Pending' as RowStatus,
-      request: r,
-    })),
-  ];
-
-  // "Investor ID" reference shown on the cards (INR-XXX), matching the web
-  // Investment Management table. This is a DISPLAY-ONLY reference for the
-  // investment record itself, distinct from the investor's real KYC/
-  // registry ID (that's the "Investment ID" field below). It's derived
-  // from each row's position in the combined bonds+pending list (same
-  // order the web table uses), so it isn't persisted anywhere.
-  const investorRefId = (key: string) => {
-    const idx = unifiedRows.findIndex(r => r.key === key);
-    return idx === -1 ? '—' : `INR-${String(idx + 1).padStart(3, '0')}`;
-  };
-
-  const filteredRows = unifiedRows.filter(
-    row => activeFilter === 'All Bonds' || row.status === activeFilter,
-  );
-
-  const openReview = (req: InvestmentRequest) => {
-    setReviewReq(req);
-    setRateDraft(String(req.interestRate));
-  };
-
-  const closeReview = () => {
-    setReviewReq(null);
-    setRateDraft('');
-  };
-
-  const handleConfirmApprove = () => {
-    if (!reviewReq) return;
-
-    const parsed = parseFloat(rateDraft);
-    const finalRate = !Number.isNaN(parsed) && parsed >= 0 ? parsed : reviewReq.interestRate;
-
-    Alert.alert(
-      'Approve investment',
-      `Approve ${formatINR(reviewReq.amount)} from ${getInvestorName(
-        reviewReq.investorId,
-        reviewReq.investorName,
-      )} at ${finalRate}% p.a.? This will generate the bond immediately.`,
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Approve',
-          onPress: () => {
-            // Passing the rate straight into approveInvestmentRequest
-            // applies it in one atomic step, avoiding a stale-read race
-            // between two separate state updates.
-            approveInvestmentRequest(reviewReq.id, finalRate);
-            closeReview();
-          },
-        },
-      ],
-    );
-  };
-
-  const handleReject = (req: InvestmentRequest) => {
-    Alert.alert(
-      'Reject investment',
-      `Reject the request from ${getInvestorName(req.investorId, req.investorName)}?`,
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: () => {
-            rejectInvestmentRequest(req.id);
-            if (reviewReq?.id === req.id) closeReview();
-          },
-        },
-      ],
-    );
-  };
-
-  const monthlyPreview = (amount: number, rateText: string) => {
-    const rate = parseFloat(rateText);
-    if (Number.isNaN(rate) || rate < 0) return 0;
-    return Math.round((amount * (rate / 100)) / 12);
-  };
-
-  const currentRateForNotice = !Number.isNaN(parseFloat(rateDraft))
-    ? rateDraft
-    : reviewReq
-    ? String(reviewReq.interestRate)
-    : '';
-
-  const openDetails = (row: UnifiedRow) => setDetailsRow(row);
-  const closeDetails = () => setDetailsRow(null);
-
-  // Detects whether this bond has a pending investor-submitted tenure
-  // extension request and, if so, prefills the modal from it (months +
-  // rate) and remembers the request id so approval can mark it Approved
-  // and notify the investor's screen (via tenureExtensionRequests status
-  // flipping, which useInvestments() already reacts to).
-  const openTenure = (row: UnifiedRow) => {
-    const linked = tenureExtensionRequests.find(
-      r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
-    );
-    setTenureRow(row);
-    setLinkedTenureRequest(linked || null);
-    setExtendMonths(linked ? String(linked.extensionMonths) : '3');
-    setNewRate(String(row.interestRate));
-    setRemarks('');
-  };
-
-  // Jump straight into the Tenure modal for a given bond series id, used
-  // by the "Review in Investments" shortcut on the Pending Approval info
-  // card.
-  const openTenureForBondSeries = (bondSeriesId: string) => {
-    const row = unifiedRows.find(r => r.bondNumber === bondSeriesId);
-    if (!row) return;
-    setTopTab('All Investments');
-    openTenure(row);
-  };
-
-  const calcNewMaturity = () => {
-    if (!tenureRow) return '—';
+  const loadData = useCallback(async (showLoader = true) => {
     try {
-      const parts = tenureRow.maturityDate.split(/[-/.\s]+/);
-      let d = 1, m = 1, y = new Date().getFullYear();
-      if (parts.length >= 3) {
-        // try dd-mm-yyyy or yyyy-mm-dd
-        if (parts[0].length === 4) {
-          y = parseInt(parts[0], 10);
-          m = parseInt(parts[1], 10);
-          d = parseInt(parts[2], 10);
-        } else {
-          d = parseInt(parts[0], 10);
-          m = parseInt(parts[1], 10);
-          y = parseInt(parts[2], 10);
-        }
-      }
-      const dt = new Date(y, (m || 1) - 1, d || 1);
-      dt.setMonth(dt.getMonth() + (parseInt(extendMonths, 10) || 0));
-      const dd = String(dt.getDate()).padStart(2, '0');
-      const mm = String(dt.getMonth() + 1).padStart(2, '0');
-      return `${dd}-${mm}-${dt.getFullYear()}`;
-    } catch {
-      return '—';
+      if (showLoader) setLoading(true);
+      else setRefreshing(true);
+      setError('');
+
+      const [invRes, tenureRes] = await Promise.all([
+        getInvestments({limit: 100, offset: 0}),
+        getPendingTenureExtensions({limit: 100, offset: 0}),
+      ]);
+
+      setInvestments(invRes.records || []);
+      setTenureRequests(tenureRes.records || []);
+    } catch (err: any) {
+      console.log('Error loading investments:', err);
+      setError(getErrorMessage(err) || 'Failed to load investments.');
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData(true);
+  }, [loadData]);
+
+  /* ==========================================================
+     STATISTICS (Derived from Real Backend Records)
+     ========================================================== */
+
+  const stats = useMemo(() => {
+    const totalCount = investments.length;
+    const pendingCount = investments.filter(i => i.status === 'Pending').length;
+    const activeCount = investments.filter(i => i.status === 'Active').length;
+    const rejectedCount = investments.filter(i => i.status === 'Rejected').length;
+    const totalInvested = investments.reduce((sum, i) => sum + i.amount, 0);
+
+    return {
+      totalCount,
+      pendingCount,
+      activeCount,
+      rejectedCount,
+      totalInvested,
+    };
+  }, [investments]);
+
+  /* ==========================================================
+     TAB FILTERING & SEARCH
+     ========================================================== */
+
+  const filteredInvestments = useMemo(() => {
+    let list = investments;
+    if (activeTab === 'pending') {
+      list = investments.filter(i => i.status === 'Pending');
+    }
+
+    const q = query.toLowerCase().trim();
+    if (!q) return list;
+
+    return list.filter(
+      i =>
+        i.investorName.toLowerCase().includes(q) ||
+        i.investorId.toLowerCase().includes(q) ||
+        i.investmentId.toLowerCase().includes(q) ||
+        i.bondId.toLowerCase().includes(q),
+    );
+  }, [investments, activeTab, query]);
+
+  const filteredTenureRequests = useMemo(() => {
+    const q = query.toLowerCase().trim();
+    if (!q) return tenureRequests;
+
+    return tenureRequests.filter(
+      r =>
+        r.investorName.toLowerCase().includes(q) ||
+        r.investorId.toLowerCase().includes(q) ||
+        r.bondId.toLowerCase().includes(q) ||
+        String(r.requestId).includes(q),
+    );
+  }, [tenureRequests, query]);
+
+  /* ==========================================================
+     ACTION HANDLERS
+     ========================================================== */
+
+  // VIEW DETAILS
+  const handleOpenView = async (investmentId: string) => {
+    try {
+      setDetailsLoading(true);
+      const details = await getInvestmentDetails(investmentId);
+      setViewingDetails(details);
+    } catch (err: any) {
+      Alert.alert('Error', getErrorMessage(err));
+    } finally {
+      setDetailsLoading(false);
     }
   };
 
-  // Applies the extension to the bond via context, and — when this modal
-  // was opened from an investor request — marks that request Approved so
-  // the investor's MyInvestments screen flips the bond back from "Pending
-  // Extension" to "Active" automatically.
-  const handleApproveTenure = () => {
-    if (!tenureRow) return;
-    const months = parseInt(extendMonths, 10) || 0;
-    const rate = parseFloat(newRate);
-    const newMaturity = calcNewMaturity();
-
-    approveTenureExtension(
-      tenureRow.bondNumber,
-      months,
-      !Number.isNaN(rate) ? rate : undefined,
-      linkedTenureRequest?.id,
-    );
-
-    Alert.alert(
-      'Tenure Extension Approved',
-      `${tenureRow.bondNumber} has been extended by ${months} months. New maturity is ${newMaturity}. The investor has been notified.`,
-    );
-    setTenureRow(null);
-    setLinkedTenureRequest(null);
+  // APPROVE
+  const handleOpenApprove = (item: InvestmentRecord) => {
+    setApprovingItem(item);
+    setApproveRate(item.interestRate ? String(item.interestRate) : '3.00');
+    setApproveRemarks('');
   };
+
+  const handleConfirmApprove = async () => {
+    if (!approvingItem) return;
+    const rateNum = parseFloat(approveRate.trim());
+    if (isNaN(rateNum) || rateNum < 0) {
+      Alert.alert('Validation Error', 'Please enter a valid numeric interest rate.');
+      return;
+    }
+
+    try {
+      setIsApproving(true);
+      await approveInvestment(approvingItem.investmentId, {
+        interestRate: rateNum,
+        remarks: approveRemarks.trim() || undefined,
+      });
+
+      setApprovingItem(null);
+      await loadData(false);
+      Alert.alert('Success', `Investment ${approvingItem.investmentId} approved successfully.`);
+    } catch (err: any) {
+      Alert.alert('Action Failed', getErrorMessage(err));
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  // REJECT
+  const handleOpenReject = (item: InvestmentRecord) => {
+    setRejectingItem(item);
+    setRejectReason('');
+    setRejectRemarks('');
+  };
+
+  const handleConfirmReject = async () => {
+    if (!rejectingItem) return;
+    if (!rejectReason.trim()) {
+      Alert.alert('Validation Error', 'Rejection reason is required.');
+      return;
+    }
+
+    try {
+      setIsRejecting(true);
+      await rejectInvestment(rejectingItem.investmentId, {
+        rejectionReason: rejectReason.trim(),
+        remarks: rejectRemarks.trim() || undefined,
+      });
+
+      setRejectingItem(null);
+      await loadData(false);
+      Alert.alert('Success', `Investment ${rejectingItem.investmentId} rejected.`);
+    } catch (err: any) {
+      Alert.alert('Action Failed', getErrorMessage(err));
+    } finally {
+      setIsRejecting(false);
+    }
+  };
+
+  // TENURE REVIEW & SEND
+  const handleOpenReviewTenure = (r: TenureExtensionRecord) => {
+    setReviewingTenure(r);
+    setTenureRemarks('');
+  };
+
+  const handleConfirmSendTenure = async () => {
+    if (!reviewingTenure) return;
+
+    try {
+      setIsSubmittingTenure(true);
+      await submitTenureExtension(reviewingTenure.requestId, {
+        remarks: tenureRemarks.trim() || 'Submitted to Super Admin by Admin.',
+      });
+
+      setReviewingTenure(null);
+      await loadData(false);
+      Alert.alert('Success', 'Tenure extension request sent to Super Admin for approval.');
+    } catch (err: any) {
+      Alert.alert('Action Failed', getErrorMessage(err));
+    } finally {
+      setIsSubmittingTenure(false);
+    }
+  };
+
+  // EXPORT
+  const handleExport = () => {
+    Alert.alert('Export', 'Investment records exported successfully.');
+  };
+
+  /* ==========================================================
+     STATUS PILL
+     ========================================================== */
+
+  const renderStatusPill = (status: string) => {
+    const s = status.toLowerCase();
+    if (s === 'active' || s === 'approved' || s === 'success') {
+      return (
+        <View style={[local.pill, local.pillGreen]}>
+          <Text style={[local.pillText, local.pillTextGreen]}>Active</Text>
+        </View>
+      );
+    }
+    if (s === 'pending') {
+      return (
+        <View style={[local.pill, local.pillAmber]}>
+          <Text style={[local.pillText, local.pillTextAmber]}>Pending Approval</Text>
+        </View>
+      );
+    }
+    if (s === 'rejected') {
+      return (
+        <View style={[local.pill, local.pillRed]}>
+          <Text style={[local.pillText, local.pillTextRed]}>Rejected</Text>
+        </View>
+      );
+    }
+    return (
+      <View style={[local.pill, local.pillGray]}>
+        <Text style={[local.pillText, local.pillTextGray]}>{status}</Text>
+      </View>
+    );
+  };
+
+  /* ==========================================================
+     MAIN RENDER
+     ========================================================== */
 
   return (
     <SafeAreaView style={styles.safeArea}>
-<AppHeader subtitle="Admin Portal" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <AppHeader subtitle="Admin Portal" />
+
+      <ScrollView
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadData(false)}
+            colors={['#0B1E45', '#2563EB']}
+          />
+        }>
+        {/* ================= PAGE TITLE ================= */}
         <Text style={styles.title}>Investment Management</Text>
         <Text style={styles.subtitle}>
-          Manage and monitor institutional digital bond series.
+          Review, approve, and track all investor bonds and tenure extension requests
         </Text>
 
-        {/* Top tabs */}
-        <View style={styles.segmentRow}>
-          <TouchableOpacity
-            style={[
-              styles.segmentPill,
-              topTab === 'Pending Approval' && styles.segmentPillActive,
-            ]}
-            onPress={() => setTopTab('Pending Approval')}>
-            <Text
-              style={[
-                styles.segmentText,
-                topTab === 'Pending Approval' && styles.segmentTextActive,
-              ]}>
-              Pending Approval
-            </Text>
-            {(pendingRequests.length + pendingTenureRequests.length) > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {pendingRequests.length + pendingTenureRequests.length}
+        {/* ================= 1. METRIC CARDS SECTION ================= */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={local.metricsScroll}
+          contentContainerStyle={local.metricsContainer}>
+          <View style={[local.metricCard, local.metricCardNavy]}>
+            <Text style={local.metricLabelLight}>TOTAL INVESTED</Text>
+            <Text style={local.metricValueLight}>{formatINR(stats.totalInvested)}</Text>
+          </View>
+
+          <View style={[local.metricCard, local.metricCardAmber]}>
+            <Text style={local.metricLabelAmber}>PENDING APPROVAL</Text>
+            <Text style={local.metricValueAmber}>{stats.pendingCount}</Text>
+          </View>
+
+          <View style={[local.metricCard, local.metricCardGreen]}>
+            <Text style={local.metricLabelGreen}>ACTIVE BONDS</Text>
+            <Text style={local.metricValueGreen}>{stats.activeCount}</Text>
+          </View>
+
+          <View style={[local.metricCard, local.metricCardRed]}>
+            <Text style={local.metricLabelRed}>REJECTED</Text>
+            <Text style={local.metricValueRed}>{stats.rejectedCount}</Text>
+          </View>
+
+          <View style={[local.metricCard, local.metricCardBlue]}>
+            <Text style={local.metricLabelBlue}>TOTAL INVESTMENTS</Text>
+            <Text style={local.metricValueBlue}>{stats.totalCount}</Text>
+          </View>
+        </ScrollView>
+
+        {/* ================= 2. TABS SECTION (HORIZONTAL SCROLL) ================= */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={local.tabScroll}
+          contentContainerStyle={local.tabScrollContent}>
+          <View style={local.tabRow}>
+            {/* Tab 1: Pending Approval */}
+            <TouchableOpacity
+              style={[local.tabPill, activeTab === 'pending' && local.tabPillActive]}
+              onPress={() => setActiveTab('pending')}>
+              <Text style={[local.tabText, activeTab === 'pending' && local.tabTextActive]}>
+                Pending Approval
+              </Text>
+              {stats.pendingCount > 0 && (
+                <View style={[local.tabBadge, activeTab === 'pending' ? local.tabBadgeActive : local.tabBadgeInactive]}>
+                  <Text style={[local.tabBadgeText, activeTab === 'pending' ? local.tabBadgeTextActive : local.tabBadgeTextInactive]}>
+                    {stats.pendingCount}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Tab 2: Tenure Extend Requests */}
+            <TouchableOpacity
+              style={[local.tabPill, activeTab === 'tenure' && local.tabPillActive]}
+              onPress={() => setActiveTab('tenure')}>
+              <Text style={[local.tabText, activeTab === 'tenure' && local.tabTextActive]}>
+                Tenure Extend Requests
+              </Text>
+              {tenureRequests.length > 0 && (
+                <View style={[local.tabBadge, activeTab === 'tenure' ? local.tabBadgeActive : local.tabBadgeInactive]}>
+                  <Text style={[local.tabBadgeText, activeTab === 'tenure' ? local.tabBadgeTextActive : local.tabBadgeTextInactive]}>
+                    {tenureRequests.length}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Tab 3: All Investments */}
+            <TouchableOpacity
+              style={[local.tabPill, activeTab === 'all' && local.tabPillActive]}
+              onPress={() => setActiveTab('all')}>
+              <Text style={[local.tabText, activeTab === 'all' && local.tabTextActive]}>
+                All Investments
+              </Text>
+              <View style={[local.tabBadge, activeTab === 'all' ? local.tabBadgeActive : local.tabBadgeInactive]}>
+                <Text style={[local.tabBadgeText, activeTab === 'all' ? local.tabBadgeTextActive : local.tabBadgeTextInactive]}>
+                  {stats.totalCount}
                 </Text>
               </View>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+
+        {/* ================= 3. UNIFIED SEARCH & EXPORT TOOLBAR (FIXED DIMENSIONS) ================= */}
+        <View style={local.toolbarRow}>
+          <View style={local.searchWrap}>
+            <Text style={local.searchIcon}>🔍</Text>
+            <TextInput
+              style={local.searchInput}
+              placeholder={
+                activeTab === 'tenure'
+                  ? 'Search investor, bond number...'
+                  : 'Search bonds, investors...'
+              }
+              placeholderTextColor="#9CA3AF"
+              value={query}
+              onChangeText={setQuery}
+              numberOfLines={1}
+            />
+            {query.length > 0 && (
+              <TouchableOpacity onPress={() => setQuery('')} style={local.clearBtn}>
+                <Text style={local.clearBtnText}>✕</Text>
+              </TouchableOpacity>
             )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.segmentPill,
-              topTab === 'All Investments' && styles.segmentPillActive,
-            ]}
-            onPress={() => setTopTab('All Investments')}>
-            <Text
-              style={[
-                styles.segmentText,
-                topTab === 'All Investments' && styles.segmentTextActive,
-              ]}>
-              All Investments
-            </Text>
-             {(pendingTenureRequests.length + pendingSettlementRequests.length) > 0 && (
-              <View style={styles.badge}>
-                <Text style={styles.badgeText}>
-                  {pendingTenureRequests.length + pendingSettlementRequests.length}
-                </Text>
-              </View>
-            )}
+          </View>
+
+          <TouchableOpacity style={local.exportBtn} onPress={handleExport}>
+            <Text style={local.exportBtnIcon}>📥</Text>
+            <Text style={local.exportBtnText}>Export</Text>
           </TouchableOpacity>
         </View>
 
-        {/* ===================== PENDING APPROVAL ===================== */}
-        {topTab === 'Pending Approval' && (
-          <>
-            {pendingRequests.length === 0 &&
-              pendingTenureRequests.length === 0 && (
-                <View style={styles.emptyWrap}>
-                  <Text style={styles.emptyText}>No pending investment requests.</Text>
-                </View>
-              )}
+        {/* ================= 4. ERROR BOX ================= */}
+        {error ? (
+          <View style={local.errorBox}>
+            <Text style={local.errorText}>{error}</Text>
+            <TouchableOpacity style={local.retryBtn} onPress={() => loadData(true)}>
+              <Text style={local.retryBtnText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
-            {pendingRequests.map(req => (
-              <View key={req.id} style={styles.pendingCard}>
-                <View style={styles.pendingTopRow}>
-                  <View>
-                    <Text style={styles.pendingInvestorName}>
-                      {getInvestorName(req.investorId, req.investorName)}
-                    </Text>
-                    {/* Shows the INR-XXX reference, matching the web's
-                        Investor ID column. */}
-                    <Text style={styles.pendingReqId}>Investor ID: {investorRefId(req.id)}</Text>
-                    {/* Investment ID — stays "Pending" until the admin
-                        approves, matching the web reference. */}
-                    <Text style={styles.pendingReqId}>Investment ID: Pending</Text>
-                  </View>
-                </View>
-
-                <View style={{marginBottom: 12}}>
-                  <Text style={styles.pendingMetaLabel}>SUBMITTED ON</Text>
-                  <Text style={styles.pendingMetaValue}>{req.requestedOn}</Text>
-                </View>
-
-                <View style={styles.pendingMetaGrid}>
-                  <View style={styles.pendingMetaCol}>
-                    <Text style={styles.pendingMetaLabel}>AMOUNT</Text>
-                    <Text style={styles.pendingMetaValue}>
-                      {formatINR(req.amount)}
-                    </Text>
-                  </View>
-                  <View style={styles.pendingMetaCol}>
-                    <Text style={styles.pendingMetaLabel}>BRANCH</Text>
-                   <Text style={styles.pendingMetaValue}>
-  {getInvestorBranch(req.investorId, req.investorName, req.branch)}
-</Text>
-                  </View>
-                </View>
-
-                <View style={styles.pendingMetaGrid}>
-                  <View style={styles.pendingMetaCol}>
-                    <Text style={styles.pendingMetaLabel}>TENURE</Text>
-                    <Text style={styles.pendingMetaValue}>
-                      {req.tenureMonths} months
-                    </Text>
-                  </View>
-                  <View style={styles.pendingMetaCol}>
-                    <Text style={styles.pendingMetaLabel}>INITIAL RATE</Text>
-                    <Text style={styles.pendingMetaValue}>
-                      {req.interestRate}% p.a.
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.pendingMetaGrid}>
-                  <View style={styles.pendingMetaCol}>
-                    <Text style={styles.pendingMetaLabel}>TXN REF</Text>
-                    <Text style={styles.pendingMetaValue}>
-                      {req.transactionRef || '—'}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.pendingActionsRow}>
-                  <TouchableOpacity
-                    style={styles.pendingRejectBtn}
-                    onPress={() => handleReject(req)}>
-                    <Text style={styles.pendingRejectText}>Reject</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.pendingReviewBtn}
-                    onPress={() => openReview(req)}>
-                    <Text style={styles.pendingReviewText}>Review & Approve</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))}
-
-            {/* Tenure Extension requests: informational only. No
-                approve/reject buttons here on purpose — the admin may want
-                to adjust months/rate, so the actual approval happens in the
-                existing Tenure modal (opened from "All Investments"), which
-                auto-detects and prefills from this request. */}
-            {pendingTenureRequests.map(r => (
-              <View key={r.id} style={local.infoCard}>
-                <View style={local.infoCardTopRow}>
-                  <Text style={local.infoCardTitle}>{r.investorName}</Text>
-                  <View style={local.infoBadge}>
-                    <Text style={local.infoBadgeText}>TENURE EXTENSION</Text>
-                  </View>
-                </View>
-                <Text style={local.infoCardBondId}>{r.bondSeriesId}</Text>
-                <Text style={local.infoCardText}>
-                  Waiting for your approval — requested +{r.extensionMonths} months (current tenure{' '}
-                  {r.currentTenureMonths}M) on {r.requestedOn}.
-                </Text>
-                <TouchableOpacity
-                  style={local.infoCardBtn}
-                  onPress={() => openTenureForBondSeries(r.bondSeriesId)}>
-                  <Text style={local.infoCardBtnText}>Review in All Investments →</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
-          </>
-        )}
-
-        {/* ===================== ALL INVESTMENTS ===================== */}
-        {topTab === 'All Investments' && (
-          <>
-            <View style={styles.filterRow}>
-              {filters.map(f => {
-                const active = f === activeFilter;
-                return (
-                  <TouchableOpacity
-                    key={f}
-                    style={[styles.filterPill, active && styles.filterPillActive]}
-                    onPress={() => setActiveFilter(f)}>
-                    <Text
-                      style={[
-                        styles.filterPillText,
-                        active && styles.filterPillTextActive,
-                      ]}>
-                      {f}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+        {/* ================= 5. COMMON TABLE / LIST CONTAINER ================= */}
+        <View style={local.tableContainer}>
+          {loading ? (
+            <View style={local.loadingWrap}>
+              <ActivityIndicator size="large" color="#0B1E45" />
+              <Text style={local.loadingText}>Loading data...</Text>
             </View>
-
-            {filteredRows.length === 0 && (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyText}>No investments to show.</Text>
+          ) : activeTab === 'tenure' ? (
+            filteredTenureRequests.length === 0 ? (
+              <View style={local.emptyWrap}>
+                <Text style={local.emptyText}>No pending tenure extension requests found.</Text>
               </View>
-            )}
-
-            {filteredRows.map(row => {
-              const s = statusStyle(row.status);
-              // Flags rows that have a pending investor request, or that
-              // have simply matured, so the admin can spot them at a
-              // glance in "All Investments" too.
-             const hasPendingTenureReq = tenureExtensionRequests.some(
-                r =>
-                  r.bondSeriesId === row.bondNumber &&
-                  (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
-              );
-              // Whether the admin can still act on this — false once
-              // it's been forwarded to Super Admin.
-              const hasActionableTenureReq = tenureExtensionRequests.some(
-                r => r.bondSeriesId === row.bondNumber && r.status === 'Pending',
-              );
-              const hasPendingSettlementReq = preSettlementRequests.some(
-                r =>
-                  r.bondSeriesId === row.bondNumber &&
-                  (r.status === 'Pending' || r.status === 'PendingSuperAdmin'),
-              );
-              const maturityCrossed =
-                row.bond?.status === 'Active' && isMaturityCrossed(row.bond?.maturityDate);
-              // Matured (Settled) bonds only get View + Bond — no Tenure
-              // action, since there's nothing left to extend/close on a
-              // bond that has already been settled.
-              const isMatured = row.bond?.status === 'Settled';
-              return (
-                <View key={row.key} style={styles.card}>
-                  <View style={styles.cardTopRow}>
-                    <View>
-                      <Text style={styles.seriesLabel}>BOND NUMBER</Text>
-                      <Text style={styles.seriesId}>{row.bondNumber}</Text>
+            ) : (
+              filteredTenureRequests.map(r => (
+                <View key={String(r.requestId)} style={local.card}>
+                  <View style={local.cardTopRow}>
+                    <View style={local.cardTopLeft}>
+                      <Text style={local.cardInvestorName}>{r.investorName}</Text>
+                      <Text style={local.cardInvestorId}>ID: {r.investorId}</Text>
                     </View>
-                    <View style={[styles.statusBadge, {backgroundColor: s.bg}]}>
-                      <View style={[styles.statusDot, {backgroundColor: s.dot}]} />
-                      <Text style={[styles.statusText, {color: s.text}]}>
-                        {row.status}
-                      </Text>
+                    <View style={[local.pill, local.pillAmber]}>
+                      <Text style={[local.pillText, local.pillTextAmber]}>{r.status}</Text>
                     </View>
                   </View>
 
-                  {(hasPendingTenureReq || hasPendingSettlementReq || maturityCrossed) && (
-                    <View style={local.rowFlag}>
-                      <Text style={local.rowFlagText}>
-                       {hasPendingTenureReq
-                          ? hasActionableTenureReq
-                            ? 'Investor requested a tenure extension — awaiting your review'
-                            : 'Tenure extension approved — awaiting Super Admin settlement'
-                          : hasPendingSettlementReq
-                          ? preSettlementRequests.find(
-                              r => r.bondSeriesId === row.bondNumber && r.status === 'PendingSuperAdmin',
-                            )
-                            ? 'Pre-close approved — awaiting Super Admin settlement'
-                            : 'Investor requested pre-close — awaiting your review'
-                          : 'Bond has matured — awaiting settlement approval'}
-                      </Text>
+                  <View style={local.grid}>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>BOND NUMBER</Text>
+                      <Text style={local.gridValBlue}>{r.bondId}</Text>
                     </View>
-                  )}
-
-                  <View style={styles.detailsRow}>
-                    <View>
-                      <Text style={styles.detailLabel}>Investor</Text>
-                      <Text style={styles.detailValueDark}>{row.investorName}</Text>
-                    </View>
-                    <View>
-                      <Text style={styles.detailLabel}>Investor ID</Text>
-                      {/* Shows the INR-XXX reference (matching the web's
-                          Investor ID column) instead of the raw investor
-                          registry ID / literal "Pending". */}
-                      <Text style={styles.detailValueDark}>{investorRefId(row.key)}</Text>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>CURRENT RATE</Text>
+                      <Text style={local.gridVal}>{r.currentInterestRate}%</Text>
                     </View>
                   </View>
 
-                  {/* Investment ID — the investor's real registry ID once
-                      approved, "-" while still pending. Matches the web's
-                      Investment ID column. */}
-                  <View style={styles.detailsRow}>
-                    <View>
-                      <Text style={styles.detailLabel}>Investment ID</Text>
-                      <Text style={styles.detailValueDark}>
-                        {row.status === 'Pending' ? '-' : row.investorId}
-                      </Text>
+                  <View style={local.grid}>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>CURRENT MATURITY</Text>
+                      <Text style={local.gridVal}>{formatDate(r.currentMaturityDate)}</Text>
+                    </View>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>REQUESTED EXTENSION</Text>
+                      <Text style={local.gridValGreen}>{r.requestedExtension}</Text>
                     </View>
                   </View>
 
-                  <View style={styles.detailsRow}>
-                    <View>
-                      <Text style={styles.detailLabel}>Branch</Text>
-                      <Text style={styles.detailValueDark}>{row.branch}</Text>
+                  <View style={local.grid}>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>SUBMITTED ON</Text>
+                      <Text style={local.gridVal}>{formatDate(r.submittedDate)}</Text>
                     </View>
-                    <View>
-                      <Text style={styles.detailLabel}>Amount</Text>
-                      <Text style={styles.detailValueDark}>
-                        {formatINR(row.amount)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.detailsRow}>
-                    <View>
-                      <Text style={styles.detailLabel}>Interest Rate</Text>
-                      <Text style={styles.detailValue}>
-                        {row.interestRate}% p.a.
-                      </Text>
-                    </View>
-                    <View>
-                      <Text style={styles.detailLabel}>
-                        {row.status === 'Pending' ? 'Submitted' : 'Invested'}
-                      </Text>
-                      <Text style={styles.detailValueDark}>{row.investedDate}</Text>
-                    </View>
-                  </View>
-
-                  <View style={styles.detailsRow}>
-                    <View>
-                      <Text style={styles.detailLabel}>Maturity Date</Text>
-                      <Text style={styles.detailValueDark}>{row.maturityDate}</Text>
-                    </View>
+                    <View style={local.gridCol} />
                   </View>
 
                   <View style={local.actionsRow}>
-                    {row.status === 'Pending' && row.request ? (
-                      <TouchableOpacity
-                        style={local.awaitingBtn}
-                        onPress={() => openReview(row.request!)}>
-                        <Text style={local.awaitingBtnText}>Awaiting Approval</Text>
-                      </TouchableOpacity>
-                    ) : (
+                    <TouchableOpacity
+                      style={local.reviewBtn}
+                      onPress={() => handleOpenReviewTenure(r)}>
+                      <Text style={local.reviewBtnText}>Review & Send →</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )
+          ) : filteredInvestments.length === 0 ? (
+            <View style={local.emptyWrap}>
+              <Text style={local.emptyText}>
+                {activeTab === 'pending'
+                  ? 'No pending investments awaiting approval.'
+                  : 'No investments found.'}
+              </Text>
+            </View>
+          ) : (
+            filteredInvestments.map(item => {
+              const isPending = item.status === 'Pending';
+
+              return (
+                <View key={item.id} style={local.card}>
+                  <View style={local.cardTopRow}>
+                    <View style={local.cardTopLeft}>
+                      <Text style={local.cardInvestorName}>{item.investorName}</Text>
+                      <Text style={local.cardInvestorId}>ID: {item.investorId}</Text>
+                    </View>
+                    {renderStatusPill(item.status)}
+                  </View>
+
+                  <View style={local.grid}>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>INVESTMENT ID</Text>
+                      <Text style={local.gridValBlue}>{item.investmentId}</Text>
+                    </View>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>AMOUNT</Text>
+                      <Text style={local.gridValBold}>{formatINR(item.amount)}</Text>
+                    </View>
+                  </View>
+
+                  <View style={local.grid}>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>INTEREST RATE</Text>
+                      <Text style={local.gridVal}>{item.interestRate}%</Text>
+                    </View>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>TENURE</Text>
+                      <Text style={local.gridVal}>{item.tenureMonths} Months</Text>
+                    </View>
+                  </View>
+
+                  <View style={local.grid}>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>INVESTED DATE</Text>
+                      <Text style={local.gridVal}>{formatDate(item.investmentDate)}</Text>
+                    </View>
+                    <View style={local.gridCol}>
+                      <Text style={local.gridLabel}>MATURITY DATE</Text>
+                      <Text style={local.gridVal}>{formatDate(item.maturityDate)}</Text>
+                    </View>
+                  </View>
+
+                  {item.bondId && item.bondId !== '—' && (
+                    <View style={local.grid}>
+                      <View style={local.gridCol}>
+                        <Text style={local.gridLabel}>BOND NUMBER</Text>
+                        <Text style={local.gridVal}>{item.bondId}</Text>
+                      </View>
+                      <View style={local.gridCol} />
+                    </View>
+                  )}
+
+                  <View style={local.actionsRow}>
+                    <TouchableOpacity
+                      style={local.viewBtn}
+                      onPress={() => handleOpenView(item.investmentId)}>
+                      <Text style={local.viewBtnText}>View Details</Text>
+                    </TouchableOpacity>
+
+                    {isPending && activeTab === 'pending' && (
                       <>
                         <TouchableOpacity
-                          style={local.detailsBtn}
-                          onPress={() => openDetails(row)}>
-                          <Text style={local.detailsBtnText}>View Details</Text>
+                          style={local.rejectBtn}
+                          onPress={() => handleOpenReject(item)}>
+                          <Text style={local.rejectBtnText}>Reject</Text>
                         </TouchableOpacity>
+
                         <TouchableOpacity
-                          style={local.bondBtn}
-                          onPress={() => {
-                            if (row.bond) {
-                              navigation.navigate('BondDetails', {
-                                investorId: row.investorId,
-                                bondId: row.bondNumber,
-                              });
-                            }
-                          }}>
-                          <Text style={local.bondBtnText}>Bond</Text>
+                          style={local.approveBtn}
+                          onPress={() => handleOpenApprove(item)}>
+                          <Text style={local.approveBtnText}>Approve</Text>
                         </TouchableOpacity>
-                        {/* Tenure action hidden once the bond has matured
-                            (isMatured) — only View + Bond remain for those.
-                            For non-matured bonds, Tenure is only enabled
-                            once the investor has actually submitted an
-                            extension request for this bond — otherwise
-                            it's shown disabled/greyed out so the admin
-                            can't act on a request that doesn't exist. */}
-                      {!isMatured && (
-                          <TouchableOpacity
-                            disabled={!hasActionableTenureReq}
-                            style={[
-                              local.tenureBtn,
-                              hasActionableTenureReq && local.tenureBtnFlagged,
-                              !hasActionableTenureReq && local.tenureBtnDisabled,
-                            ]}
-                            onPress={() => hasActionableTenureReq && openTenure(row)}>
-                            <Text
-                              style={[
-                                local.tenureBtnText,
-                                hasActionableTenureReq && local.tenureBtnTextFlagged,
-                                !hasActionableTenureReq && local.tenureBtnTextDisabled,
-                              ]}>
-                              {hasActionableTenureReq
-                                ? 'Tenure •'
-                                : hasPendingTenureReq
-                                ? 'Awaiting SA'
-                                : 'Tenure'}
-                            </Text>
-                          </TouchableOpacity>
-                        )}
                       </>
                     )}
                   </View>
                 </View>
               );
-            })}
-          </>
-        )}
+            })
+          )}
+        </View>
       </ScrollView>
 
-      <TouchableOpacity style={styles.fab}>
-        <Text style={styles.fabIcon}>+</Text>
-      </TouchableOpacity>
-
-    
-<AdminBottomTabBar
-  active="Investments"
-  navigation={navigation}
-/>
-
-      {/* ========== Review & Approve Modal ========== */}
+      {/* ======================================================
+          VIEW DETAILS MODAL
+          ====================================================== */}
       <Modal
-        visible={!!reviewReq}
         transparent
         animationType="fade"
-        onRequestClose={closeReview}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            {reviewReq && (
+        visible={!!viewingDetails || detailsLoading}
+        onRequestClose={() => setViewingDetails(null)}>
+        <View style={local.modalOverlay}>
+          <View style={local.modalCard}>
+            {detailsLoading ? (
+              <View style={{padding: 30, alignItems: 'center'}}>
+                <ActivityIndicator size="large" color="#0B1E45" />
+                <Text style={{marginTop: 12, color: '#6B7280'}}>Loading details...</Text>
+              </View>
+            ) : viewingDetails ? (
               <>
-                <Text style={styles.modalTitle}>Review Investment</Text>
-
-                <View style={local.detailsBlock}>
-                  <Text style={local.detailsBlockTitle}>Investment Details</Text>
-
-                  <View style={local.detailsRow}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>INVESTOR</Text>
-                      <Text style={local.detailValueSmall}>
-                        {getInvestorName(
-                          reviewReq.investorId,
-                          reviewReq.investorName,
-                        )}
-                      </Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>INVESTOR ID</Text>
-                      <Text style={local.detailValueWarn}>
-                        Will be generated on approval
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={local.detailsRow}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>BRANCH</Text>
-                     <Text style={local.detailValueSmall}>
-  {getInvestorBranch(reviewReq.investorId, reviewReq.investorName, reviewReq.branch)}
-</Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>AMOUNT</Text>
-                      <Text style={local.detailValueSmall}>
-                        {formatINR(reviewReq.amount)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={local.detailsRowLast}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>TENURE</Text>
-                      <Text style={local.detailValueSmall}>
-                        {reviewReq.tenureMonths} months
-                      </Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>TRANSACTION REF</Text>
-                      <Text style={local.detailValueSmall}>
-                        {reviewReq.transactionRef || '—'}
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-
-                <Text style={styles.modalLabel}>Interest Rate (% p.a.)</Text>
-                <View style={styles.rateChipsRow}>
-                  {RATE_QUICK_SELECT.map(r => {
-                    const active = parseFloat(rateDraft) === r;
-                    return (
-                      <TouchableOpacity
-                        key={r}
-                        style={[styles.rateChip, active && styles.rateChipActive]}
-                        onPress={() => setRateDraft(String(r))}>
-                        <Text
-                          style={[
-                            styles.rateChipText,
-                            active && styles.rateChipTextActive,
-                          ]}>
-                          {r}%
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-
-                <TextInput
-                  style={styles.rateInput}
-                  keyboardType="decimal-pad"
-                  value={rateDraft}
-                  onChangeText={setRateDraft}
-                />
-
-                <View style={styles.previewBox}>
-                  <Text style={styles.previewText}>Estimated monthly interest</Text>
-                  <Text style={styles.previewValue}>
-                    {formatINR(monthlyPreview(reviewReq.amount, rateDraft))}
-                  </Text>
-                </View>
-
-                <View style={local.noticeBox}>
-                  <Text style={local.noticeText}>
-                    Approving will activate the investment, assign a bond number
-                    (BND-YYYY-XXX), and generate the digital bond certificate at{' '}
-                    {currentRateForNotice}% p.a. The investor will be notified
-                    automatically.
-                  </Text>
-                </View>
-
-                <View style={local.modalActionsRow3}>
-                  <TouchableOpacity
-                    style={styles.modalCancelBtn}
-                    onPress={closeReview}>
-                    <Text style={styles.modalCancelText}>Cancel</Text>
+                <View style={local.modalHeaderRow}>
+                  <Text style={local.modalTitle}>Investment Details</Text>
+                  <TouchableOpacity onPress={() => setViewingDetails(null)}>
+                    <Text style={local.modalClose}>✕</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={local.rejectBtn}
-                    onPress={() => handleReject(reviewReq)}>
-                    <Text style={local.rejectBtnText}>Reject</Text>
-                  </TouchableOpacity>
+                </View>
+
+                <ScrollView style={{maxHeight: 400}} showsVerticalScrollIndicator={false}>
+                  <View style={local.modalSection}>
+                    <Text style={local.modalSectionTitle}>INVESTOR INFO</Text>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Investor Name</Text>
+                      <Text style={local.modalVal}>{viewingDetails.investorName}</Text>
+                    </View>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Investor ID</Text>
+                      <Text style={local.modalVal}>{viewingDetails.investorId}</Text>
+                    </View>
+                    {viewingDetails.mobile && (
+                      <View style={local.modalRow}>
+                        <Text style={local.modalLabel}>Mobile</Text>
+                        <Text style={local.modalVal}>{viewingDetails.mobile}</Text>
+                      </View>
+                    )}
+                    {viewingDetails.email && (
+                      <View style={local.modalRow}>
+                        <Text style={local.modalLabel}>Email</Text>
+                        <Text style={local.modalVal}>{viewingDetails.email}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={local.modalSection}>
+                    <Text style={local.modalSectionTitle}>INVESTMENT INFO</Text>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Investment ID</Text>
+                      <Text style={local.modalValBlue}>{viewingDetails.investmentId}</Text>
+                    </View>
+                    {viewingDetails.bondId && (
+                      <View style={local.modalRow}>
+                        <Text style={local.modalLabel}>Bond Number</Text>
+                        <Text style={local.modalVal}>{viewingDetails.bondId}</Text>
+                      </View>
+                    )}
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Principal Amount</Text>
+                      <Text style={local.modalValBold}>{formatINR(viewingDetails.amount)}</Text>
+                    </View>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Interest Rate</Text>
+                      <Text style={local.modalVal}>{viewingDetails.interestRate}%</Text>
+                    </View>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Tenure</Text>
+                      <Text style={local.modalVal}>{viewingDetails.tenureMonths} Months</Text>
+                    </View>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Invested Date</Text>
+                      <Text style={local.modalVal}>{formatDate(viewingDetails.investmentDate)}</Text>
+                    </View>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Maturity Date</Text>
+                      <Text style={local.modalVal}>{formatDate(viewingDetails.maturityDate)}</Text>
+                    </View>
+                    <View style={local.modalRow}>
+                      <Text style={local.modalLabel}>Status</Text>
+                      <Text style={local.modalVal}>{viewingDetails.status}</Text>
+                    </View>
+                  </View>
+
+                  {viewingDetails.bankName && (
+                    <View style={local.modalSection}>
+                      <Text style={local.modalSectionTitle}>BANK DETAILS</Text>
+                      <View style={local.modalRow}>
+                        <Text style={local.modalLabel}>Bank</Text>
+                        <Text style={local.modalVal}>{viewingDetails.bankName}</Text>
+                      </View>
+                      <View style={local.modalRow}>
+                        <Text style={local.modalLabel}>Account No</Text>
+                        <Text style={local.modalVal}>{viewingDetails.accountNumber}</Text>
+                      </View>
+                      <View style={local.modalRow}>
+                        <Text style={local.modalLabel}>IFSC</Text>
+                        <Text style={local.modalVal}>{viewingDetails.ifscCode}</Text>
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
+
                 <TouchableOpacity
-   style={styles.modalApproveBtn}
-   onPress={handleConfirmApprove}>
-   <Text style={styles.modalApproveText}>Approve</Text>
- </TouchableOpacity>
+                  style={local.modalDoneBtn}
+                  onPress={() => setViewingDetails(null)}>
+                  <Text style={local.modalDoneBtnText}>Close</Text>
+                </TouchableOpacity>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ======================================================
+          APPROVE MODAL
+          ====================================================== */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={!!approvingItem}
+        onRequestClose={() => setApprovingItem(null)}>
+        <View style={local.modalOverlay}>
+          <View style={local.modalCard}>
+            {approvingItem && (
+              <>
+                <View style={local.modalHeaderRow}>
+                  <Text style={local.modalTitle}>Approve Investment</Text>
+                  <TouchableOpacity onPress={() => setApprovingItem(null)}>
+                    <Text style={local.modalClose}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={local.modalSubtitle}>
+                  Set approved interest rate and confirm approval for investment {approvingItem.investmentId}:
+                </Text>
+
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>Interest Rate (% per annum) *</Text>
+                  <TextInput
+                    style={local.fieldInput}
+                    value={approveRate}
+                    onChangeText={setApproveRate}
+                    keyboardType="numeric"
+                    placeholder="3.00"
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>Remarks (Optional)</Text>
+                  <TextInput
+                    style={[local.fieldInput, {height: 70, textAlignVertical: 'top'}]}
+                    value={approveRemarks}
+                    onChangeText={setApproveRemarks}
+                    multiline
+                    placeholder="Approval remarks..."
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={local.modalBtnRow}>
+                  <TouchableOpacity
+                    style={local.modalCancelBtn}
+                    disabled={isApproving}
+                    onPress={() => setApprovingItem(null)}>
+                    <Text style={local.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[local.modalApproveBtn, isApproving && {opacity: 0.6}]}
+                    disabled={isApproving}
+                    onPress={handleConfirmApprove}>
+                    {isApproving ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={local.modalApproveBtnText}>Confirm Approval</Text>
+                    )}
+                  </TouchableOpacity>
                 </View>
               </>
             )}
@@ -918,455 +811,775 @@ const getInvestorBranch = (investorId: string, fallbackName?: string, explicitBr
         </View>
       </Modal>
 
-      {/* ========== View Details Modal ========== */}
+      {/* ======================================================
+          REJECT MODAL
+          ====================================================== */}
       <Modal
-        visible={!!detailsRow}
         transparent
         animationType="fade"
-        onRequestClose={closeDetails}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, {maxHeight: '85%'}]}>
-            {detailsRow && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalTitle}>Investment Details</Text>
-
-                <View style={local.detailsBlock}>
-                  <View style={local.detailsRow}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>BOND NUMBER</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.bondNumber}
-                      </Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>STATUS</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.status}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={local.detailsRow}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>INVESTOR NAME</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.investorName}
-                      </Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>INVESTOR ID</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.investorId}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={local.detailsRow}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>BRANCH</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.branch}
-                      </Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>INVESTMENT AMOUNT</Text>
-                      <Text style={local.detailValueSmall}>
-                        {formatINR(detailsRow.amount)}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={local.detailsRow}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>INTEREST RATE</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.interestRate}% p.a.
-                      </Text>
-                    </View>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>
-                        {detailsRow.status === 'Pending'
-                          ? 'SUBMITTED ON'
-                          : 'INVESTMENT DATE'}
-                      </Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.investedDate}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <View style={local.detailsRowLast}>
-                    <View style={local.detailCol}>
-                      <Text style={local.detailLabelSmall}>MATURITY DATE</Text>
-                      <Text style={local.detailValueSmall}>
-                        {detailsRow.maturityDate}
-                      </Text>
-                    </View>
-                  </View>
+        visible={!!rejectingItem}
+        onRequestClose={() => setRejectingItem(null)}>
+        <View style={local.modalOverlay}>
+          <View style={local.modalCard}>
+            {rejectingItem && (
+              <>
+                <View style={local.modalHeaderRow}>
+                  <Text style={local.modalTitle}>Reject Investment</Text>
+                  <TouchableOpacity onPress={() => setRejectingItem(null)}>
+                    <Text style={local.modalClose}>✕</Text>
+                  </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity
-                  style={[
-                    styles.modalApproveBtn,
-                    {marginTop: 16, alignSelf: 'flex-end'},
-                  ]}
-                  onPress={closeDetails}>
-                  <Text style={styles.modalApproveText}>Close</Text>
-                </TouchableOpacity>
-              </ScrollView>
+                <Text style={local.modalSubtitle}>
+                  Please provide a rejection reason for investment {rejectingItem.investmentId}:
+                </Text>
+
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>Rejection Reason *</Text>
+                  <TextInput
+                    style={local.fieldInput}
+                    value={rejectReason}
+                    onChangeText={setRejectReason}
+                    placeholder="e.g. Incomplete KYC, invalid payment reference..."
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>Remarks (Optional)</Text>
+                  <TextInput
+                    style={[local.fieldInput, {height: 70, textAlignVertical: 'top'}]}
+                    value={rejectRemarks}
+                    onChangeText={setRejectRemarks}
+                    multiline
+                    placeholder="Additional rejection remarks..."
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={local.modalBtnRow}>
+                  <TouchableOpacity
+                    style={local.modalCancelBtn}
+                    disabled={isRejecting}
+                    onPress={() => setRejectingItem(null)}>
+                    <Text style={local.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[local.modalRejectBtn, isRejecting && {opacity: 0.6}]}
+                    disabled={isRejecting}
+                    onPress={handleConfirmReject}>
+                    {isRejecting ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={local.modalRejectBtnText}>Reject Investment</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </View>
         </View>
       </Modal>
 
-      {/* ========== Renew / Increase Tenure Modal ========== */}
+      {/* ======================================================
+          TENURE EXTENSION REVIEW & SEND MODAL
+          ====================================================== */}
       <Modal
-        visible={!!tenureRow}
         transparent
         animationType="fade"
-        onRequestClose={() => {
-          setTenureRow(null);
-          setLinkedTenureRequest(null);
-        }}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            {tenureRow && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Text style={styles.modalTitle}>Renew / Increase Tenure</Text>
-
-                {/* Shown only when this bond has a matching pending
-                    investor request — tells the admin exactly what was
-                    asked for, and the fields above are already prefilled
-                    from it. */}
-                {linkedTenureRequest && (
-                  <View style={local.noticeBox}>
-                    <Text style={local.noticeText}>
-                      {tenureRow.investorName} requested a {linkedTenureRequest.extensionMonths}-month
-                      extension on {linkedTenureRequest.requestedOn}. Adjust below if needed, then
-                      approve to notify the investor.
-                    </Text>
-                  </View>
-                )}
-
-                <Text style={local.detailLabelSmall}>Investor</Text>
-                <Text style={[local.detailValueSmall, {marginBottom: 14}]}>
-                  {tenureRow.investorName} ({tenureRow.investorId})
-                </Text>
-
-                <View style={local.detailsRow}>
-                  <View style={local.detailCol}>
-                    <Text style={local.detailLabelSmall}>Current Tenure Ends</Text>
-                    <Text style={local.detailValueSmall}>
-                      {tenureRow.maturityDate}
-                    </Text>
-                  </View>
-                  <View style={local.detailCol}>
-                    <Text style={local.detailLabelSmall}>Current Rate</Text>
-                    <Text style={local.detailValueSmall}>
-                      {tenureRow.interestRate}% p.a.
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={local.detailsRow}>
-                  <View style={local.detailCol}>
-                    <Text style={local.detailLabelSmall}>Extend By (months)</Text>
-                    <TextInput
-                      style={styles.rateInput}
-                      keyboardType="number-pad"
-                      value={extendMonths}
-                      onChangeText={setExtendMonths}
-                    />
-                  </View>
-                  <View style={local.detailCol}>
-                    <Text style={local.detailLabelSmall}>New Rate (% p.a.)</Text>
-                    <TextInput
-                      style={styles.rateInput}
-                      keyboardType="decimal-pad"
-                      value={newRate}
-                      onChangeText={setNewRate}
-                    />
-                  </View>
-                </View>
-
-                <Text style={local.detailLabelSmall}>New Maturity Date</Text>
-                <Text style={[local.detailValueSmall, {marginBottom: 12}]}>
-                  {calcNewMaturity()}
-                </Text>
-
-                <Text style={local.detailLabelSmall}>Remarks (optional)</Text>
-                <TextInput
-                  style={[
-                    styles.rateInput,
-                    {height: 70, textAlignVertical: 'top', marginBottom: 8},
-                  ]}
-                  multiline
-                  placeholder="Add remarks..."
-                  placeholderTextColor="#9CA3AF"
-                  value={remarks}
-                  onChangeText={setRemarks}
-                />
-
-                <View style={local.modalActionsRow3}>
-                  <TouchableOpacity
-                    style={styles.modalCancelBtn}
-                    onPress={() => {
-                      setTenureRow(null);
-                      setLinkedTenureRequest(null);
-                    }}>
-                    <Text style={styles.modalCancelText}>Cancel</Text>
-                  </TouchableOpacity>
-                  {linkedTenureRequest && (
-                    <TouchableOpacity
-                      style={local.rejectBtn}
-                      onPress={() => {
-                        Alert.alert(
-                          'Reject extension',
-                          `Reject ${tenureRow.investorName}'s extension request for ${tenureRow.bondNumber}?`,
-                          [
-                            {text: 'Cancel', style: 'cancel'},
-                            {
-                              text: 'Reject',
-                              style: 'destructive',
-                              onPress: () => {
-                                rejectTenureExtension(linkedTenureRequest.id);
-                                setTenureRow(null);
-                                setLinkedTenureRequest(null);
-                              },
-                            },
-                          ],
-                        );
-                      }}>
-                      <Text style={local.rejectBtnText}>Reject</Text>
-                    </TouchableOpacity>
-                  )}
-                  <TouchableOpacity
-                    style={styles.modalApproveBtn}
-                    onPress={handleApproveTenure}>
-                    <Text style={styles.modalApproveText}>Review & Approve</Text>
+        visible={!!reviewingTenure}
+        onRequestClose={() => setReviewingTenure(null)}>
+        <View style={local.modalOverlay}>
+          <View style={local.modalCard}>
+            {reviewingTenure && (
+              <>
+                <View style={local.modalHeaderRow}>
+                  <Text style={local.modalTitle}>Review Tenure Extension</Text>
+                  <TouchableOpacity onPress={() => setReviewingTenure(null)}>
+                    <Text style={local.modalClose}>✕</Text>
                   </TouchableOpacity>
                 </View>
-              </ScrollView>
+
+                <Text style={local.modalSubtitle}>
+                  Review the investor's requested tenure extension before sending to Super Admin:
+                </Text>
+
+                <View style={local.tenureReviewCard}>
+                  <View style={local.modalRow}>
+                    <Text style={local.modalLabel}>Investor</Text>
+                    <Text style={local.modalVal}>{reviewingTenure.investorName}</Text>
+                  </View>
+                  <View style={local.modalRow}>
+                    <Text style={local.modalLabel}>Bond Number</Text>
+                    <Text style={local.modalValBlue}>{reviewingTenure.bondId}</Text>
+                  </View>
+                  <View style={local.modalRow}>
+                    <Text style={local.modalLabel}>Current Maturity</Text>
+                    <Text style={local.modalVal}>{formatDate(reviewingTenure.currentMaturityDate)}</Text>
+                  </View>
+                  <View style={local.modalRow}>
+                    <Text style={local.modalLabel}>Current Rate</Text>
+                    <Text style={local.modalVal}>{reviewingTenure.currentInterestRate}%</Text>
+                  </View>
+                  <View style={local.modalRow}>
+                    <Text style={local.modalLabel}>Requested Extension</Text>
+                    <Text style={local.modalValGreen}>{reviewingTenure.requestedExtension}</Text>
+                  </View>
+                </View>
+
+                <View style={local.noticeBox}>
+                  <Text style={local.noticeText}>
+                    ℹ️ This request will be forwarded to Super Admin. Admin cannot directly approve or reject tenure extensions.
+                  </Text>
+                </View>
+
+                <View style={local.modalField}>
+                  <Text style={local.fieldLabel}>Remarks (Optional)</Text>
+                  <TextInput
+                    style={[local.fieldInput, {height: 60, textAlignVertical: 'top'}]}
+                    value={tenureRemarks}
+                    onChangeText={setTenureRemarks}
+                    multiline
+                    placeholder="Submitted to Super Admin by Admin."
+                    placeholderTextColor="#9CA3AF"
+                  />
+                </View>
+
+                <View style={local.modalBtnRow}>
+                  <TouchableOpacity
+                    style={local.modalCancelBtn}
+                    disabled={isSubmittingTenure}
+                    onPress={() => setReviewingTenure(null)}>
+                    <Text style={local.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[local.modalApproveBtn, isSubmittingTenure && {opacity: 0.6}]}
+                    disabled={isSubmittingTenure}
+                    onPress={handleConfirmSendTenure}>
+                    {isSubmittingTenure ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={local.modalApproveBtnText}>Send to Super Admin</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
             )}
           </View>
         </View>
       </Modal>
+
+      <AdminBottomTabBar active="Investments" navigation={navigation} />
     </SafeAreaView>
   );
 };
 
+/* ============================================================
+   LOCAL STYLES
+   ============================================================ */
+
 const local = StyleSheet.create({
-  detailsBlock: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    padding: 14,
-    marginTop: 12,
-    marginBottom: 4,
+  metricsScroll: {
+    marginBottom: 16,
+    width: '100%',
   },
-  detailsBlockTitle: {
-    fontSize: 13,
+  metricsContainer: {
+    flexDirection: 'row',
+    gap: 10,
+    paddingRight: 10,
+  },
+  metricCard: {
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    minWidth: 140,
+    borderWidth: 1,
+  },
+  metricCardNavy: {
+    backgroundColor: '#0B1E45',
+    borderColor: '#0B1E45',
+  },
+  metricCardAmber: {
+    backgroundColor: '#FFFBEB',
+    borderColor: '#FDE68A',
+  },
+  metricCardGreen: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#BBF7D0',
+  },
+  metricCardRed: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FECACA',
+  },
+  metricCardBlue: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+  },
+  metricLabelLight: {
+    fontSize: 10.5,
     fontWeight: '700',
-    color: '#0B1E45',
-    marginBottom: 10,
+    color: '#9CA3AF',
+    letterSpacing: 0.5,
   },
-  detailsRow: {
+  metricValueLight: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginTop: 4,
+  },
+  metricLabelAmber: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#B45309',
+    letterSpacing: 0.5,
+  },
+  metricValueAmber: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#B45309',
+    marginTop: 4,
+  },
+  metricLabelGreen: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#16A34A',
+    letterSpacing: 0.5,
+  },
+  metricValueGreen: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#16A34A',
+    marginTop: 4,
+  },
+  metricLabelRed: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#DC2626',
+    letterSpacing: 0.5,
+  },
+  metricValueRed: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#DC2626',
+    marginTop: 4,
+  },
+  metricLabelBlue: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#2563EB',
+    letterSpacing: 0.5,
+  },
+  metricValueBlue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#2563EB',
+    marginTop: 4,
+  },
+
+  tabScroll: {
+    marginBottom: 16,
+    width: '100%',
+  },
+  tabScrollContent: {
+    paddingRight: 10,
+  },
+  tabRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
+    gap: 8,
   },
-  detailsRowLast: {
+  tabPill: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    gap: 6,
   },
-  detailCol: {
-    flex: 1,
+  tabPillActive: {
+    backgroundColor: '#0B1E45',
+    borderColor: '#0B1E45',
   },
-  detailLabelSmall: {
+  tabText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#4B5563',
+  },
+  tabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  tabBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  tabBadgeActive: {
+    backgroundColor: '#1E3A8A',
+  },
+  tabBadgeInactive: {
+    backgroundColor: '#F3F4F6',
+  },
+  tabBadgeText: {
     fontSize: 11,
+    fontWeight: '700',
+  },
+  tabBadgeTextActive: {
+    color: '#93C5FD',
+  },
+  tabBadgeTextInactive: {
     color: '#6B7280',
   },
-  detailValueSmall: {
+
+  /* Fixed Search & Export Toolbar */
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+    width: '100%',
+    height: 46,
+  },
+  searchWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: '100%',
+  },
+  searchIcon: {
+    fontSize: 14,
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: '100%',
+    fontSize: 13.5,
+    color: '#111827',
+    paddingVertical: 0,
+  },
+  clearBtn: {
+    padding: 4,
+  },
+  clearBtnText: {
+    color: '#9CA3AF',
+    fontSize: 14,
+  },
+  exportBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: '100%',
+    minWidth: 92,
+    gap: 6,
+  },
+  exportBtnIcon: {
+    fontSize: 14,
+  },
+  exportBtnText: {
     fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+
+  tableContainer: {
+    width: '100%',
+  },
+
+  loadingWrap: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13.5,
+    color: '#6B7280',
+  },
+
+  emptyWrap: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    padding: 30,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    width: '100%',
+  },
+  emptyText: {
+    color: '#6B7280',
+    fontSize: 13.5,
+  },
+
+  errorBox: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    padding: 14,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    flex: 1,
+    marginRight: 8,
+  },
+  retryBtn: {
+    backgroundColor: '#DC2626',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  retryBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+    width: '100%',
+  },
+  cardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+    width: '100%',
+  },
+  cardTopLeft: {
+    flex: 1,
+    marginRight: 8,
+  },
+  cardInvestorName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  cardInvestorId: {
+    fontSize: 11.5,
+    color: '#6B7280',
+    marginTop: 2,
+  },
+
+  grid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    width: '100%',
+  },
+  gridCol: {
+    flex: 1,
+  },
+  gridLabel: {
+    fontSize: 10.5,
+    color: '#6B7280',
+    letterSpacing: 0.4,
+    fontWeight: '600',
+  },
+  gridVal: {
+    fontSize: 13.5,
     fontWeight: '700',
     color: '#111827',
     marginTop: 2,
   },
-  detailValueWarn: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#D97706',
+  gridValBold: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#111827',
     marginTop: 2,
   },
-  noticeBox: {
-    backgroundColor: '#DCFCE7',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 14,
-    marginBottom: 4,
-  },
-  noticeText: {
-    fontSize: 12,
-    color: '#166534',
-    lineHeight: 18,
-  },
-  modalActionsRow3: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 16,
-    gap: 8,
-  },
-  rejectBtn: {
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    justifyContent: 'center',
-  },
-  rejectBtnText: {
-    color: '#DC2626',
+  gridValBlue: {
+    fontSize: 13.5,
     fontWeight: '700',
-    fontSize: 13,
+    color: '#1D4ED8',
+    marginTop: 2,
   },
+  gridValGreen: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#16A34A',
+    marginTop: 2,
+  },
+
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 8,
-    marginTop: 14,
+    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    width: '100%',
   },
-  detailsBtn: {
+  viewBtn: {
     backgroundColor: '#F3F4F6',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
   },
-  detailsBtnText: {
-    color: '#374151',
-    fontSize: 13,
+  viewBtnText: {
+    fontSize: 12.5,
     fontWeight: '600',
+    color: '#374151',
   },
-  bondBtn: {
+  approveBtn: {
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  approveBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  rejectBtn: {
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  rejectBtnText: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#DC2626',
+  },
+  reviewBtn: {
     backgroundColor: '#0B1E45',
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
   },
-  bondBtnText: {
+  reviewBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
   },
-  tenureBtn: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
+
+  pill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  tenureBtnText: {
-    color: '#1D4ED8',
-    fontSize: 13,
-    fontWeight: '600',
+  pillText: {
+    fontSize: 10.5,
+    fontWeight: '700',
   },
-  // Highlights the Tenure button when there's a pending investor request
-  // behind this specific bond, so the admin doesn't have to open every
-  // bond to find it.
-  tenureBtnFlagged: {
-    backgroundColor: '#FEF3C7',
-    borderColor: '#FDE68A',
+  pillAmber: {backgroundColor: '#FEF3C7'},
+  pillTextAmber: {color: '#D97706'},
+  pillGreen: {backgroundColor: '#DCFCE7'},
+  pillTextGreen: {color: '#16A34A'},
+  pillRed: {backgroundColor: '#FEE2E2'},
+  pillTextRed: {color: '#DC2626'},
+  pillGray: {backgroundColor: '#F3F4F6'},
+  pillTextGray: {color: '#6B7280'},
+
+  /* Modals */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  tenureBtnTextFlagged: {
-    color: '#B45309',
-  },
-  // Tenure button is disabled/greyed out when there's no pending
-  // investor-submitted extension request for this bond — admin can't open
-  // the extension flow until the investor actually asks for one.
-  tenureBtnDisabled: {
-    backgroundColor: '#F3F4F6',
-    borderColor: '#E5E7EB',
-  },
-  tenureBtnTextDisabled: {
-    color: '#9CA3AF',
-  },
-  awaitingBtn: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  awaitingBtnText: {
-    color: '#D97706',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  // Info card style for the Pending Approval tab — used for tenure
-  // extension requests.
-  infoCard: {
+  modalCard: {
+    width: '100%',
+    maxWidth: 460,
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#F3E8C7',
-    padding: 14,
-    marginBottom: 12,
+    borderRadius: 16,
+    padding: 20,
   },
-  infoCardTopRow: {
+  modalHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  infoCardTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0B1E45',
   },
-  infoBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  infoBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#B45309',
-    letterSpacing: 0.3,
-  },
-  infoCardBondId: {
-    fontSize: 12,
+  modalClose: {
+    fontSize: 18,
     color: '#6B7280',
+    padding: 4,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 16,
+  },
+  modalSection: {
+    marginBottom: 16,
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  modalSectionTitle: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#6B7280',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 6,
   },
-  infoCardText: {
+  modalLabel: {
+    fontSize: 12.5,
+    color: '#6B7280',
+  },
+  modalVal: {
     fontSize: 13,
-    color: '#374151',
-    lineHeight: 18,
+    fontWeight: '600',
+    color: '#111827',
   },
-  infoCardBtn: {
-    marginTop: 10,
-    alignSelf: 'flex-start',
+  modalValBold: {
+    fontSize: 13.5,
+    fontWeight: '800',
+    color: '#111827',
   },
-  infoCardBtnText: {
-    color: '#1D4ED8',
+  modalValBlue: {
     fontSize: 13,
     fontWeight: '700',
+    color: '#1D4ED8',
   },
-  // Small flag shown on a bond's card in "All Investments" when it has a
-  // pending investor request behind it, or has simply matured.
-  rowFlag: {
-    backgroundColor: '#FEF3C7',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    marginBottom: 10,
+  modalValGreen: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#16A34A',
   },
-  rowFlagText: {
-    fontSize: 11,
-    color: '#B45309',
-    fontWeight: '600',
+
+  modalField: {
+    marginBottom: 14,
+  },
+  fieldLabel: {
+    fontSize: 12.5,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 6,
+  },
+  fieldInput: {
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    fontSize: 13.5,
+    color: '#111827',
+    backgroundColor: '#F9FAFB',
+  },
+
+  modalBtnRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  modalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#374151',
+  },
+  modalApproveBtn: {
+    flex: 1.5,
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  modalApproveBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modalRejectBtn: {
+    flex: 1.5,
+    backgroundColor: '#DC2626',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  modalRejectBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  modalDoneBtn: {
+    backgroundColor: '#0B1E45',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  modalDoneBtnText: {
+    fontSize: 13.5,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+
+  tenureReviewCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    marginBottom: 12,
+  },
+  noticeBox: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 8,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    marginBottom: 12,
+  },
+  noticeText: {
+    fontSize: 12,
+    color: '#1D4ED8',
+    lineHeight: 16,
   },
 });
 
