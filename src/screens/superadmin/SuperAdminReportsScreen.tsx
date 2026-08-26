@@ -19,7 +19,6 @@ import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {styles} from '../../styles/superadmin/SuperAdminReportsScreen.styles';
 import {
-  getErrorMessage,
   formatCurrencyAUM,
   formatIndianNumber,
   formatSuperAdminDate,
@@ -56,21 +55,23 @@ type ReportTab =
   | 'Monthly'
   | 'Extensions';
 
-const TABS: ReportTab[] = [
-  'Overview',
-  'Investments',
-  'Investors',
-  'Admins',
-  'Maturity',
-  'Interest',
-  'Settlement',
-  'Branches',
-  'Monthly',
-  'Extensions',
+const TABS: {key: ReportTab; label: string; icon: string}[] = [
+  {key: 'Overview', label: 'Overview', icon: '📊'},
+  {key: 'Investments', label: 'Investments', icon: '📈'},
+  {key: 'Investors', label: 'Investors', icon: '👥'},
+  {key: 'Admins', label: 'Admins', icon: '🛡️'},
+  {key: 'Maturity', label: 'Maturity', icon: '📅'},
+  {key: 'Interest', label: 'Interest', icon: '％'},
+  {key: 'Settlement', label: 'Settlement', icon: '💳'},
+  {key: 'Branches', label: 'Branches', icon: '🏢'},
+  {key: 'Monthly', label: 'Monthly', icon: '📆'},
+  {key: 'Extensions', label: 'Extensions', icon: '⏳'},
 ];
 
-const formatINR = (n: number) =>
-  '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
+const formatINR = (n: number | null | undefined): string => {
+  const val = Math.round(Number(n) || 0);
+  return '₹' + val.toLocaleString('en-IN');
+};
 
 const DATE_PRESETS = [
   {label: 'All Time', from: '', to: ''},
@@ -110,212 +111,49 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
   const [toDate, setToDate] = useState<string>('');
   const [selectedPreset, setSelectedPreset] = useState<string>('All Time');
 
+  // Filter Bottom Sheet State
+  const [filterSheetVisible, setFilterSheetVisible] = useState(false);
+  const [draftBranch, setDraftBranch] = useState<string>('all');
+  const [draftAdmin, setDraftAdmin] = useState<string>('all');
+  const [draftStatus, setDraftStatus] = useState<string>('all');
+  const [draftPreset, setDraftPreset] = useState<string>('All Time');
+  const [draftFromDate, setDraftFromDate] = useState<string>('');
+  const [draftToDate, setDraftToDate] = useState<string>('');
+
+  // Filter Dropdown Options
   const [filterOptions, setFilterOptions] = useState<{
     branches: ReportFilterOption[];
     admins: ReportFilterOption[];
     statuses: ReportFilterOption[];
   }>({branches: [], admins: [], statuses: []});
 
-  // Modals Visibility
-  const [branchModalVisible, setBranchModalVisible] = useState(false);
-  const [statusModalVisible, setStatusModalVisible] = useState(false);
-  const [dateModalVisible, setDateModalVisible] = useState(false);
-
-  // Data Collections (Live API Data)
+  // Cached Datasets (Lazy loaded per tab/dataset)
   const [investments, setInvestments] = useState<InvestmentReportItem[]>([]);
   const [investors, setInvestors] = useState<InvestorReportItem[]>([]);
   const [admins, setAdmins] = useState<AdminReportItem[]>([]);
   const [settlements, setSettlements] = useState<SettlementReportItem[]>([]);
   const [extensions, setExtensions] = useState<ExtensionReportItem[]>([]);
 
-  // Investment Details Modal
+  // Track which datasets have been loaded for current filter set
+  const [loadedDatasets, setLoadedDatasets] = useState<{
+    investments: boolean;
+    investors: boolean;
+    admins: boolean;
+    settlements: boolean;
+    extensions: boolean;
+  }>({
+    investments: false,
+    investors: false,
+    admins: false,
+    settlements: false,
+    extensions: false,
+  });
+
+  // Investment Details Modal State
   const [selectedInvestment, setSelectedInvestment] =
     useState<InvestmentReportItem | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [detailsModalVisible, setDetailsModalVisible] = useState(false);
-
-  // Load Real Backend Data
-  const loadData = useCallback(
-    async (showLoader = true) => {
-      try {
-        if (showLoader) setLoading(true);
-        else setRefreshing(true);
-        setError('');
-
-        const queryParams = {
-          search: search.trim() || undefined,
-          branch_id: branchFilter !== 'all' ? branchFilter : undefined,
-          admin_id: adminFilter !== 'all' ? adminFilter : undefined,
-          status_id: statusFilter !== 'all' ? statusFilter : undefined,
-          from_date: fromDate || undefined,
-          to_date: toDate || undefined,
-          limit: 500,
-          offset: 0,
-        };
-
-        const [filtersRes, invRes, usersRes, admRes, settRes, extRes] =
-          await Promise.all([
-            getReportFilters(),
-            getInvestmentReports(queryParams),
-            getInvestorReports(queryParams),
-            getAdminReports(queryParams),
-            getSettlementReports(queryParams),
-            getExtensionReports(queryParams),
-          ]);
-
-        setFilterOptions(filtersRes);
-        setInvestments(invRes.records || []);
-        setInvestors(usersRes.records || []);
-        setAdmins(admRes.records || []);
-        setSettlements(settRes.records || []);
-        setExtensions(extRes.records || []);
-      } catch (err: any) {
-        console.log('Error loading superadmin reports:', err);
-        setError(getErrorMessage(err) || 'Failed to load reports.');
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [search, branchFilter, adminFilter, statusFilter, fromDate, toDate],
-  );
-
-  useEffect(() => {
-    loadData(true);
-  }, [loadData]);
-
-  // Derived Datasets
-  const maturityReports = useMemo(
-    () => deriveMaturityReports(investments),
-    [investments],
-  );
-  const interestReports = useMemo(
-    () => deriveInterestReports(investments),
-    [investments],
-  );
-  const branchReports = useMemo(
-    () => deriveBranchReports(investments),
-    [investments],
-  );
-  const monthlyReports = useMemo(
-    () => deriveMonthlyReports(investments),
-    [investments],
-  );
-
-  // Real Metric Calculations
-  const overviewStats = useMemo(() => {
-    const totalPrincipal = investments.reduce(
-      (sum, i) => sum + i.investment_amount,
-      0,
-    );
-    const totalExpectedInterest = investments.reduce(
-      (sum, i) => sum + i.expected_interest_amount,
-      0,
-    );
-    const activeCount = investments.filter(
-      i => i.status_name.toLowerCase() === 'active',
-    ).length;
-    const pendingCount = investments.filter(
-      i =>
-        i.status_name.toLowerCase().includes('pending') ||
-        i.status_name.toLowerCase().includes('submitted'),
-    ).length;
-    const settledCount = investments.filter(
-      i =>
-        i.status_name.toLowerCase().includes('settled') ||
-        i.status_name.toLowerCase().includes('closed') ||
-        i.status_name.toLowerCase().includes('paid'),
-    ).length;
-
-    const uniqueInvestors = new Set(
-      investments.map(i => i.investor_id).filter(Boolean),
-    ).size;
-
-    const monthlyInterestPayout = investments.reduce(
-      (sum, i) =>
-        sum +
-        (i.tenure_months > 0
-          ? i.expected_interest_amount / i.tenure_months
-          : 0),
-      0,
-    );
-
-    return {
-      totalInvestors: uniqueInvestors || investors.length,
-      totalInvestments: investments.length,
-      activeInvestments: activeCount,
-      pendingApprovals: pendingCount,
-      settledInvestments: settledCount,
-      totalPortfolio: totalPrincipal,
-      totalExpectedInterest,
-      monthlyInterestPayout,
-    };
-  }, [investments, investors]);
-
-  const statCards = [
-    {
-      label: 'Unique Investors',
-      value: formatIndianNumber(overviewStats.totalInvestors),
-      sub: 'Portfolio investors',
-      icon: '👥',
-      bg: '#EEF2FF',
-    },
-    {
-      label: 'Total Investments',
-      value: formatIndianNumber(overviewStats.totalInvestments),
-      sub: 'Bond count',
-      icon: '📈',
-      bg: '#F0F9FF',
-    },
-    {
-      label: 'Active Investments',
-      value: String(overviewStats.activeInvestments),
-      sub: 'Currently active',
-      icon: '✅',
-      bg: '#ECFDF5',
-    },
-    {
-      label: 'Pending Approvals',
-      value: String(overviewStats.pendingApprovals),
-      sub: 'Requires review',
-      icon: '⏱',
-      bg: '#FFFBEB',
-    },
-    {
-      label: 'Total Principal',
-      value: formatCurrencyAUM(overviewStats.totalPortfolio),
-      sub: 'Portfolio AUM',
-      icon: '💼',
-      bg: '#FDF4FF',
-    },
-    {
-      label: 'Monthly Payout',
-      value: formatINR(overviewStats.monthlyInterestPayout),
-      sub: 'Monthly interest',
-      icon: '％',
-      bg: '#F0FDF4',
-    },
-  ];
-
-  // Open Details Modal
-  const handleOpenDetails = async (item: InvestmentReportItem) => {
-    setSelectedInvestment(item);
-    setDetailsModalVisible(true);
-    setDetailsLoading(true);
-
-    try {
-      const detailed = await getInvestmentReportDetails(
-        item.investment_id || item.id,
-      );
-      if (detailed) {
-        setSelectedInvestment(detailed);
-      }
-    } catch (err) {
-      console.log('Error fetching report details:', err);
-    } finally {
-      setDetailsLoading(false);
-    }
-  };
 
   // Status Badge Helper
   const getStatusBadge = (status: string) => {
@@ -334,7 +172,12 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
         label: status || 'Active',
       };
     }
-    if (s.includes('pending') || s.includes('requested') || s.includes('review')) {
+    if (
+      s.includes('pending') ||
+      s.includes('submitted') ||
+      s.includes('requested') ||
+      s.includes('review')
+    ) {
       return {
         bg: '#FEF3C7',
         fg: '#B45309',
@@ -358,24 +201,400 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
     };
   };
 
-  // Clear All Filters
-  const handleClearFilters = () => {
-    setSearch('');
-    setBranchFilter('all');
-    setAdminFilter('all');
-    setStatusFilter('all');
-    setFromDate('');
-    setToDate('');
-    setSelectedPreset('All Time');
+  // 1. Load Filter Options on Mount
+  useEffect(() => {
+    const fetchFilters = async () => {
+      try {
+        const filters = await getReportFilters();
+        setFilterOptions(filters);
+      } catch (err) {
+        console.warn('Could not load filters:', err);
+      }
+    };
+    fetchFilters();
+  }, []);
+
+  // Compute active filters count
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (branchFilter !== 'all') count++;
+    if (adminFilter !== 'all') count++;
+    if (statusFilter !== 'all') count++;
+    if (fromDate || toDate) count++;
+    if (search.trim()) count++;
+    return count;
+  }, [branchFilter, adminFilter, statusFilter, fromDate, toDate, search]);
+
+  // Determine which dataset the active tab requires
+  const activeDatasetType = useMemo((): 'investments' | 'investors' | 'admins' | 'settlements' | 'extensions' => {
+    if (activeTab === 'Investors') return 'investors';
+    if (activeTab === 'Admins') return 'admins';
+    if (activeTab === 'Settlement') return 'settlements';
+    if (activeTab === 'Extensions') return 'extensions';
+    return 'investments';
+  }, [activeTab]);
+
+  // Sanitized query params for backend calls
+  const currentQueryParams = useMemo(() => {
+    return {
+      search: search.trim() || undefined,
+      branch_id:
+        branchFilter !== 'all' && !isNaN(Number(branchFilter))
+          ? Number(branchFilter)
+          : undefined,
+      admin_id:
+        adminFilter !== 'all' && !isNaN(Number(adminFilter))
+          ? Number(adminFilter)
+          : undefined,
+      status_id:
+        statusFilter !== 'all' && !isNaN(Number(statusFilter))
+          ? Number(statusFilter)
+          : undefined,
+      from_date: fromDate.trim() || undefined,
+      to_date: toDate.trim() || undefined,
+      limit: 500,
+      offset: 0,
+    };
+  }, [search, branchFilter, adminFilter, statusFilter, fromDate, toDate]);
+
+  // 2. Fetch specific dataset on demand (Lazy Loading & Caching)
+  const loadActiveDataset = useCallback(
+    async (datasetType: 'investments' | 'investors' | 'admins' | 'settlements' | 'extensions', force = false) => {
+      if (!force && loadedDatasets[datasetType]) {
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError('');
+
+        switch (datasetType) {
+          case 'investments': {
+            const res = await getInvestmentReports(currentQueryParams);
+            setInvestments(res.records || []);
+            setLoadedDatasets(prev => ({...prev, investments: true}));
+            break;
+          }
+          case 'investors': {
+            const res = await getInvestorReports(currentQueryParams);
+            setInvestors(res.records || []);
+            setLoadedDatasets(prev => ({...prev, investors: true}));
+            break;
+          }
+          case 'admins': {
+            const res = await getAdminReports(currentQueryParams);
+            setAdmins(res.records || []);
+            setLoadedDatasets(prev => ({...prev, admins: true}));
+            break;
+          }
+          case 'settlements': {
+            const res = await getSettlementReports(currentQueryParams);
+            setSettlements(res.records || []);
+            setLoadedDatasets(prev => ({...prev, settlements: true}));
+            break;
+          }
+          case 'extensions': {
+            const res = await getExtensionReports(currentQueryParams);
+            setExtensions(res.records || []);
+            setLoadedDatasets(prev => ({...prev, extensions: true}));
+            break;
+          }
+        }
+      } catch (err: any) {
+        console.warn(`Error loading ${datasetType} report:`, err);
+        setError(
+          err?.message ||
+            `Unable to load ${datasetType} report. Please try again.`,
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [currentQueryParams, loadedDatasets],
+  );
+
+  // When filters or active tab change, load if not cached
+  useEffect(() => {
+    loadActiveDataset(activeDatasetType, false);
+  }, [activeDatasetType, loadActiveDataset]);
+
+  // Pull-to-refresh action
+  const handleRefresh = useCallback(() => {
+    setRefreshing(true);
+    // Reload filter options & force reload active tab's dataset
+    getReportFilters().then(setFilterOptions).catch(() => {});
+    loadActiveDataset(activeDatasetType, true);
+  }, [activeDatasetType, loadActiveDataset]);
+
+  // When filters are applied or reset, invalidate all dataset caches and load active tab
+  const applyFilters = (newFilters: {
+    branch: string;
+    admin: string;
+    status: string;
+    preset: string;
+    from: string;
+    to: string;
+  }) => {
+    setBranchFilter(newFilters.branch);
+    setAdminFilter(newFilters.admin);
+    setStatusFilter(newFilters.status);
+    setSelectedPreset(newFilters.preset);
+    setFromDate(newFilters.from);
+    setToDate(newFilters.to);
+
+    // Invalidate caches so next access refetches with new filters
+    setLoadedDatasets({
+      investments: false,
+      investors: false,
+      admins: false,
+      settlements: false,
+      extensions: false,
+    });
   };
 
-  const hasActiveFilters = Boolean(
-    search ||
-      branchFilter !== 'all' ||
-      statusFilter !== 'all' ||
-      fromDate ||
-      toDate,
+  const handleClearAllFilters = () => {
+    setSearch('');
+    applyFilters({
+      branch: 'all',
+      admin: 'all',
+      status: 'all',
+      preset: 'All Time',
+      from: '',
+      to: '',
+    });
+  };
+
+  // Open Filter Bottom Sheet
+  const handleOpenFilterSheet = () => {
+    setDraftBranch(branchFilter);
+    setDraftAdmin(adminFilter);
+    setDraftStatus(statusFilter);
+    setDraftPreset(selectedPreset);
+    setDraftFromDate(fromDate);
+    setDraftToDate(toDate);
+    setFilterSheetVisible(true);
+  };
+
+  const handleApplyFilterSheet = () => {
+    setFilterSheetVisible(false);
+    applyFilters({
+      branch: draftBranch,
+      admin: draftAdmin,
+      status: draftStatus,
+      preset: draftPreset,
+      from: draftFromDate,
+      to: draftToDate,
+    });
+  };
+
+  // Open Details Modal using Alphanumeric ID
+  const handleOpenDetails = async (item: InvestmentReportItem) => {
+    setSelectedInvestment(item);
+    setDetailsModalVisible(true);
+    setDetailsLoading(true);
+
+    const investmentCode = String(item.investment_id || '').trim();
+    if (investmentCode) {
+      try {
+        const detailed = await getInvestmentReportDetails(investmentCode);
+        if (detailed) {
+          setSelectedInvestment(detailed);
+        }
+      } catch (err) {
+        console.warn('Error fetching investment details for:', investmentCode, err);
+      } finally {
+        setDetailsLoading(false);
+      }
+    } else {
+      setDetailsLoading(false);
+    }
+  };
+
+  // Derived Datasets (Calculated strictly from backend data)
+  const maturityReports = useMemo(
+    () => deriveMaturityReports(investments),
+    [investments],
   );
+  const interestReports = useMemo(
+    () => deriveInterestReports(investments),
+    [investments],
+  );
+  const branchReports = useMemo(
+    () => deriveBranchReports(investments),
+    [investments],
+  );
+  const monthlyReports = useMemo(
+    () => deriveMonthlyReports(investments),
+    [investments],
+  );
+
+  // Overview Metrics Calculations
+  const overviewStats = useMemo(() => {
+    const totalPrincipal = investments.reduce(
+      (sum, i) => sum + (Number(i.investment_amount) || 0),
+      0,
+    );
+    const totalExpectedInterest = investments.reduce(
+      (sum, i) => sum + (Number(i.expected_interest_amount) || 0),
+      0,
+    );
+    const activeCount = investments.filter(
+      i => (i.status_name || '').toLowerCase() === 'active',
+    ).length;
+    const pendingCount = investments.filter(i => {
+      const s = (i.status_name || '').toLowerCase();
+      return s.includes('pending') || s.includes('submitted');
+    }).length;
+    const uniqueInvestors = new Set(
+      investments.map(i => i.investor_id).filter(id => id && id !== '—'),
+    ).size;
+    const monthlyPayout = investments.reduce((sum, i) => {
+      return (
+        sum +
+        (i.tenure_months > 0
+          ? (Number(i.expected_interest_amount) || 0) / i.tenure_months
+          : 0)
+      );
+    }, 0);
+
+    return {
+      totalInvestors: uniqueInvestors || investments.length,
+      totalInvestments: investments.length,
+      activeInvestments: activeCount,
+      pendingApprovals: pendingCount,
+      totalPortfolio: totalPrincipal,
+      totalExpectedInterest,
+      monthlyPayout,
+    };
+  }, [investments]);
+
+  // Overview: Portfolio by Branch Visual Distribution
+  const branchDistribution = useMemo(() => {
+    if (!overviewStats.totalPortfolio || branchReports.length === 0) return [];
+    return branchReports.slice(0, 5).map(b => ({
+      name: b.branch_name,
+      amount: b.principal_amount,
+      pct: Math.min(
+        100,
+        Math.round((b.principal_amount / overviewStats.totalPortfolio) * 100),
+      ),
+    }));
+  }, [branchReports, overviewStats.totalPortfolio]);
+
+  // Overview: Status Distribution
+  const statusDistribution = useMemo(() => {
+    const total = investments.length;
+    if (total === 0) return [];
+    const counts: Record<string, number> = {};
+    investments.forEach(inv => {
+      const s = inv.status_name || 'Active';
+      counts[s] = (counts[s] || 0) + 1;
+    });
+
+    const colors: Record<string, string> = {
+      Active: '#10B981',
+      'Pending Approval': '#F59E0B',
+      Pending: '#F59E0B',
+      Closed: '#64748B',
+      Rejected: '#EF4444',
+      Refunded: '#8B5CF6',
+    };
+
+    return Object.entries(counts).map(([name, count]) => ({
+      name,
+      count,
+      pct: Math.round((count / total) * 100),
+      color: colors[name] || '#2563EB',
+    }));
+  }, [investments]);
+
+  // Top 5 Investments by Amount
+  const topInvestments = useMemo(() => {
+    return [...investments]
+      .sort((a, b) => b.investment_amount - a.investment_amount)
+      .slice(0, 5);
+  }, [investments]);
+
+  // Top 5 Investors by Principal
+  const topInvestors = useMemo(() => {
+    return [...investors]
+      .sort((a, b) => b.principal_amount - a.principal_amount)
+      .slice(0, 5);
+  }, [investors]);
+
+  // Interest Tab Visualizations
+  const interestRateDistribution = useMemo(() => {
+    if (investments.length === 0) return [];
+    const counts: Record<string, number> = {};
+    investments.forEach(inv => {
+      const r = `${inv.interest_rate}% p.a.`;
+      counts[r] = (counts[r] || 0) + 1;
+    });
+    const total = investments.length;
+    return Object.entries(counts)
+      .map(([rate, count]) => ({
+        rate,
+        count,
+        pct: Math.round((count / total) * 100),
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [investments]);
+
+  const topInterestInvestors = useMemo(() => {
+    return interestReports.slice(0, 5);
+  }, [interestReports]);
+
+  // Admin Summary & Pipeline Stats
+  const adminPipelineStats = useMemo(() => {
+    return admins.reduce(
+      (acc, a) => {
+        acc.pending += (Number(a.pending_count) || 0);
+        acc.approved += (Number(a.approved_count) || 0);
+        acc.rejected += (Number(a.rejected_count) || 0);
+        acc.settled += (Number(a.settled_count) || 0);
+        acc.totalPrincipal += (Number(a.principal_amount) || 0);
+        acc.totalInterest += (Number(a.expected_interest) || 0);
+        acc.totalInvestors += (Number(a.investor_count) || 0);
+        return acc;
+      },
+      {
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        settled: 0,
+        totalPrincipal: 0,
+        totalInterest: 0,
+        totalInvestors: 0,
+      },
+    );
+  }, [admins]);
+
+  // Settlement Summary
+  const settlementSummary = useMemo(() => {
+    const paid = settlements.filter(s =>
+      s.status.toLowerCase().includes('paid'),
+    ).length;
+    const pending = settlements.filter(s =>
+      s.status.toLowerCase().includes('pending'),
+    ).length;
+    const totalAmount = settlements.reduce(
+      (sum, s) => sum + s.settlement_amount,
+      0,
+    );
+    return {paid, pending, totalAmount, count: settlements.length};
+  }, [settlements]);
+
+  // Extension Summary
+  const extensionSummary = useMemo(() => {
+    const approved = extensions.filter(e =>
+      e.status.toLowerCase().includes('approved'),
+    ).length;
+    const pending = extensions.filter(e =>
+      e.status.toLowerCase().includes('pending'),
+    ).length;
+    return {approved, pending, count: extensions.length};
+  }, [extensions]);
 
   // Export to Excel
   const handleExport = async () => {
@@ -387,7 +606,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
         case 'Overview':
         case 'Investments':
         case 'Maturity':
-        case 'Interest':
+        case 'Interest': {
           const sourceList =
             activeTab === 'Maturity'
               ? maturityReports
@@ -401,18 +620,22 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             'Branch Name': x.branch_name,
             'Admin Name': x.admin_name,
             'Super Admin': x.superadmin_name,
-            'Amount (₹)': x.investment_amount,
+            'Principal Amount (₹)': x.investment_amount,
             'Interest Rate (%)': x.interest_rate,
             'Tenure (Months)': x.tenure_months,
-            'Investment Date': x.investment_date,
-            'Maturity Date': x.maturity_date,
+            'Investment Date': x.investment_date
+              ? formatSuperAdminDate(x.investment_date)
+              : '',
+            'Maturity Date': x.maturity_date
+              ? formatSuperAdminDate(x.maturity_date)
+              : '',
             'Expected Interest (₹)': x.expected_interest_amount,
             'Maturity Amount (₹)': x.maturity_amount,
             Status: x.status_name,
           }));
           break;
-
-        case 'Investors':
+        }
+        case 'Investors': {
           exportRows = investors.map(x => ({
             'Investor ID': x.investor_id,
             Name: x.name,
@@ -420,14 +643,17 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             Mobile: x.mobile,
             Branch: x.branch_name,
             'Investments Count': x.investment_count,
-            'Total Invested (₹)': x.total_invested,
-            'Total Interest (₹)': x.total_interest,
+            'Principal Amount (₹)': x.principal_amount,
+            'Expected Interest (₹)': x.expected_interest,
+            'Maturity Amount (₹)': x.maturity_amount,
             Status: x.status,
-            'Registered Date': x.created_date,
+            'Registration Date': x.created_date
+              ? formatSuperAdminDate(x.created_date)
+              : '',
           }));
           break;
-
-        case 'Admins':
+        }
+        case 'Admins': {
           exportRows = admins.map(x => ({
             'Admin ID': x.admin_id,
             Name: x.name,
@@ -436,64 +662,76 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             Branch: x.branch_name,
             'Investors Managed': x.investor_count,
             'Investments Count': x.investment_count,
-            'Total AUM (₹)': x.total_aum,
+            'Total Principal (₹)': x.principal_amount,
+            'Expected Interest (₹)': x.expected_interest,
+            Pending: x.pending_count,
+            Approved: x.approved_count,
+            Rejected: x.rejected_count,
+            Settled: x.settled_count,
             Status: x.status,
           }));
           break;
-
-        case 'Settlement':
+        }
+        case 'Settlement': {
           exportRows = settlements.map(x => ({
             'Settlement ID': x.settlement_id,
-            'Investment ID': x.investment_id,
+            'Bond/Investment ID': x.investment_id,
             'Investor Name': x.investor_name,
-            'Settlement Type': x.settlement_type,
-            'Principal Amount (₹)': x.principal_amount,
-            'Interest Amount (₹)': x.interest_amount,
-            'Penalty Amount (₹)': x.penalty_amount,
-            'Net Settlement Amount (₹)': x.net_settlement_amount,
+            'Investor ID': x.investor_id,
+            'Settlement Type': x.settlement_type_name || x.settlement_type,
+            'Settlement Amount (₹)': x.settlement_amount,
             Status: x.status,
-            'Requested Date': x.requested_date,
-            'Settled Date': x.settled_date,
+            'Requested Date': x.requested_date
+              ? formatSuperAdminDate(x.requested_date)
+              : '',
+            'Settled Date': x.settled_date
+              ? formatSuperAdminDate(x.settled_date)
+              : '',
             Branch: x.branch_name,
+            Remarks: x.remarks || '',
           }));
           break;
-
-        case 'Extensions':
-          exportRows = extensions.map(x => ({
-            'Extension ID': x.extension_id,
-            'Investment ID': x.investment_id,
-            'Investor Name': x.investor_name,
-            'Previous Tenure (M)': x.previous_tenure_months,
-            'Extended Duration (M)': x.extended_months,
-            'New Tenure (M)': x.new_tenure_months,
-            Status: x.status,
-            'Requested Date': x.requested_date,
-            'Approved Date': x.approved_date,
-            Branch: x.branch_name,
-          }));
-          break;
-
-        case 'Branches':
+        }
+        case 'Branches': {
           exportRows = branchReports.map(x => ({
             Branch: x.branch_name,
-            'Investor Count': x.investor_count,
-            'Investment Count': x.investment_count,
+            'Unique Investors': x.investor_count,
+            'Total Bonds': x.investment_count,
             'Total Principal (₹)': x.principal_amount,
             'Expected Interest (₹)': x.expected_interest,
             'Maturity Amount (₹)': x.maturity_amount,
           }));
           break;
-
-        case 'Monthly':
+        }
+        case 'Monthly': {
           exportRows = monthlyReports.map(x => ({
             Month: x.month,
-            'Investor Count': x.investor_count,
-            'Investment Count': x.investment_count,
+            'Unique Investors': x.investor_count,
+            'Total Investments': x.investment_count,
             'Total Principal (₹)': x.principal_amount,
             'Expected Interest (₹)': x.expected_interest,
             'Maturity Amount (₹)': x.maturity_amount,
           }));
           break;
+        }
+        case 'Extensions': {
+          exportRows = extensions.map(x => ({
+            'Request ID': x.request_id,
+            'Bond ID': x.bond_id || x.investment_id,
+            'Investor Name': x.investor_name,
+            'Requested Extension': x.requested_extension,
+            'Current Maturity': x.current_maturity_date
+              ? formatSuperAdminDate(x.current_maturity_date)
+              : '',
+            'Current Rate (%)': x.current_interest_rate,
+            Status: x.status,
+            'Submitted Date': x.submitted_date
+              ? formatSuperAdminDate(x.submitted_date)
+              : '',
+            Branch: x.branch_name,
+          }));
+          break;
+        }
       }
 
       if (exportRows.length === 0) {
@@ -525,11 +763,11 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <AppHeader subtitle="Reports & Analytics" />
 
-      {/* HEADER SECTION */}
+      {/* HEADER TITLE */}
       <View style={styles.headerSection}>
-        <Text style={styles.headerTitle}>Reports & Analytics</Text>
+        <Text style={styles.headerTitle}>Super Admin Reports</Text>
         <Text style={styles.headerSubtitle}>
-          Track and analyze investment performance
+          Portfolio & investment insights
         </Text>
       </View>
 
@@ -539,13 +777,13 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
-            onRefresh={() => loadData(false)}
+            onRefresh={handleRefresh}
             colors={['#0B1E45', '#2563EB']}
           />
         }>
         {/* HERO PORTFOLIO VALUE BANNER */}
         <View style={styles.heroCard}>
-          <Text style={styles.heroLabel}>TOTAL PORTFOLIO ASSETS</Text>
+          <Text style={styles.heroLabel}>TOTAL PORTFOLIO PRINCIPAL</Text>
           <Text style={styles.heroAmount}>
             {formatINR(overviewStats.totalPortfolio)}
           </Text>
@@ -557,9 +795,9 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
               </Text>
             </View>
             <View style={styles.heroStatItem}>
-              <Text style={styles.heroStatLabel}>Monthly Payout</Text>
+              <Text style={styles.heroStatLabel}>Expected Int.</Text>
               <Text style={styles.heroStatValGreen}>
-                {formatINR(overviewStats.monthlyInterestPayout)}
+                {formatINR(overviewStats.totalExpectedInterest)}
               </Text>
             </View>
             <View style={styles.heroStatItem}>
@@ -578,18 +816,19 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.tabScroll}>
             {TABS.map(tab => {
-              const isSelected = activeTab === tab;
+              const isSelected = activeTab === tab.key;
               return (
                 <TouchableOpacity
-                  key={tab}
+                  key={tab.key}
                   style={[styles.tabChip, isSelected && styles.tabChipActive]}
-                  onPress={() => setActiveTab(tab)}>
+                  onPress={() => setActiveTab(tab.key)}>
+                  <Text style={styles.tabChipIcon}>{tab.icon}</Text>
                   <Text
                     style={[
                       styles.tabChipText,
                       isSelected && styles.tabChipTextActive,
                     ]}>
-                    {tab}
+                    {tab.label}
                   </Text>
                 </TouchableOpacity>
               );
@@ -597,34 +836,9 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
           </ScrollView>
         </View>
 
-        {/* DATE RANGE FILTER BANNER */}
-        <TouchableOpacity
-          style={styles.dateRangeCard}
-          activeOpacity={0.8}
-          onPress={() => setDateModalVisible(true)}>
-          <View style={styles.dateRangeLeft}>
-            <View style={styles.dateIconWrap}>
-              <Text style={styles.dateIcon}>📅</Text>
-            </View>
-            <View>
-              <Text style={styles.dateRangeTitle}>Date Range Filter</Text>
-              <Text style={styles.dateRangeValue}>
-                {fromDate && toDate
-                  ? `${formatSuperAdminDate(fromDate)} → ${formatSuperAdminDate(
-                      toDate,
-                    )}`
-                  : selectedPreset}
-              </Text>
-            </View>
-          </View>
-          <View style={styles.dateChangeBtn}>
-            <Text style={styles.dateChangeBtnText}>Change</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* SEARCH & FILTERS CONTROLS */}
-        <View style={styles.filterCard}>
-          <View style={styles.searchRow}>
+        {/* SEARCH BAR & UNIFIED FILTER TOGGLE BUTTON */}
+        <View style={styles.searchFilterRow}>
+          <View style={styles.searchBoxWrap}>
             <Text style={styles.searchIcon}>🔍</Text>
             <TextInput
               style={styles.searchInput}
@@ -642,60 +856,140 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             )}
           </View>
 
-          <View style={styles.dropdownsRow}>
-            <TouchableOpacity
+          <TouchableOpacity
+            style={[
+              styles.filterToggleBtn,
+              activeFilterCount > 0 && styles.filterToggleBtnActive,
+            ]}
+            onPress={handleOpenFilterSheet}>
+            <Text style={styles.filterToggleIcon}>⚡</Text>
+            <Text
               style={[
-                styles.dropdownBtn,
-                branchFilter !== 'all' && styles.dropdownBtnActive,
-              ]}
-              onPress={() => setBranchModalVisible(true)}>
-              <Text
-                style={[
-                  styles.dropdownBtnText,
-                  branchFilter !== 'all' && styles.dropdownBtnTextActive,
-                ]}
-                numberOfLines={1}>
-                {branchFilter === 'all'
-                  ? 'All Branches'
-                  : filterOptions.branches.find(
-                      b => String(b.id) === String(branchFilter),
-                    )?.name || 'Branch Filter'}
-              </Text>
-              <Text style={styles.dropdownArrow}>▼</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.dropdownBtn,
-                statusFilter !== 'all' && styles.dropdownBtnActive,
-              ]}
-              onPress={() => setStatusModalVisible(true)}>
-              <Text
-                style={[
-                  styles.dropdownBtnText,
-                  statusFilter !== 'all' && styles.dropdownBtnTextActive,
-                ]}
-                numberOfLines={1}>
-                {statusFilter === 'all'
-                  ? 'All Status'
-                  : filterOptions.statuses.find(
-                      s => String(s.id) === String(statusFilter),
-                    )?.name || 'Status Filter'}
-              </Text>
-              <Text style={styles.dropdownArrow}>▼</Text>
-            </TouchableOpacity>
-
-            {hasActiveFilters && (
-              <TouchableOpacity
-                style={styles.resetFilterBtn}
-                onPress={handleClearFilters}>
-                <Text style={styles.resetFilterBtnText}>✕ Reset</Text>
-              </TouchableOpacity>
+                styles.filterToggleText,
+                activeFilterCount > 0 && styles.filterToggleTextActive,
+              ]}>
+              Filters
+            </Text>
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
             )}
-          </View>
+          </TouchableOpacity>
         </View>
 
-        {/* EXPORT ACTION BUTTON */}
+        {/* ACTIVE FILTER CHIPS (DISMISSIBLE PILLS) */}
+        {activeFilterCount > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.activeFilterScroll}
+            contentContainerStyle={styles.activeFilterContainer}>
+            {branchFilter !== 'all' && (
+              <View style={styles.activePill}>
+                <Text style={styles.activePillText}>
+                  Branch:{' '}
+                  {filterOptions.branches.find(
+                    b => String(b.id) === String(branchFilter),
+                  )?.name || branchFilter}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    applyFilters({
+                      branch: 'all',
+                      admin: adminFilter,
+                      status: statusFilter,
+                      preset: selectedPreset,
+                      from: fromDate,
+                      to: toDate,
+                    })
+                  }>
+                  <Text style={styles.activePillClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {adminFilter !== 'all' && (
+              <View style={styles.activePill}>
+                <Text style={styles.activePillText}>
+                  Admin:{' '}
+                  {filterOptions.admins.find(
+                    a => String(a.id) === String(adminFilter),
+                  )?.name || adminFilter}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    applyFilters({
+                      branch: branchFilter,
+                      admin: 'all',
+                      status: statusFilter,
+                      preset: selectedPreset,
+                      from: fromDate,
+                      to: toDate,
+                    })
+                  }>
+                  <Text style={styles.activePillClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {statusFilter !== 'all' && (
+              <View style={styles.activePill}>
+                <Text style={styles.activePillText}>
+                  Status:{' '}
+                  {filterOptions.statuses.find(
+                    s => String(s.id) === String(statusFilter),
+                  )?.name || statusFilter}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    applyFilters({
+                      branch: branchFilter,
+                      admin: adminFilter,
+                      status: 'all',
+                      preset: selectedPreset,
+                      from: fromDate,
+                      to: toDate,
+                    })
+                  }>
+                  <Text style={styles.activePillClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {(fromDate || toDate) && (
+              <View style={styles.activePill}>
+                <Text style={styles.activePillText}>
+                  Date:{' '}
+                  {fromDate && toDate
+                    ? `${formatSuperAdminDate(fromDate)} → ${formatSuperAdminDate(toDate)}`
+                    : selectedPreset}
+                </Text>
+                <TouchableOpacity
+                  onPress={() =>
+                    applyFilters({
+                      branch: branchFilter,
+                      admin: adminFilter,
+                      status: statusFilter,
+                      preset: 'All Time',
+                      from: '',
+                      to: '',
+                    })
+                  }>
+                  <Text style={styles.activePillClose}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.resetAllLink}
+              onPress={handleClearAllFilters}>
+              <Text style={styles.resetAllLinkText}>Reset All</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+
+        {/* EXPORT ACTION ROW */}
         <View style={styles.exportRow}>
           <TouchableOpacity
             style={[styles.exportBtn, styles.exportBtnPrimary]}
@@ -712,19 +1006,34 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             <Text style={styles.errorText}>{error}</Text>
             <TouchableOpacity
               style={styles.retryBtn}
-              onPress={() => loadData(true)}>
+              onPress={() => loadActiveDataset(activeDatasetType, true)}>
               <Text style={styles.retryBtnText}>Retry</Text>
             </TouchableOpacity>
           </View>
         ) : null}
 
-        {/* LOADING STATE */}
+        {/* LOADING SKELETON */}
         {loading ? (
           <View style={styles.loadingBox}>
-            <ActivityIndicator size="large" color="#0B1E45" />
+            <ActivityIndicator
+              size="small"
+              color="#0B1E45"
+              style={styles.loadingSpinner}
+            />
             <Text style={styles.loadingText}>
-              Loading {activeTab.toLowerCase()} report metrics...
+              Loading {activeTab.toLowerCase()} data...
             </Text>
+            {[1, 2, 3].map(sk => (
+              <View key={`skeleton-${sk}`} style={styles.skeletonCard}>
+                <View style={styles.skeletonHeader}>
+                  <View style={styles.skeletonLineShort} />
+                  <View style={styles.skeletonPill} />
+                </View>
+                <View style={styles.skeletonTitle} />
+                <View style={styles.skeletonSubtitle} />
+                <View style={styles.skeletonGrid} />
+              </View>
+            ))}
           </View>
         ) : (
           <>
@@ -733,48 +1042,158 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                 ============================================================ */}
             {activeTab === 'Overview' && (
               <>
+                {/* 4 CORE METRIC CARDS */}
                 <View style={styles.statsGrid}>
-                  {statCards.map(stat => (
-                    <View key={stat.label} style={styles.statCard}>
-                      <View style={styles.statCardTopRow}>
-                        <Text style={styles.statLabel}>{stat.label}</Text>
-                        <View
-                          style={[
-                            styles.statIconBadge,
-                            {backgroundColor: stat.bg},
-                          ]}>
-                          <Text style={styles.statIcon}>{stat.icon}</Text>
-                        </View>
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Unique Investors</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgIndigo,
+                        ]}>
+                        <Text style={styles.statIcon}>👥</Text>
                       </View>
-                      <Text style={styles.statValue}>{stat.value}</Text>
-                      <Text style={styles.statSub}>{stat.sub}</Text>
                     </View>
-                  ))}
-                </View>
+                    <Text style={styles.statValue}>
+                      {formatIndianNumber(overviewStats.totalInvestors)}
+                    </Text>
+                    <Text style={styles.statSub}>Portfolio investors</Text>
+                  </View>
 
-                {/* RECENT INVESTMENTS SUMMARY */}
-                <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionTitle}>
-                    Recent Investment Records
-                  </Text>
-                  <View style={styles.sectionBadge}>
-                    <Text style={styles.sectionBadgeText}>Live Data</Text>
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Total Investments</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgSky,
+                        ]}>
+                        <Text style={styles.statIcon}>📈</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatIndianNumber(overviewStats.totalInvestments)}
+                    </Text>
+                    <Text style={styles.statSub}>Total bonds count</Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Total Principal</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgFuchsia,
+                        ]}>
+                        <Text style={styles.statIcon}>💼</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatCurrencyAUM(overviewStats.totalPortfolio)}
+                    </Text>
+                    <Text style={styles.statSub}>Invested capital</Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Expected Interest</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgEmerald,
+                        ]}>
+                        <Text style={styles.statIcon}>％</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatCurrencyAUM(overviewStats.totalExpectedInterest)}
+                    </Text>
+                    <Text style={styles.statSub}>Total projected yield</Text>
                   </View>
                 </View>
 
-                {investments.slice(0, 6).map((inv, idx) => {
+                {/* VISUALIZATION 1: PORTFOLIO BY BRANCH */}
+                {branchDistribution.length > 0 && (
+                  <View style={styles.vizCard}>
+                    <Text style={styles.vizTitle}>Portfolio by Branch</Text>
+                    <Text style={styles.vizSubtitle}>
+                      Branch-wise invested principal distribution
+                    </Text>
+                    {branchDistribution.map(b => (
+                      <View key={b.name} style={styles.vizBarRow}>
+                        <View style={styles.vizBarHeader}>
+                          <Text style={styles.vizBarLabel}>{b.name}</Text>
+                          <Text style={styles.vizBarValue}>
+                            {formatINR(b.amount)} ({b.pct}%)
+                          </Text>
+                        </View>
+                        <View style={styles.vizTrack}>
+                          <View
+                            style={[
+                              styles.vizFill,
+                              styles.bgBlue,
+                              {width: `${b.pct}%`},
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* VISUALIZATION 2: INVESTMENT STATUS DISTRIBUTION */}
+                {statusDistribution.length > 0 && (
+                  <View style={styles.vizCard}>
+                    <Text style={styles.vizTitle}>Investment Statuses</Text>
+                    <Text style={styles.vizSubtitle}>
+                      Breakdown of current bond states
+                    </Text>
+                    {statusDistribution.map(s => (
+                      <View key={s.name} style={styles.vizBarRow}>
+                        <View style={styles.vizBarHeader}>
+                          <Text style={styles.vizBarLabel}>{s.name}</Text>
+                          <Text style={styles.vizBarValue}>
+                            {s.count} ({s.pct}%)
+                          </Text>
+                        </View>
+                        <View style={styles.vizTrack}>
+                          <View
+                            style={[
+                              styles.vizFill,
+                              {width: `${s.pct}%`, backgroundColor: s.color},
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* VISUALIZATION 3: TOP INVESTMENTS */}
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={styles.sectionTitle}>Top Investments</Text>
+                  <View style={styles.sectionBadge}>
+                    <Text style={styles.sectionBadgeText}>Ranked by Amount</Text>
+                  </View>
+                </View>
+
+                {topInvestments.map((inv, idx) => {
                   const badge = getStatusBadge(inv.status_name);
                   return (
                     <TouchableOpacity
-                      key={`overview-card-${inv.investment_id}-${idx}`}
+                      key={`top-inv-${inv.investment_id}-${idx}`}
                       style={styles.reportCard}
                       activeOpacity={0.8}
                       onPress={() => handleOpenDetails(inv)}>
                       <View style={styles.cardTopRow}>
                         <View style={styles.cardIdWrap}>
-                          <Text style={styles.cardIdTag}>
-                            {inv.investment_id}
-                          </Text>
+                          <View style={styles.rankBadge}>
+                            <Text style={styles.rankBadgeText}>
+                              {idx < 9 ? `#0${idx + 1}` : `#${idx + 1}`}
+                            </Text>
+                          </View>
+                          <Text style={styles.cardIdTag}>{inv.investment_id}</Text>
                           <Text style={styles.cardDateTag}>
                             {formatSuperAdminDate(inv.investment_date)}
                           </Text>
@@ -819,7 +1238,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                           </Text>
                         </View>
                         <View style={styles.metricCol}>
-                          <Text style={styles.metricLabel}>EXPECTED INT.</Text>
+                          <Text style={styles.metricLabel}>EXP. INTEREST</Text>
                           <Text style={styles.metricValGreen}>
                             {formatINR(inv.expected_interest_amount)}
                           </Text>
@@ -848,7 +1267,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             {activeTab === 'Investments' && (
               <>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionTitle}>Investments Report</Text>
+                  <Text style={styles.sectionTitle}>All Investments</Text>
                   <View style={styles.sectionBadge}>
                     <Text style={styles.sectionBadgeText}>
                       {investments.length} Records
@@ -863,12 +1282,12 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     </View>
                     <Text style={styles.emptyTitle}>No Investments Found</Text>
                     <Text style={styles.emptySubtitle}>
-                      Reports matching your selected filters will appear here.
+                      No investments match your current search or filter criteria.
                     </Text>
-                    {hasActiveFilters && (
+                    {activeFilterCount > 0 && (
                       <TouchableOpacity
                         style={styles.clearFiltersBtn}
-                        onPress={handleClearFilters}>
+                        onPress={handleClearAllFilters}>
                         <Text style={styles.clearFiltersBtnText}>
                           Clear Filters
                         </Text>
@@ -880,7 +1299,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     const badge = getStatusBadge(inv.status_name);
                     return (
                       <TouchableOpacity
-                        key={`inv-report-${inv.investment_id}-${idx}`}
+                        key={`inv-${inv.investment_id}-${idx}`}
                         style={styles.reportCard}
                         activeOpacity={0.8}
                         onPress={() => handleOpenDetails(inv)}>
@@ -968,10 +1387,48 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   <Text style={styles.sectionTitle}>Investors Report</Text>
                   <View style={styles.sectionBadge}>
                     <Text style={styles.sectionBadgeText}>
-                      {investors.length} Investors
+                      {investors.length} Registered
                     </Text>
                   </View>
                 </View>
+
+                {/* TOP INVESTORS VISUALIZATION */}
+                {topInvestors.length > 0 && (
+                  <View style={styles.vizCard}>
+                    <Text style={styles.vizTitle}>Top Investors by Principal</Text>
+                    <Text style={styles.vizSubtitle}>
+                      Highest capital contributors
+                    </Text>
+                    {topInvestors.map(inv => (
+                      <View key={inv.investor_id} style={styles.vizBarRow}>
+                        <View style={styles.vizBarHeader}>
+                          <Text style={styles.vizBarLabel}>{inv.name}</Text>
+                          <Text style={styles.vizBarValue}>
+                            {formatINR(inv.principal_amount)}
+                          </Text>
+                        </View>
+                        <View style={styles.vizTrack}>
+                          <View
+                            style={[
+                              styles.vizFill,
+                              styles.bgGreen,
+                              {
+                                width: `${Math.min(
+                                  100,
+                                  Math.round(
+                                    (inv.principal_amount /
+                                      (topInvestors[0].principal_amount || 1)) *
+                                      100,
+                                  ),
+                                )}%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
 
                 {investors.length === 0 ? (
                   <View style={styles.emptyWrap}>
@@ -980,7 +1437,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     </View>
                     <Text style={styles.emptyTitle}>No Investors Found</Text>
                     <Text style={styles.emptySubtitle}>
-                      No investor records matching current filters.
+                      No investor records found for the applied filters.
                     </Text>
                   </View>
                 ) : (
@@ -988,7 +1445,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     const badge = getStatusBadge(inv.status);
                     return (
                       <View
-                        key={`investor-card-${inv.investor_id}-${idx}`}
+                        key={`investor-${inv.investor_id}-${idx}`}
                         style={styles.reportCard}>
                         <View style={styles.cardTopRow}>
                           <View style={styles.cardIdWrap}>
@@ -1021,29 +1478,45 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                         </View>
 
                         <Text style={styles.cardTitle}>{inv.name}</Text>
-                        <Text style={styles.cardSubtitle}>
-                          {inv.branch_name} • {inv.mobile}
+                        <Text
+                          style={styles.cardEmailText}
+                          numberOfLines={1}
+                          ellipsizeMode="tail">
+                          ✉ {inv.email && inv.email !== '—' ? inv.email : '—'}
+                        </Text>
+                        <Text
+                          style={styles.cardSubtitle}
+                          numberOfLines={1}
+                          ellipsizeMode="tail">
+                          Branch: {inv.branch_name || '—'}
                         </Text>
 
                         <View style={styles.metricsGrid}>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>TOTAL INVESTED</Text>
+                            <Text style={styles.metricLabel}>PRINCIPAL</Text>
                             <Text style={styles.metricVal}>
-                              {formatINR(inv.total_invested)}
+                              {formatINR(inv.principal_amount)}
                             </Text>
                           </View>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>BONDS COUNT</Text>
+                            <Text style={styles.metricLabel}>BONDS</Text>
                             <Text style={styles.metricValGold}>
                               {inv.investment_count}
                             </Text>
                           </View>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>TOTAL INTEREST</Text>
+                            <Text style={styles.metricLabel}>EXP. INTEREST</Text>
                             <Text style={styles.metricValGreen}>
-                              {formatINR(inv.total_interest)}
+                              {formatINR(inv.expected_interest)}
                             </Text>
                           </View>
+                        </View>
+
+                        <View style={styles.cardBottomRow}>
+                          <Text style={styles.cardMetaText}>
+                            Active: {inv.active_count} • Pending:{' '}
+                            {inv.pending_count} • Settled: {inv.settled_count}
+                          </Text>
                         </View>
                       </View>
                     );
@@ -1061,7 +1534,130 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   <Text style={styles.sectionTitle}>Admins Report</Text>
                   <View style={styles.sectionBadge}>
                     <Text style={styles.sectionBadgeText}>
-                      {admins.length} Admins
+                      {admins.length} Staff
+                    </Text>
+                  </View>
+                </View>
+
+                {/* 4 SUMMARY METRIC CARDS */}
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Total Admins</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgIndigo,
+                        ]}>
+                        <Text style={styles.statIcon}>🛡️</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {admins.length}
+                    </Text>
+                    <Text style={styles.statSub}>Active admins in report</Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Investors Managed</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgSky,
+                        ]}>
+                        <Text style={styles.statIcon}>👥</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatIndianNumber(adminPipelineStats.totalInvestors)}
+                    </Text>
+                    <Text style={styles.statSub}>Managed investors</Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Portfolio AUM</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgFuchsia,
+                        ]}>
+                        <Text style={styles.statIcon}>💼</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatINR(adminPipelineStats.totalPrincipal)}
+                    </Text>
+                    <Text style={styles.statSub}>Admin-wise principal</Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Expected Interest</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgEmerald,
+                        ]}>
+                        <Text style={styles.statIcon}>％</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatINR(adminPipelineStats.totalInterest)}
+                    </Text>
+                    <Text style={styles.statSub}>Projected yield</Text>
+                  </View>
+                </View>
+
+                {/* ADMIN PIPELINE COUNTERS */}
+                <View style={styles.pipelineGrid}>
+                  <View
+                    style={[
+                      styles.pipelineBox,
+                      styles.pipelineBoxPending,
+                    ]}>
+                    <Text style={[styles.pipelineVal, styles.pipelineValPending]}>
+                      {adminPipelineStats.pending}
+                    </Text>
+                    <Text style={[styles.pipelineLabel, styles.pipelineLabelPending]}>
+                      Pending
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.pipelineBox,
+                      styles.pipelineBoxApproved,
+                    ]}>
+                    <Text style={[styles.pipelineVal, styles.pipelineValApproved]}>
+                      {adminPipelineStats.approved}
+                    </Text>
+                    <Text style={[styles.pipelineLabel, styles.pipelineLabelApproved]}>
+                      Approved
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.pipelineBox,
+                      styles.pipelineBoxRejected,
+                    ]}>
+                    <Text style={[styles.pipelineVal, styles.pipelineValRejected]}>
+                      {adminPipelineStats.rejected}
+                    </Text>
+                    <Text style={[styles.pipelineLabel, styles.pipelineLabelRejected]}>
+                      Rejected
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.pipelineBox,
+                      styles.pipelineBoxSettled,
+                    ]}>
+                    <Text style={[styles.pipelineVal, styles.pipelineValSettled]}>
+                      {adminPipelineStats.settled}
+                    </Text>
+                    <Text style={[styles.pipelineLabel, styles.pipelineLabelSettled]}>
+                      Settled
                     </Text>
                   </View>
                 </View>
@@ -1078,14 +1674,15 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 ) : (
                   admins.map((adm, idx) => {
-                    const badge = getStatusBadge(adm.status);
+                    const badge = getStatusBadge(adm.status || 'Active');
                     return (
                       <View
-                        key={`admin-card-${adm.admin_id}-${idx}`}
+                        key={`admin-${adm.admin_id}-${idx}`}
                         style={styles.reportCard}>
                         <View style={styles.cardTopRow}>
                           <View style={styles.cardIdWrap}>
-                            <Text style={styles.cardIdTag}>{adm.admin_id}</Text>
+                            <Text style={styles.cardIdTag}>ID: {adm.admin_id}</Text>
+                            <Text style={styles.cardDateTag}>{adm.branch_name}</Text>
                           </View>
                           <View
                             style={[
@@ -1108,9 +1705,10 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                           </View>
                         </View>
 
-                        <Text style={styles.cardTitle}>{adm.name}</Text>
+                        <Text style={styles.cardTitle}>{adm.admin_name || adm.name}</Text>
                         <Text style={styles.cardSubtitle}>
-                          Branch: {adm.branch_name} • {adm.email}
+                          {adm.email && adm.email !== '—' ? adm.email : ''}
+                          {adm.mobile && adm.mobile !== '—' ? ` • ${adm.mobile}` : ''}
                         </Text>
 
                         <View style={styles.metricsGrid}>
@@ -1121,17 +1719,30 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                             </Text>
                           </View>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>BONDS MANAGED</Text>
+                            <Text style={styles.metricLabel}>BONDS</Text>
                             <Text style={styles.metricValGold}>
                               {adm.investment_count}
                             </Text>
                           </View>
                           <View style={styles.metricCol}>
                             <Text style={styles.metricLabel}>PORTFOLIO AUM</Text>
-                            <Text style={styles.metricValGreen}>
-                              {formatINR(adm.total_aum)}
+                            <Text style={styles.metricVal}>
+                              {formatINR(adm.principal_amount)}
                             </Text>
                           </View>
+                          <View style={styles.metricCol}>
+                            <Text style={styles.metricLabel}>EXP. INTEREST</Text>
+                            <Text style={styles.metricValGreen}>
+                              {formatINR(adm.expected_interest)}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.cardBottomRow}>
+                          <Text style={styles.cardMetaText}>
+                            Apprv: {adm.approved_count} • Pend: {adm.pending_count}{' '}
+                            • Rej: {adm.rejected_count} • Settled: {adm.settled_count}
+                          </Text>
                         </View>
                       </View>
                     );
@@ -1169,17 +1780,15 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     const badge = getStatusBadge(inv.status_name);
                     return (
                       <TouchableOpacity
-                        key={`maturity-card-${inv.investment_id}-${idx}`}
+                        key={`maturity-${inv.investment_id}-${idx}`}
                         style={styles.reportCard}
                         activeOpacity={0.8}
                         onPress={() => handleOpenDetails(inv)}>
-                        <View style={styles.cardTopRow}>
-                          <View style={styles.cardIdWrap}>
-                            <Text style={styles.cardIdTag}>
-                              {inv.investment_id}
-                            </Text>
-                            <Text style={styles.cardDateTag}>
-                              Matures: {formatSuperAdminDate(inv.maturity_date)}
+                        <View style={styles.maturityDateHeaderRow}>
+                          <View style={styles.maturityDateBadge}>
+                            <Text style={styles.maturityDateIcon}>📅</Text>
+                            <Text style={styles.maturityDateText}>
+                              {formatSuperAdminDate(inv.maturity_date).toUpperCase()}
                             </Text>
                           </View>
                           <View
@@ -1201,6 +1810,12 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                               {badge.label}
                             </Text>
                           </View>
+                        </View>
+
+                        <View style={styles.cardIdWrap}>
+                          <Text style={styles.cardIdTag}>
+                            {inv.investment_id}
+                          </Text>
                         </View>
 
                         <Text style={styles.cardTitle}>{inv.investor_name}</Text>
@@ -1225,11 +1840,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                           <View style={styles.metricCol}>
                             <Text style={styles.metricLabel}>MATURITY VALUE</Text>
                             <Text style={styles.metricValGold}>
-                              {formatINR(
-                                inv.maturity_amount ||
-                                  inv.investment_amount +
-                                    inv.expected_interest_amount,
-                              )}
+                              {formatINR(inv.maturity_amount)}
                             </Text>
                           </View>
                         </View>
@@ -1256,6 +1867,82 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
+                {/* VISUALIZATION 1: INTEREST BY INVESTOR */}
+                {topInterestInvestors.length > 0 && (
+                  <View style={styles.vizCard}>
+                    <Text style={styles.vizTitle}>Interest by Investor</Text>
+                    <Text style={styles.vizSubtitle}>
+                      Highest projected returns across portfolio
+                    </Text>
+                    {topInterestInvestors.map(inv => (
+                      <View
+                        key={`top-int-${inv.investment_id}`}
+                        style={styles.vizBarRow}>
+                        <View style={styles.vizBarHeader}>
+                          <Text style={styles.vizBarLabel}>
+                            {inv.investor_name}
+                          </Text>
+                          <Text style={styles.vizBarValue}>
+                            {formatINR(inv.expected_interest_amount)}
+                          </Text>
+                        </View>
+                        <View style={styles.vizTrack}>
+                          <View
+                            style={[
+                              styles.vizFill,
+                              styles.bgGreen,
+                              {
+                                width: `${Math.min(
+                                  100,
+                                  Math.round(
+                                    (inv.expected_interest_amount /
+                                      (topInterestInvestors[0]
+                                        .expected_interest_amount || 1)) *
+                                      100,
+                                  ),
+                                )}%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* VISUALIZATION 2: INTEREST RATE DISTRIBUTION */}
+                {interestRateDistribution.length > 0 && (
+                  <View style={styles.vizCard}>
+                    <Text style={styles.vizTitle}>
+                      Interest Rate Distribution
+                    </Text>
+                    <Text style={styles.vizSubtitle}>
+                      Bonds breakdown by annual interest rate
+                    </Text>
+                    {interestRateDistribution.map(rateItem => (
+                      <View
+                        key={`rate-${rateItem.rate}`}
+                        style={styles.vizBarRow}>
+                        <View style={styles.vizBarHeader}>
+                          <Text style={styles.vizBarLabel}>{rateItem.rate}</Text>
+                          <Text style={styles.vizBarValue}>
+                            {rateItem.count} Bonds ({rateItem.pct}%)
+                          </Text>
+                        </View>
+                        <View style={styles.vizTrack}>
+                          <View
+                            style={[
+                              styles.vizFill,
+                              styles.bgBlue,
+                              {width: `${rateItem.pct}%`},
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
                 {interestReports.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
@@ -1269,14 +1956,18 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                 ) : (
                   interestReports.map((inv, idx) => (
                     <TouchableOpacity
-                      key={`interest-card-${inv.investment_id}-${idx}`}
+                      key={`interest-${inv.investment_id}-${idx}`}
                       style={styles.reportCard}
                       activeOpacity={0.8}
                       onPress={() => handleOpenDetails(inv)}>
                       <View style={styles.cardTopRow}>
                         <View style={styles.cardIdWrap}>
-                          <Text style={styles.cardIdTag}>#{idx + 1}</Text>
-                          <Text style={styles.cardDateTag}>
+                          <View style={styles.rankBadge}>
+                            <Text style={styles.rankBadgeText}>
+                              {idx < 9 ? `#0${idx + 1}` : `#${idx + 1}`}
+                            </Text>
+                          </View>
+                          <Text style={styles.cardIdTag}>
                             {inv.investment_id}
                           </Text>
                         </View>
@@ -1336,6 +2027,46 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
+                {/* SUMMARY METRICS */}
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Total Settlements</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgIndigo,
+                        ]}>
+                        <Text style={styles.statIcon}>💳</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {settlementSummary.count}
+                    </Text>
+                    <Text style={styles.statSub}>
+                      Paid: {settlementSummary.paid} • Pend:{' '}
+                      {settlementSummary.pending}
+                    </Text>
+                  </View>
+
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Settlement Amount</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgFuchsia,
+                        ]}>
+                        <Text style={styles.statIcon}>💼</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {formatCurrencyAUM(settlementSummary.totalAmount)}
+                    </Text>
+                    <Text style={styles.statSub}>Total net payout</Text>
+                  </View>
+                </View>
+
                 {settlements.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
@@ -1351,16 +2082,29 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     const badge = getStatusBadge(sett.status);
                     return (
                       <View
-                        key={`settlement-card-${sett.settlement_id || sett.id}-${idx}`}
+                        key={`settlement-${sett.settlement_id}-${idx}`}
                         style={styles.reportCard}>
                         <View style={styles.cardTopRow}>
                           <View style={styles.cardIdWrap}>
                             <Text style={styles.cardIdTag}>
-                              {sett.investment_id || sett.settlement_id}
+                              ID: {sett.settlement_id}
                             </Text>
-                            <Text style={styles.cardDateTag}>
-                              {sett.settlement_type}
+                            <Text style={styles.cardIdTag}>
+                              Bond: {sett.investment_id}
                             </Text>
+                            <View
+                              style={[
+                                styles.settlementTypePill,
+                                sett.settlement_type?.toUpperCase().includes('PRE')
+                                  ? styles.settlementTypePreclose
+                                  : styles.settlementTypeMaturity,
+                              ]}>
+                              <Text style={styles.settlementTypePillText}>
+                                {sett.settlement_type?.toUpperCase().includes('PRE')
+                                  ? 'PRE-CLOSE'
+                                  : 'MATURITY'}
+                              </Text>
+                            </View>
                           </View>
                           <View
                             style={[
@@ -1385,30 +2129,41 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
 
                         <Text style={styles.cardTitle}>{sett.investor_name}</Text>
                         <Text style={styles.cardSubtitle}>
-                          Branch: {sett.branch_name} • Requested:{' '}
-                          {formatSuperAdminDate(sett.requested_date)}
+                          Branch: {sett.branch_name}
                         </Text>
 
                         <View style={styles.metricsGrid}>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>PRINCIPAL</Text>
-                            <Text style={styles.metricVal}>
-                              {formatINR(sett.principal_amount)}
+                            <Text style={styles.metricLabel}>
+                              SETTLEMENT AMOUNT
                             </Text>
-                          </View>
-                          <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>INTEREST</Text>
                             <Text style={styles.metricValGreen}>
-                              {formatINR(sett.interest_amount)}
+                              {formatINR(sett.settlement_amount)}
                             </Text>
                           </View>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>NET SETTLED</Text>
-                            <Text style={styles.metricValGold}>
-                              {formatINR(sett.net_settlement_amount)}
+                            <Text style={styles.metricLabel}>REQUESTED</Text>
+                            <Text style={styles.metricVal}>
+                              {formatSuperAdminDate(sett.requested_date)}
+                            </Text>
+                          </View>
+                          <View style={styles.metricCol}>
+                            <Text style={styles.metricLabel}>SETTLED</Text>
+                            <Text style={styles.metricVal}>
+                              {sett.settled_date
+                                ? formatSuperAdminDate(sett.settled_date)
+                                : 'Pending'}
                             </Text>
                           </View>
                         </View>
+
+                        {sett.remarks ? (
+                          <View style={styles.cardBottomRow}>
+                            <Text style={styles.cardMetaText} numberOfLines={2}>
+                              Note: {sett.remarks}
+                            </Text>
+                          </View>
+                        ) : null}
                       </View>
                     );
                   })
@@ -1443,14 +2198,55 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                 ) : (
                   branchReports.map((br, idx) => (
                     <View
-                      key={`branch-card-${br.branch_id || br.branch_name}-${idx}`}
+                      key={`branch-${br.branch_id}-${idx}`}
                       style={styles.reportCard}>
                       <View style={styles.cardTopRow}>
                         <Text style={styles.cardTitle}>{br.branch_name}</Text>
                         <Text style={styles.cardDateTag}>
-                          {br.investor_count} Investors • {br.investment_count}{' '}
-                          Bonds
+                          {br.investor_count} Unique Investors •{' '}
+                          {br.investment_count} Bonds
                         </Text>
+                      </View>
+
+                      {/* Branch Share Bar */}
+                      <View style={styles.vizBarRow}>
+                        <View style={styles.vizBarHeader}>
+                          <Text style={styles.vizBarLabel}>Portfolio Share</Text>
+                          <Text style={styles.vizBarValue}>
+                            {overviewStats.totalPortfolio > 0
+                              ? Math.min(
+                                  100,
+                                  Math.round(
+                                    (br.principal_amount /
+                                      overviewStats.totalPortfolio) *
+                                      100,
+                                  ),
+                                )
+                              : 0}%
+                          </Text>
+                        </View>
+                        <View style={styles.vizTrack}>
+                          <View
+                            style={[
+                              styles.vizFill,
+                              styles.bgBlue,
+                              {
+                                width: `${
+                                  overviewStats.totalPortfolio > 0
+                                    ? Math.min(
+                                        100,
+                                        Math.round(
+                                          (br.principal_amount /
+                                            overviewStats.totalPortfolio) *
+                                            100,
+                                        ),
+                                      )
+                                    : 0
+                                }%`,
+                              },
+                            ]}
+                          />
+                        </View>
                       </View>
 
                       <View style={styles.metricsGrid}>
@@ -1485,7 +2281,9 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             {activeTab === 'Monthly' && (
               <>
                 <View style={styles.sectionHeaderRow}>
-                  <Text style={styles.sectionTitle}>Monthly Time-Series</Text>
+                  <Text style={styles.sectionTitle}>
+                    Monthly Time-Series (Chronological)
+                  </Text>
                   <View style={styles.sectionBadge}>
                     <Text style={styles.sectionBadgeText}>
                       {monthlyReports.length} Months
@@ -1506,10 +2304,15 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                 ) : (
                   monthlyReports.map((mo, idx) => (
                     <View
-                      key={`monthly-card-${mo.month}-${idx}`}
+                      key={`monthly-${mo.month}-${idx}`}
                       style={styles.reportCard}>
                       <View style={styles.cardTopRow}>
-                        <Text style={styles.cardTitle}>Month: {mo.month}</Text>
+                        <View style={styles.maturityDateBadge}>
+                          <Text style={styles.maturityDateIcon}>📆</Text>
+                          <Text style={styles.maturityDateText}>
+                            {mo.month.toUpperCase()}
+                          </Text>
+                        </View>
                         <Text style={styles.cardDateTag}>
                           {mo.investor_count} Investors • {mo.investment_count}{' '}
                           Bonds
@@ -1558,6 +2361,29 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
+                {/* SUMMARY STATS */}
+                <View style={styles.statsGrid}>
+                  <View style={styles.statCard}>
+                    <View style={styles.statCardTopRow}>
+                      <Text style={styles.statLabel}>Total Requests</Text>
+                      <View
+                        style={[
+                          styles.statIconBadge,
+                          styles.bgIndigo,
+                        ]}>
+                        <Text style={styles.statIcon}>⏳</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.statValue}>
+                      {extensionSummary.count}
+                    </Text>
+                    <Text style={styles.statSub}>
+                      Approved: {extensionSummary.approved} • Pend:{' '}
+                      {extensionSummary.pending}
+                    </Text>
+                  </View>
+                </View>
+
                 {extensions.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
@@ -1573,17 +2399,23 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     const badge = getStatusBadge(ext.status);
                     return (
                       <View
-                        key={`extension-card-${ext.extension_id || ext.id}-${idx}`}
+                        key={`extension-${ext.request_id}-${idx}`}
                         style={styles.reportCard}>
                         <View style={styles.cardTopRow}>
                           <View style={styles.cardIdWrap}>
                             <Text style={styles.cardIdTag}>
-                              {ext.investment_id || ext.extension_id}
+                              Req #{ext.request_id}
                             </Text>
-                            <Text style={styles.cardDateTag}>
-                              Requested:{' '}
-                              {formatSuperAdminDate(ext.requested_date)}
+                            <Text style={styles.cardIdTag}>
+                              Bond: {ext.bond_id || ext.investment_id}
                             </Text>
+                            <View style={styles.extensionBadge}>
+                              <Text style={styles.extensionBadgeText}>
+                                {ext.requested_extension
+                                  ? ext.requested_extension.toUpperCase()
+                                  : '+6 MONTHS'}
+                              </Text>
+                            </View>
                           </View>
                           <View
                             style={[
@@ -1608,26 +2440,31 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
 
                         <Text style={styles.cardTitle}>{ext.investor_name}</Text>
                         <Text style={styles.cardSubtitle}>
-                          Branch: {ext.branch_name}
+                          Investor ID: {ext.investor_id}
+                          {ext.submitted_date
+                            ? ` • Submitted: ${formatSuperAdminDate(ext.submitted_date)}`
+                            : ''}
                         </Text>
 
                         <View style={styles.metricsGrid}>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>PREV. TENURE</Text>
-                            <Text style={styles.metricVal}>
-                              {ext.previous_tenure_months}M
-                            </Text>
-                          </View>
-                          <View style={styles.metricCol}>
                             <Text style={styles.metricLabel}>EXTENSION</Text>
                             <Text style={styles.metricValGold}>
-                              +{ext.extended_months}M
+                              {ext.requested_extension}
                             </Text>
                           </View>
                           <View style={styles.metricCol}>
-                            <Text style={styles.metricLabel}>NEW TENURE</Text>
+                            <Text style={styles.metricLabel}>
+                              CURRENT MATURITY
+                            </Text>
+                            <Text style={styles.metricVal}>
+                              {formatSuperAdminDate(ext.current_maturity_date)}
+                            </Text>
+                          </View>
+                          <View style={styles.metricCol}>
+                            <Text style={styles.metricLabel}>CURRENT RATE</Text>
                             <Text style={styles.metricValGreen}>
-                              {ext.new_tenure_months}M
+                              {ext.current_interest_rate}% p.a.
                             </Text>
                           </View>
                         </View>
@@ -1642,7 +2479,248 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
       </ScrollView>
 
       {/* ============================================================
-          INVESTMENT DETAILS MODAL
+          UNIFIED PREMIUM FILTER BOTTOM SHEET
+          ============================================================ */}
+      <Modal
+        visible={filterSheetVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setFilterSheetVisible(false)}>
+        <View style={styles.sheetOverlay}>
+          <TouchableOpacity
+            style={styles.sheetBackdrop}
+            activeOpacity={1}
+            onPress={() => setFilterSheetVisible(false)}
+          />
+          <View style={styles.sheetContainer}>
+            <View style={styles.sheetHandleBar} />
+            <View style={styles.sheetHeader}>
+              <Text style={styles.sheetTitle}>Filter Reports</Text>
+              <TouchableOpacity
+                onPress={() => setFilterSheetVisible(false)}
+                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                <Text style={styles.sheetClose}>✕</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.sheetBody}>
+              {/* SECTION: BRANCH */}
+              <View style={styles.sheetSection}>
+                <Text style={styles.sheetSectionLabel}>Branch</Text>
+                <View style={styles.sheetChipRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.sheetFilterChip,
+                      draftBranch === 'all' && styles.sheetFilterChipActive,
+                    ]}
+                    onPress={() => setDraftBranch('all')}>
+                    <Text
+                      style={[
+                        styles.sheetFilterChipText,
+                        draftBranch === 'all' &&
+                          styles.sheetFilterChipTextActive,
+                      ]}>
+                      All Branches
+                    </Text>
+                  </TouchableOpacity>
+                  {filterOptions.branches.map(b => {
+                    const isSelected = String(draftBranch) === String(b.id);
+                    return (
+                      <TouchableOpacity
+                        key={`draft-br-${b.id}`}
+                        style={[
+                          styles.sheetFilterChip,
+                          isSelected && styles.sheetFilterChipActive,
+                        ]}
+                        onPress={() => setDraftBranch(String(b.id))}>
+                        <Text
+                          style={[
+                            styles.sheetFilterChipText,
+                            isSelected && styles.sheetFilterChipTextActive,
+                          ]}>
+                          {b.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* SECTION: ADMIN */}
+              <View style={styles.sheetSection}>
+                <Text style={styles.sheetSectionLabel}>Assigned Admin</Text>
+                <View style={styles.sheetChipRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.sheetFilterChip,
+                      draftAdmin === 'all' && styles.sheetFilterChipActive,
+                    ]}
+                    onPress={() => setDraftAdmin('all')}>
+                    <Text
+                      style={[
+                        styles.sheetFilterChipText,
+                        draftAdmin === 'all' &&
+                          styles.sheetFilterChipTextActive,
+                      ]}>
+                      All Admins
+                    </Text>
+                  </TouchableOpacity>
+                  {filterOptions.admins.map(a => {
+                    const isSelected = String(draftAdmin) === String(a.id);
+                    return (
+                      <TouchableOpacity
+                        key={`draft-adm-${a.id}`}
+                        style={[
+                          styles.sheetFilterChip,
+                          isSelected && styles.sheetFilterChipActive,
+                        ]}
+                        onPress={() => setDraftAdmin(String(a.id))}>
+                        <Text
+                          style={[
+                            styles.sheetFilterChipText,
+                            isSelected && styles.sheetFilterChipTextActive,
+                          ]}>
+                          {a.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* SECTION: STATUS */}
+              <View style={styles.sheetSection}>
+                <Text style={styles.sheetSectionLabel}>Status</Text>
+                <View style={styles.sheetChipRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.sheetFilterChip,
+                      draftStatus === 'all' && styles.sheetFilterChipActive,
+                    ]}
+                    onPress={() => setDraftStatus('all')}>
+                    <Text
+                      style={[
+                        styles.sheetFilterChipText,
+                        draftStatus === 'all' &&
+                          styles.sheetFilterChipTextActive,
+                      ]}>
+                      All Statuses
+                    </Text>
+                  </TouchableOpacity>
+                  {filterOptions.statuses.map(s => {
+                    const isSelected = String(draftStatus) === String(s.id);
+                    return (
+                      <TouchableOpacity
+                        key={`draft-st-${s.id}`}
+                        style={[
+                          styles.sheetFilterChip,
+                          isSelected && styles.sheetFilterChipActive,
+                        ]}
+                        onPress={() => setDraftStatus(String(s.id))}>
+                        <Text
+                          style={[
+                            styles.sheetFilterChipText,
+                            isSelected && styles.sheetFilterChipTextActive,
+                          ]}>
+                          {s.name}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
+              {/* SECTION: DATE PRESETS */}
+              <View style={styles.sheetSection}>
+                <Text style={styles.sheetSectionLabel}>Date Range</Text>
+                <View style={styles.sheetChipRow}>
+                  {DATE_PRESETS.map(p => {
+                    const isSelected = draftPreset === p.label;
+                    return (
+                      <TouchableOpacity
+                        key={`draft-preset-${p.label}`}
+                        style={[
+                          styles.sheetFilterChip,
+                          isSelected && styles.sheetFilterChipActive,
+                        ]}
+                        onPress={() => {
+                          setDraftPreset(p.label);
+                          setDraftFromDate(p.from);
+                          setDraftToDate(p.to);
+                        }}>
+                        <Text
+                          style={[
+                            styles.sheetFilterChipText,
+                            isSelected && styles.sheetFilterChipTextActive,
+                          ]}>
+                          {p.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                {/* CUSTOM DATE INPUTS */}
+                <View style={styles.dateInputRow}>
+                  <View style={styles.dateInputCol}>
+                    <Text style={styles.dateInputSubLabel}>From Date</Text>
+                    <View style={styles.dateInputBox}>
+                      <TextInput
+                        style={styles.dateInputText}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#94A3B8"
+                        value={draftFromDate}
+                        onChangeText={t => {
+                          setDraftFromDate(t);
+                          setDraftPreset('Custom');
+                        }}
+                      />
+                    </View>
+                  </View>
+                  <View style={styles.dateInputCol}>
+                    <Text style={styles.dateInputSubLabel}>To Date</Text>
+                    <View style={styles.dateInputBox}>
+                      <TextInput
+                        style={styles.dateInputText}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor="#94A3B8"
+                        value={draftToDate}
+                        onChangeText={t => {
+                          setDraftToDate(t);
+                          setDraftPreset('Custom');
+                        }}
+                      />
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={styles.sheetFooter}>
+              <TouchableOpacity
+                style={styles.sheetResetBtn}
+                onPress={() => {
+                  setDraftBranch('all');
+                  setDraftAdmin('all');
+                  setDraftStatus('all');
+                  setDraftPreset('All Time');
+                  setDraftFromDate('');
+                  setDraftToDate('');
+                }}>
+                <Text style={styles.sheetResetBtnText}>Reset</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.sheetApplyBtn}
+                onPress={handleApplyFilterSheet}>
+                <Text style={styles.sheetApplyBtnText}>Apply Filters</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ============================================================
+          INVESTMENT DETAILS MODAL (Live Alphanumeric ID Lookup)
           ============================================================ */}
       <Modal
         visible={detailsModalVisible}
@@ -1652,7 +2730,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Investment Report Details</Text>
+              <Text style={styles.modalTitle}>Investment Details</Text>
               <TouchableOpacity
                 onPress={() => setDetailsModalVisible(false)}
                 hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
@@ -1661,56 +2739,144 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
             </View>
 
             {detailsLoading || !selectedInvestment ? (
-              <View style={{padding: 30, alignItems: 'center'}}>
+              <View style={styles.detailsLoadingBox}>
                 <ActivityIndicator size="small" color="#0B1E45" />
-                <Text style={{marginTop: 8, color: '#6B7280'}}>
-                  Loading details...
+                <Text style={styles.detailsLoadingText}>
+                  Fetching investment details...
                 </Text>
               </View>
             ) : (
-              <ScrollView style={{maxHeight: 380}}>
-                {[
-                  ['Investment ID', selectedInvestment.investment_id],
-                  ['Investor Name', selectedInvestment.investor_name],
-                  ['Investor ID', selectedInvestment.investor_id],
-                  ['Branch Name', selectedInvestment.branch_name],
-                  ['Admin Name', selectedInvestment.admin_name],
-                  ['Super Admin', selectedInvestment.superadmin_name],
-                  [
-                    'Principal Amount',
-                    formatINR(selectedInvestment.investment_amount),
-                  ],
-                  [
-                    'Interest Rate',
-                    `${selectedInvestment.interest_rate}% p.a.`,
-                  ],
-                  [
-                    'Tenure Months',
-                    `${selectedInvestment.tenure_months} Months`,
-                  ],
-                  [
-                    'Investment Date',
-                    formatSuperAdminDate(selectedInvestment.investment_date),
-                  ],
-                  [
-                    'Maturity Date',
-                    formatSuperAdminDate(selectedInvestment.maturity_date),
-                  ],
-                  [
-                    'Expected Interest',
-                    formatINR(selectedInvestment.expected_interest_amount),
-                  ],
-                  [
-                    'Maturity Amount',
-                    formatINR(selectedInvestment.maturity_amount),
-                  ],
-                  ['Status', selectedInvestment.status_name],
-                ].map(([label, val]) => (
-                  <View key={label} style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>{label}</Text>
-                    <Text style={styles.detailVal}>{val}</Text>
+              <ScrollView style={styles.detailsScrollView}>
+                <Text style={styles.detailGroupTitle}>IDENTIFIERS</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Investment ID</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.investment_id}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Status</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.status_name}
+                  </Text>
+                </View>
+
+                <Text style={styles.detailGroupTitle}>INVESTOR</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Investor Name</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.investor_name}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Investor ID</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.investor_id}
+                  </Text>
+                </View>
+                {selectedInvestment.investor_email &&
+                selectedInvestment.investor_email !== '—' ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Email</Text>
+                    <Text style={styles.detailVal}>
+                      {selectedInvestment.investor_email}
+                    </Text>
                   </View>
-                ))}
+                ) : null}
+                {selectedInvestment.investor_mobile &&
+                selectedInvestment.investor_mobile !== '—' ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Mobile</Text>
+                    <Text style={styles.detailVal}>
+                      {selectedInvestment.investor_mobile}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Text style={styles.detailGroupTitle}>ORGANIZATION</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Branch</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.branch_name}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Admin</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.admin_name}
+                  </Text>
+                </View>
+                {selectedInvestment.superadmin_name &&
+                selectedInvestment.superadmin_name !== '—' ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Super Admin</Text>
+                    <Text style={styles.detailVal}>
+                      {selectedInvestment.superadmin_name}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Text style={styles.detailGroupTitle}>FINANCIAL TERMS</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Principal Amount</Text>
+                  <Text style={styles.detailVal}>
+                    {formatINR(selectedInvestment.investment_amount)}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Interest Rate</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.interest_rate}% p.a.
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Expected Interest</Text>
+                  <Text style={styles.detailVal}>
+                    {formatINR(selectedInvestment.expected_interest_amount)}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Maturity Amount</Text>
+                  <Text style={styles.detailVal}>
+                    {formatINR(selectedInvestment.maturity_amount)}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Tenure</Text>
+                  <Text style={styles.detailVal}>
+                    {selectedInvestment.tenure_months} Months
+                  </Text>
+                </View>
+
+                <Text style={styles.detailGroupTitle}>TIMELINE</Text>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Investment Date</Text>
+                  <Text style={styles.detailVal}>
+                    {formatSuperAdminDate(selectedInvestment.investment_date)}
+                  </Text>
+                </View>
+                <View style={styles.detailRow}>
+                  <Text style={styles.detailLabel}>Maturity Date</Text>
+                  <Text style={styles.detailVal}>
+                    {formatSuperAdminDate(selectedInvestment.maturity_date)}
+                  </Text>
+                </View>
+                {selectedInvestment.approved_date ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Approved Date</Text>
+                    <Text style={styles.detailVal}>
+                      {formatSuperAdminDate(selectedInvestment.approved_date)}
+                    </Text>
+                  </View>
+                ) : null}
+                {selectedInvestment.remarks ? (
+                  <View style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>Remarks</Text>
+                    <Text style={styles.detailVal}>
+                      {selectedInvestment.remarks}
+                    </Text>
+                  </View>
+                ) : null}
               </ScrollView>
             )}
 
@@ -1718,200 +2884,6 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
               style={styles.modalCloseBtn}
               onPress={() => setDetailsModalVisible(false)}>
               <Text style={styles.modalCloseBtnText}>Close</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ============================================================
-          BRANCH FILTER MODAL
-          ============================================================ */}
-      <Modal
-        visible={branchModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setBranchModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Filter by Branch</Text>
-              <TouchableOpacity
-                onPress={() => setBranchModalVisible(false)}
-                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{maxHeight: 300}}>
-              <TouchableOpacity
-                style={[
-                  styles.dropdownItem,
-                  branchFilter === 'all' && styles.dropdownItemActive,
-                ]}
-                onPress={() => {
-                  setBranchFilter('all');
-                  setBranchModalVisible(false);
-                }}>
-                <Text
-                  style={[
-                    styles.dropdownItemText,
-                    branchFilter === 'all' && styles.dropdownItemTextActive,
-                  ]}>
-                  All Branches
-                </Text>
-              </TouchableOpacity>
-              {filterOptions.branches.map(b => {
-                const isSelected = String(branchFilter) === String(b.id);
-                return (
-                  <TouchableOpacity
-                    key={`branch-opt-${b.id}`}
-                    style={[
-                      styles.dropdownItem,
-                      isSelected && styles.dropdownItemActive,
-                    ]}
-                    onPress={() => {
-                      setBranchFilter(String(b.id));
-                      setBranchModalVisible(false);
-                    }}>
-                    <Text
-                      style={[
-                        styles.dropdownItemText,
-                        isSelected && styles.dropdownItemTextActive,
-                      ]}>
-                      {b.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ============================================================
-          STATUS FILTER MODAL
-          ============================================================ */}
-      <Modal
-        visible={statusModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setStatusModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Filter by Status</Text>
-              <TouchableOpacity
-                onPress={() => setStatusModalVisible(false)}
-                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={{maxHeight: 300}}>
-              <TouchableOpacity
-                style={[
-                  styles.dropdownItem,
-                  statusFilter === 'all' && styles.dropdownItemActive,
-                ]}
-                onPress={() => {
-                  setStatusFilter('all');
-                  setStatusModalVisible(false);
-                }}>
-                <Text
-                  style={[
-                    styles.dropdownItemText,
-                    statusFilter === 'all' && styles.dropdownItemTextActive,
-                  ]}>
-                  All Statuses
-                </Text>
-              </TouchableOpacity>
-              {filterOptions.statuses.map(s => {
-                const isSelected = String(statusFilter) === String(s.id);
-                return (
-                  <TouchableOpacity
-                    key={`status-opt-${s.id}`}
-                    style={[
-                      styles.dropdownItem,
-                      isSelected && styles.dropdownItemActive,
-                    ]}
-                    onPress={() => {
-                      setStatusFilter(String(s.id));
-                      setStatusModalVisible(false);
-                    }}>
-                    <Text
-                      style={[
-                        styles.dropdownItemText,
-                        isSelected && styles.dropdownItemTextActive,
-                      ]}>
-                      {s.name}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ============================================================
-          DATE RANGE PRESETS MODAL
-          ============================================================ */}
-      <Modal
-        visible={dateModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDateModalVisible(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeaderRow}>
-              <Text style={styles.modalTitle}>Select Date Range</Text>
-              <TouchableOpacity
-                onPress={() => setDateModalVisible(false)}
-                hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
-                <Text style={styles.modalClose}>✕</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text
-              style={{
-                fontSize: 12,
-                color: '#64748B',
-                fontWeight: '600',
-                marginBottom: 10,
-              }}>
-              QUICK PRESETS
-            </Text>
-
-            <View style={styles.presetChipRow}>
-              {DATE_PRESETS.map(preset => {
-                const isSelected = selectedPreset === preset.label;
-                return (
-                  <TouchableOpacity
-                    key={preset.label}
-                    style={[
-                      styles.presetChip,
-                      isSelected && styles.presetChipActive,
-                    ]}
-                    onPress={() => {
-                      setSelectedPreset(preset.label);
-                      setFromDate(preset.from);
-                      setToDate(preset.to);
-                      setDateModalVisible(false);
-                    }}>
-                    <Text
-                      style={[
-                        styles.presetChipText,
-                        isSelected && styles.presetChipTextActive,
-                      ]}>
-                      {preset.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <TouchableOpacity
-              style={styles.modalCloseBtn}
-              onPress={() => setDateModalVisible(false)}>
-              <Text style={styles.modalCloseBtnText}>Done</Text>
             </TouchableOpacity>
           </View>
         </View>
