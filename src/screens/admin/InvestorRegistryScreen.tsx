@@ -324,7 +324,13 @@ const getInvestorsApi = async (
    */
 
   if (status && status !== 'All') {
-    params.append('status_name', status);
+    if (status === 'Pending') {
+      params.append('kyc_status_name', 'Pending');
+    } else if (status === 'Active') {
+      params.append('kyc_status_name', 'Verified');
+    } else if (status === 'Suspended') {
+      params.append('status_name', 'Suspended');
+    }
   }
 
   if (searchText?.trim()) {
@@ -478,9 +484,8 @@ const normalizeAccountStatus = (
   }
 
   if (
-    acc.includes('active') ||
-    kyc.includes('verified') ||
-    kyc.includes('approved')
+    (acc.includes('active') || acc === '') &&
+    (kyc.includes('verified') || kyc.includes('approved'))
   ) {
     return 'Active';
   }
