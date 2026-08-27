@@ -198,6 +198,8 @@ const InvestNowScreen = ({navigation, route}: any) => {
 
   const [amountText, setAmountText] =
     useState('500000');
+  const [amountError, setAmountError] = useState('');
+  const [paymentError, setPaymentError] = useState('');
 
   // -------------------------------------------------------
   // PAYMENT STATE
@@ -343,6 +345,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
     value: string,
   ) => {
     setAmountText(value);
+    setAmountError('');
     setCalculationData(null);
   };
 
@@ -365,6 +368,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
     value: number,
   ) => {
     setAmountText(String(value));
+    setAmountError('');
     setCalculationData(null);
   };
 
@@ -373,6 +377,17 @@ const InvestNowScreen = ({navigation, route}: any) => {
   // ---------------------------------------------------------
 
   const goToPayment = async () => {
+    const cleanAmount = amountText.trim();
+    if (!cleanAmount) {
+      setAmountError('Please enter an investment amount.');
+      return;
+    }
+
+    if (/\D/.test(cleanAmount)) {
+      setAmountError('Investment amount must contain numbers only.');
+      return;
+    }
+
     const check = validation.isValidAmount(
       amount,
       BOND.min,
@@ -380,8 +395,7 @@ const InvestNowScreen = ({navigation, route}: any) => {
     );
 
     if (!check.isValid) {
-      Alert.alert(
-        'Check amount',
+      setAmountError(
         check.error ||
           `Investment amount must be between ${formatINR(
             BOND.min,
@@ -389,6 +403,8 @@ const InvestNowScreen = ({navigation, route}: any) => {
       );
       return;
     }
+
+    setAmountError('');
 
     try {
       setCalculating(true);
@@ -451,23 +467,27 @@ const InvestNowScreen = ({navigation, route}: any) => {
       paymentMethod === 'netbanking' &&
       !selectedBank
     ) {
-      Alert.alert(
-        'Missing details',
-        'Please select a bank to pay from.',
-      );
-
+      setPaymentError('Please select a bank to pay from.');
       return;
     }
 
-    if (!validation.isValidTransactionRef(transactionRef)) {
-      Alert.alert(
-        'Missing details',
-        'Please enter a valid transaction reference number.',
-      );
-
+    const cleanRef = transactionRef.trim();
+    if (!cleanRef) {
+      setPaymentError('Transaction reference number cannot be empty.');
       return;
     }
 
+    if (cleanRef.length < 3) {
+      setPaymentError('Please enter a valid transaction reference number (at least 3 characters).');
+      return;
+    }
+
+    if (!/^[A-Za-z0-9-]+$/.test(cleanRef)) {
+      setPaymentError('Transaction reference number should contain alphanumeric characters only.');
+      return;
+    }
+
+    setPaymentError('');
     setStep('review');
   };
 
@@ -705,6 +725,12 @@ const InvestNowScreen = ({navigation, route}: any) => {
           placeholderTextColor="#9CA3AF"
         />
       </View>
+
+      {amountError ? (
+        <Text style={{color: '#DC2626', fontSize: 12, marginTop: 4, marginBottom: 8, fontWeight: '500'}}>
+          {amountError}
+        </Text>
+      ) : null}
 
       <View
         style={styles.quickAmountRow}>
@@ -1113,12 +1139,19 @@ const InvestNowScreen = ({navigation, route}: any) => {
         <TextInput
           style={styles.textInput}
           value={transactionRef}
-          onChangeText={
-            setTransactionRef
-          }
+          onChangeText={t => {
+            setTransactionRef(t);
+            if (paymentError) setPaymentError('');
+          }}
           placeholder="Enter UTR / Transaction ID"
           placeholderTextColor="#9CA3AF"
         />
+
+        {paymentError ? (
+          <Text style={{color: '#DC2626', fontSize: 12, marginTop: 4, marginBottom: 8, fontWeight: '500'}}>
+            {paymentError}
+          </Text>
+        ) : null}
 
         <View
           style={styles.actionRow}>

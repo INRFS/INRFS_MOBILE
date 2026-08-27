@@ -14,6 +14,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 
 import AppHeader from '../../components/AppHeader';
 import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
+import {validation} from '../../utils/validation';
 import {
   getAdmins,
   createAdmin,
@@ -47,6 +48,7 @@ const AdminManagementScreen = ({navigation}: any) => {
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [password, setPassword] = useState('');
   const [isCreating, setIsCreating] = useState(false);
+  const [addErrors, setAddErrors] = useState<Record<string, string>>({});
 
   // ---- View Details modal ----
   const [viewModalVisible, setViewModalVisible] = useState(false);
@@ -62,6 +64,7 @@ const AdminManagementScreen = ({navigation}: any) => {
   const [editRoleId, setEditRoleId] = useState<number | null>(null);
   const [editStatusId, setEditStatusId] = useState<number>(2); // 2 = Active
   const [isUpdating, setIsUpdating] = useState(false);
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   // ---- Suspend Confirm Modal ----
   const [suspendModalVisible, setSuspendModalVisible] = useState(false);
@@ -115,12 +118,35 @@ const AdminManagementScreen = ({navigation}: any) => {
      ========================================================== */
 
   const handleAdd = async () => {
-    if (!name.trim() || !email.trim() || !mobile.trim() || !password.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email, mobile and password.');
-      return;
+    const errs: Record<string, string> = {};
+
+    const nameCheck = validation.isValidName(name);
+    if (!nameCheck.isValid) {
+      errs.name = nameCheck.error || 'Name should contain only letters and spaces.';
     }
+
+    const emailCheck = validation.isValidEmail(email);
+    if (!emailCheck.isValid) {
+      errs.email = emailCheck.error || 'Please enter a valid email address.';
+    }
+
+    const mobileCheck = validation.isValidIndianMobile(mobile);
+    if (!mobileCheck.isValid) {
+      errs.mobile = mobileCheck.error || 'Please enter a valid 10-digit mobile number.';
+    }
+
+    if (!password.trim()) {
+      errs.password = 'Password cannot be empty.';
+    } else if (password.trim().length < 8) {
+      errs.password = 'Password must be at least 8 characters.';
+    }
+
     if (!selectedBranchId) {
-      Alert.alert('Validation Error', 'Please select a branch.');
+      errs.branchId = 'Please select a branch.';
+    }
+
+    setAddErrors(errs);
+    if (Object.keys(errs).length > 0 || !selectedBranchId) {
       return;
     }
 
@@ -165,13 +191,32 @@ const AdminManagementScreen = ({navigation}: any) => {
     setEditBranchId(admin.branchId || (branches[0]?.id ?? 1));
     setEditRoleId(admin.roleId || (roles[0]?.id ?? 2));
     setEditStatusId(admin.statusId || (admin.status.toLowerCase() === 'active' ? 2 : 3));
+    setEditErrors({});
     setEditModalVisible(true);
   };
 
   const handleSaveEdit = async () => {
     if (!editingAdmin) return;
-    if (!editName.trim() || !editEmail.trim() || !editMobile.trim()) {
-      Alert.alert('Missing details', 'Please fill in name, email, and mobile number.');
+
+    const errs: Record<string, string> = {};
+
+    const nameCheck = validation.isValidName(editName);
+    if (!nameCheck.isValid) {
+      errs.name = nameCheck.error || 'Name should contain only letters and spaces.';
+    }
+
+    const emailCheck = validation.isValidEmail(editEmail);
+    if (!emailCheck.isValid) {
+      errs.email = emailCheck.error || 'Please enter a valid email address.';
+    }
+
+    const mobileCheck = validation.isValidIndianMobile(editMobile);
+    if (!mobileCheck.isValid) {
+      errs.mobile = mobileCheck.error || 'Please enter a valid 10-digit mobile number.';
+    }
+
+    setEditErrors(errs);
+    if (Object.keys(errs).length > 0) {
       return;
     }
 
@@ -253,8 +298,11 @@ const AdminManagementScreen = ({navigation}: any) => {
 
         <TouchableOpacity
           style={styles.addBtn}
-          activeOpacity={0.8}
-          onPress={() => setAddModalVisible(true)}>
+          activeOpacity={0.85}
+          onPress={() => {
+            setAddErrors({});
+            setAddModalVisible(true);
+          }}>
           <Text style={styles.addBtnText}>+ Add</Text>
         </TouchableOpacity>
       </View>
@@ -517,8 +565,14 @@ const AdminManagementScreen = ({navigation}: any) => {
                 placeholder="e.g. Rahul Sharma"
                 placeholderTextColor="#94A3B8"
                 value={name}
-                onChangeText={setName}
+                onChangeText={t => {
+                  setName(t);
+                  if (addErrors.name) setAddErrors(prev => ({...prev, name: ''}));
+                }}
               />
+              {addErrors.name ? (
+                <Text style={styles.fieldError}>{addErrors.name}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Email Address *</Text>
               <TextInput
@@ -528,8 +582,14 @@ const AdminManagementScreen = ({navigation}: any) => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={t => {
+                  setEmail(t);
+                  if (addErrors.email) setAddErrors(prev => ({...prev, email: ''}));
+                }}
               />
+              {addErrors.email ? (
+                <Text style={styles.fieldError}>{addErrors.email}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Mobile Number *</Text>
               <TextInput
@@ -538,8 +598,14 @@ const AdminManagementScreen = ({navigation}: any) => {
                 placeholderTextColor="#94A3B8"
                 keyboardType="phone-pad"
                 value={mobile}
-                onChangeText={setMobile}
+                onChangeText={t => {
+                  setMobile(t);
+                  if (addErrors.mobile) setAddErrors(prev => ({...prev, mobile: ''}));
+                }}
               />
+              {addErrors.mobile ? (
+                <Text style={styles.fieldError}>{addErrors.mobile}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Password *</Text>
               <TextInput
@@ -548,8 +614,14 @@ const AdminManagementScreen = ({navigation}: any) => {
                 placeholderTextColor="#94A3B8"
                 secureTextEntry
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={t => {
+                  setPassword(t);
+                  if (addErrors.password) setAddErrors(prev => ({...prev, password: ''}));
+                }}
               />
+              {addErrors.password ? (
+                <Text style={styles.fieldError}>{addErrors.password}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Assign Branch *</Text>
               <View style={styles.pillRow}>
@@ -560,7 +632,10 @@ const AdminManagementScreen = ({navigation}: any) => {
                       styles.selectPill,
                       selectedBranchId === b.id && styles.selectPillActive,
                     ]}
-                    onPress={() => setSelectedBranchId(b.id)}>
+                    onPress={() => {
+                      setSelectedBranchId(b.id);
+                      if (addErrors.branchId) setAddErrors(prev => ({...prev, branchId: ''}));
+                    }}>
                     <Text
                       style={[
                         styles.selectPillText,
@@ -571,6 +646,9 @@ const AdminManagementScreen = ({navigation}: any) => {
                   </TouchableOpacity>
                 ))}
               </View>
+              {addErrors.branchId ? (
+                <Text style={styles.fieldError}>{addErrors.branchId}</Text>
+              ) : null}
             </ScrollView>
 
             <View style={styles.modalBtnRow}>
@@ -619,8 +697,14 @@ const AdminManagementScreen = ({navigation}: any) => {
               <TextInput
                 style={styles.textInput}
                 value={editName}
-                onChangeText={setEditName}
+                onChangeText={t => {
+                  setEditName(t);
+                  if (editErrors.name) setEditErrors(prev => ({...prev, name: ''}));
+                }}
               />
+              {editErrors.name ? (
+                <Text style={styles.fieldError}>{editErrors.name}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Email Address *</Text>
               <TextInput
@@ -628,16 +712,28 @@ const AdminManagementScreen = ({navigation}: any) => {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={editEmail}
-                onChangeText={setEditEmail}
+                onChangeText={t => {
+                  setEditEmail(t);
+                  if (editErrors.email) setEditErrors(prev => ({...prev, email: ''}));
+                }}
               />
+              {editErrors.email ? (
+                <Text style={styles.fieldError}>{editErrors.email}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Mobile Number *</Text>
               <TextInput
                 style={styles.textInput}
                 keyboardType="phone-pad"
                 value={editMobile}
-                onChangeText={setEditMobile}
+                onChangeText={t => {
+                  setEditMobile(t);
+                  if (editErrors.mobile) setEditErrors(prev => ({...prev, mobile: ''}));
+                }}
               />
+              {editErrors.mobile ? (
+                <Text style={styles.fieldError}>{editErrors.mobile}</Text>
+              ) : null}
 
               <Text style={styles.inputLabel}>Branch *</Text>
               <View style={styles.pillRow}>

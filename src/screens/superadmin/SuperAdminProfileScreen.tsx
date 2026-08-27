@@ -135,6 +135,8 @@ const SuperAdminProfileScreen = ({navigation}: any) => {
 
     if (!formData.fullName.trim()) {
       newErrors.fullName = 'Full Name is required';
+    } else if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(formData.fullName.trim())) {
+      newErrors.fullName = 'Name should contain only letters and spaces.';
     }
 
     if (!formData.email.trim()) {
@@ -145,8 +147,8 @@ const SuperAdminProfileScreen = ({navigation}: any) => {
 
     if (!formData.mobile.trim()) {
       newErrors.mobile = 'Mobile number is required';
-    } else if (!MOBILE_REGEX.test(formData.mobile.trim().replace(/\s+/g, ''))) {
-      newErrors.mobile = 'Please enter a valid mobile number (min 10 digits)';
+    } else if (/\D/.test(formData.mobile.trim()) || formData.mobile.trim().length !== 10) {
+      newErrors.mobile = 'Please enter a valid 10-digit mobile number.';
     }
 
     setErrors(newErrors);

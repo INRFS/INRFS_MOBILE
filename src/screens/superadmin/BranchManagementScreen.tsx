@@ -170,6 +170,8 @@ const BranchManagementScreen = ({navigation}: any) => {
       errs.cityName = 'City name is required';
     } else if (addCityName.trim().length < 2) {
       errs.cityName = 'City name must be at least 2 characters';
+    } else if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(addCityName.trim())) {
+      errs.cityName = 'City name should contain only letters and spaces';
     }
 
     if (!addStateId) {
@@ -226,6 +228,8 @@ const BranchManagementScreen = ({navigation}: any) => {
       errs.cityName = 'City name is required';
     } else if (editCityName.trim().length < 2) {
       errs.cityName = 'City name must be at least 2 characters';
+    } else if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(editCityName.trim())) {
+      errs.cityName = 'City name should contain only letters and spaces';
     }
 
     if (!editStateId) {

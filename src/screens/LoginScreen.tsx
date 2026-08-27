@@ -156,6 +156,150 @@ const BottomWaveDecor = () => (
   </View>
 );
 
+// -----------------------------------------------------------------------
+// Backend error message formatters
+// Transforms backend responses to user-friendly messages without exposing
+// technical error details.
+// -----------------------------------------------------------------------
+const formatInvestorBackendError = (rawError: any): string => {
+  const detail = (
+    rawError?.data?.detail ||
+    rawError?.originalError?.response?.data?.detail ||
+    rawError?.response?.data?.detail ||
+    rawError?.message ||
+    ''
+  ).toLowerCase();
+
+  // Network / timeout
+  if (
+    detail.includes('network') ||
+    detail.includes('unable to reach') ||
+    detail.includes('timeout') ||
+    detail.includes('connection')
+  ) {
+    return 'Unable to reach the server. Please check your internet connection.';
+  }
+
+  // If combined/ambiguous (e.g. "invalid investor ID or password"), return standard ambiguous message
+  if (detail.includes(' or ') || detail.includes('credential')) {
+    return 'Invalid Investor ID or password.';
+  }
+
+  // Clearly incorrect/invalid password
+  if (
+    detail.includes('password') &&
+    (detail.includes('incorrect') || detail.includes('wrong') || detail.includes('invalid'))
+  ) {
+    return 'Invalid password.';
+  }
+
+  // Clearly investor ID not found / does not exist
+  if (
+    detail.includes('not found') ||
+    detail.includes('does not exist') ||
+    detail.includes('no user') ||
+    detail.includes('invalid investor')
+  ) {
+    return 'Invalid Investor ID.';
+  }
+
+  // Default fallback when ambiguous or generic
+  return 'Invalid Investor ID or password.';
+};
+
+const formatAdminBackendError = (rawError: any): string => {
+  const detail = (
+    rawError?.detail ||
+    rawError?.data?.detail ||
+    rawError?.message ||
+    ''
+  ).toLowerCase();
+
+  // Network / timeout
+  if (
+    detail.includes('network') ||
+    detail.includes('unable to reach') ||
+    detail.includes('timeout') ||
+    detail.includes('connection')
+  ) {
+    return 'Unable to reach the server. Please check your internet connection.';
+  }
+
+  // If combined/ambiguous, return standard ambiguous message
+  if (detail.includes(' or ') || detail.includes('credential')) {
+    return 'Invalid username or password.';
+  }
+
+  // Clearly incorrect/invalid password
+  if (
+    detail.includes('password') &&
+    (detail.includes('incorrect') || detail.includes('wrong') || detail.includes('invalid'))
+  ) {
+    return 'Invalid password.';
+  }
+
+  // Clearly username not found / does not exist
+  if (
+    detail.includes('not found') ||
+    detail.includes('does not exist') ||
+    detail.includes('no user') ||
+    detail.includes('invalid admin') ||
+    detail.includes('invalid username')
+  ) {
+    return 'Invalid username.';
+  }
+
+  // Default fallback when ambiguous or generic
+  return 'Invalid username or password.';
+};
+
+const formatSuperAdminBackendError = (rawError: any): string => {
+  const detail = (
+    rawError?.detail ||
+    rawError?.data?.detail ||
+    rawError?.message ||
+    ''
+  ).toLowerCase();
+
+  // Network / timeout
+  if (
+    detail.includes('network') ||
+    detail.includes('unable to reach') ||
+    detail.includes('timeout') ||
+    detail.includes('connection')
+  ) {
+    return 'Unable to reach the server. Please check your internet connection.';
+  }
+
+  // If combined/ambiguous, return standard ambiguous message
+  if (detail.includes(' or ') || detail.includes('credential')) {
+    return 'Invalid username or password.';
+  }
+
+  // Clearly incorrect/invalid password
+  if (
+    detail.includes('password') &&
+    (detail.includes('incorrect') || detail.includes('wrong') || detail.includes('invalid'))
+  ) {
+    return 'Invalid password.';
+  }
+
+  // Clearly username not found / does not exist
+  if (
+    detail.includes('not found') ||
+    detail.includes('does not exist') ||
+    detail.includes('no user') ||
+    detail.includes('invalid superadmin') ||
+    detail.includes('invalid admin') ||
+    detail.includes('invalid username')
+  ) {
+    return 'Invalid username.';
+  }
+
+  // Default fallback when ambiguous or generic
+  return 'Invalid username or password.';
+};
+
 const LoginScreen = ({navigation}: any) => {
   const {setAdminProfile} = useAppData();
 
@@ -183,11 +327,16 @@ const LoginScreen = ({navigation}: any) => {
     // }
     // =========================================================
     if (selectedRole === 'investor') {
-      if (!validation.isValidInvestorId(investorId)) {
+      const trimmedInvestorId = investorId.trim();
+      if (!trimmedInvestorId) {
         setErrorMsg('Please enter your Investor ID.');
         return;
       }
-      if (!validation.isValidPassword(password)) {
+      if (!trimmedInvestorId.startsWith('INV')) {
+        setErrorMsg('Invalid Investor ID. Investor ID must start with INV.');
+        return;
+      }
+      if (!password.trim()) {
         setErrorMsg('Please enter your password.');
         return;
       }
@@ -196,7 +345,7 @@ const LoginScreen = ({navigation}: any) => {
         setLoading(true);
 
         const data = await authService.loginInvestor(
-          investorId.trim(),
+          trimmedInvestorId,
           password,
         );
 
@@ -204,10 +353,7 @@ const LoginScreen = ({navigation}: any) => {
         navigation.navigate('InvestorDashboard');
       } catch (error: any) {
         setLoading(false);
-        setErrorMsg(
-          error?.message ||
-            'Invalid Investor ID or password. Please try again.',
-        );
+        setErrorMsg(formatInvestorBackendError(error));
       }
 
       return;
@@ -224,10 +370,17 @@ const LoginScreen = ({navigation}: any) => {
     // }
     // =========================================================
     if (selectedRole === 'admin') {
-      if (!username.trim() || !password.trim()) {
-        setErrorMsg(
-          'Please enter username and password.',
-        );
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername) {
+        setErrorMsg('Please enter your username.');
+        return;
+      }
+      if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(trimmedUsername)) {
+        setErrorMsg('Invalid Admin username. Username must contain letters only.');
+        return;
+      }
+      if (!password.trim()) {
+        setErrorMsg('Please enter your password.');
         return;
       }
 
@@ -242,7 +395,7 @@ const LoginScreen = ({navigation}: any) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              username: username.trim(),
+              username: trimmedUsername,
               password: password,
             }),
           },
@@ -272,20 +425,20 @@ const LoginScreen = ({navigation}: any) => {
           );
         }
         const accessToken =
-  data?.access_token ||
-  data?.token ||
-  data?.accessToken;
+          data?.access_token ||
+          data?.token ||
+          data?.accessToken;
 
-if (!accessToken) {
-  throw new Error(
-    'Login successful, but no access token was returned by the server.',
-  );
-}
+        if (!accessToken) {
+          throw new Error(
+            'Login successful, but no access token was returned by the server.',
+          );
+        }
 
-await AsyncStorage.setItem(
-  'access_token',
-  accessToken,
-);
+        await AsyncStorage.setItem(
+          'access_token',
+          accessToken,
+        );
 
         setLoading(false);
 
@@ -293,7 +446,7 @@ await AsyncStorage.setItem(
           name:
             data?.full_name ||
             data?.name ||
-            username.trim(),
+            trimmedUsername,
 
           email:
             data?.email ||
@@ -310,10 +463,7 @@ await AsyncStorage.setItem(
 
         console.log('Admin Login Error:', error);
 
-        setErrorMsg(
-          error?.message ||
-            'Admin login failed. Please check your credentials.',
-        );
+        setErrorMsg(formatAdminBackendError(error));
       }
 
       return;
@@ -330,10 +480,17 @@ await AsyncStorage.setItem(
     // }
     // =========================================================
     if (selectedRole === 'superadmin') {
-      if (!username.trim() || !password.trim()) {
-        setErrorMsg(
-          'Please enter username and password.',
-        );
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername) {
+        setErrorMsg('Please enter your username.');
+        return;
+      }
+      if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(trimmedUsername)) {
+        setErrorMsg('Invalid Super Admin username. Username must contain letters only.');
+        return;
+      }
+      if (!password.trim()) {
+        setErrorMsg('Please enter your password.');
         return;
       }
 
@@ -348,7 +505,7 @@ await AsyncStorage.setItem(
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              username: username.trim(),
+              username: trimmedUsername,
               password: password,
             }),
           },
@@ -380,28 +537,28 @@ await AsyncStorage.setItem(
               'Super Admin login failed.',
           );
         }
-const accessToken =
-  data?.access_token ||
-  data?.token ||
-  data?.accessToken;
+        const accessToken =
+          data?.access_token ||
+          data?.token ||
+          data?.accessToken;
 
-if (!accessToken) {
-  throw new Error(
-    'Login successful, but no access token was returned by the server.',
-  );
-}
+        if (!accessToken) {
+          throw new Error(
+            'Login successful, but no access token was returned by the server.',
+          );
+        }
 
-await AsyncStorage.setItem(
-  'access_token',
-  accessToken,
-);
+        await AsyncStorage.setItem(
+          'access_token',
+          accessToken,
+        );
         setLoading(false);
 
         setAdminProfile({
           name:
             data?.full_name ||
             data?.name ||
-            username.trim(),
+            trimmedUsername,
 
           email:
             data?.email ||
@@ -421,10 +578,7 @@ await AsyncStorage.setItem(
           error,
         );
 
-        setErrorMsg(
-          error?.message ||
-            'Super Admin login failed. Please check your credentials.',
-        );
+        setErrorMsg(formatSuperAdminBackendError(error));
       }
 
       return;
@@ -560,7 +714,10 @@ await AsyncStorage.setItem(
                 placeholder="Enter your investor ID"
                 placeholderTextColor="#9CA3AF"
                 value={investorId}
-                onChangeText={setInvestorId}
+                onChangeText={text => {
+                  setErrorMsg('');
+                  setInvestorId(text);
+                }}
                 autoCapitalize="none"
               />
             </View>
@@ -584,7 +741,10 @@ await AsyncStorage.setItem(
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => {
+                  setErrorMsg('');
+                  setPassword(text);
+                }}
               />
             </View>
 
@@ -661,7 +821,18 @@ await AsyncStorage.setItem(
                 placeholder="Enter username"
                 placeholderTextColor="#9CA3AF"
                 value={username}
-                onChangeText={setUsername}
+                onChangeText={text => {
+                  setUsername(text);
+                  if (text && !/^[A-Za-z ]*$/.test(text)) {
+                    setErrorMsg(
+                      selectedRole === 'admin'
+                        ? 'Invalid Admin username. Username must contain letters only.'
+                        : 'Invalid Super Admin username. Username must contain letters only.',
+                    );
+                  } else {
+                    setErrorMsg('');
+                  }
+                }}
                 autoCapitalize="none"
               />
             </View>
@@ -685,7 +856,10 @@ await AsyncStorage.setItem(
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => {
+                  setErrorMsg('');
+                  setPassword(text);
+                }}
               />
             </View>
 

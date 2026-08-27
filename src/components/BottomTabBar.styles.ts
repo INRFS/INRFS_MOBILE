@@ -139,57 +139,23 @@ export const styles = StyleSheet.create({
     fontWeight: '800',
   },
 
-  /*
-   * =========================================================
-   * MORE OVERLAY
-   *
-   * IMPORTANT:
-   * This replaces the React Native Modal.
-   * =========================================================
-   */
+  /* ---------------------------------------------------------- */
+  /* MORE MODAL                                                  */
+  /* ---------------------------------------------------------- */
 
-  moreOverlay: {
-    position: 'absolute',
-
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom:
-      Platform.OS === 'ios'
-        ? 82
-        : 68,
-
-    zIndex: 1000,
-    elevation: 1000,
+  modalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
   },
-
-  /*
-   * =========================================================
-   * BACKDROP
-   * =========================================================
-   */
 
   backdrop: {
     ...StyleSheet.absoluteFill,
 
-    backgroundColor:
-      'rgba(15,23,42,0.42)',
-
-    zIndex: 1,
+    backgroundColor: 'rgba(15,23,42,0.42)',
   },
 
-  /*
-   * =========================================================
-   * MORE SHEET
-   * =========================================================
-   */
-
   sheet: {
-    position: 'absolute',
-
-    left: 0,
-    right: 0,
-    bottom: 0,
+    width: '100%',
 
     backgroundColor: '#FFFFFF',
 
@@ -200,9 +166,7 @@ export const styles = StyleSheet.create({
     paddingTop: 9,
 
     paddingBottom:
-      Platform.OS === 'ios'
-        ? 28
-        : 18,
+      Platform.OS === 'ios' ? 28 : 18,
 
     elevation: 24,
 
@@ -215,8 +179,6 @@ export const styles = StyleSheet.create({
 
     shadowOpacity: 0.16,
     shadowRadius: 18,
-
-    zIndex: 2,
   },
 
   /*

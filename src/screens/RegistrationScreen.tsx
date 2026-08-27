@@ -117,6 +117,13 @@ const local = StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
   },
+  fieldError: {
+    color: '#B91C1C',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 2,
+    fontWeight: '500',
+  },
 });
 
 const emptyForm = {
@@ -160,6 +167,7 @@ const RegistrationScreen = ({navigation}: any) => {
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Shown after Submit succeeds against the real backend. No Investor ID
   // is generated here — that only happens once a Branch Admin approves
@@ -173,6 +181,189 @@ const RegistrationScreen = ({navigation}: any) => {
   const update = (key: keyof typeof form, value: any) =>
     setForm(prev => ({...prev, [key]: value}));
 
+  // Handlers that reject invalid characters and immediately show field error
+  const handleFullNameChange = (val: string) => {
+    if (/[^A-Za-z ]/.test(val)) {
+      const msg = 'Full name can contain letters and spaces only.';
+      setFieldErrors(prev => ({...prev, fullName: msg}));
+      setErrorMessage(msg);
+      const clean = val.replace(/[^A-Za-z ]/g, '').replace(/^\s+/, '').replace(/ {2,}/g, ' ');
+      update('fullName', clean);
+      return;
+    }
+    setFieldErrors(prev => {
+      if (!prev.fullName) return prev;
+      const next = {...prev};
+      delete next.fullName;
+      return next;
+    });
+    setErrorMessage(null);
+    const clean = val.replace(/^\s+/, '').replace(/ {2,}/g, ' ');
+    update('fullName', clean);
+  };
+
+  const handleMobileChange = (val: string) => {
+    if (/\D/.test(val)) {
+      const msg = 'Mobile number must contain digits only.';
+      setFieldErrors(prev => ({...prev, mobile: msg}));
+      setErrorMessage(msg);
+      const clean = val.replace(/\D/g, '').slice(0, 10);
+      update('mobile', clean);
+      return;
+    }
+    const clean = val.slice(0, 10);
+    setFieldErrors(prev => {
+      if (!prev.mobile) return prev;
+      const next = {...prev};
+      delete next.mobile;
+      return next;
+    });
+    setErrorMessage(null);
+    update('mobile', clean);
+  };
+
+  const handleMobileBlur = () => {
+    if (form.mobile && form.mobile.length > 0 && form.mobile.length !== 10) {
+      const msg = 'Mobile number must be exactly 10 digits.';
+      setFieldErrors(prev => ({...prev, mobile: msg}));
+      setErrorMessage(msg);
+    }
+  };
+
+  const handleEmailChange = (val: string) => {
+    if (/[A-Z]/.test(val) || /\s/.test(val)) {
+      const msg = 'Email must use lowercase letters and end with @gmail.com.';
+      setFieldErrors(prev => ({...prev, email: msg}));
+      setErrorMessage(msg);
+      const clean = val.replace(/[A-Z\s]/g, '');
+      update('email', clean);
+      return;
+    }
+
+    if (val.includes('@')) {
+      const parts = val.split('@');
+      const domain = parts[1] || '';
+      if (domain.includes('.') && !domain.endsWith('gmail.com')) {
+        const msg = 'Please enter a valid Gmail address ending with @gmail.com.';
+        setFieldErrors(prev => ({...prev, email: msg}));
+        setErrorMessage(msg);
+        update('email', val);
+        return;
+      }
+    }
+
+    setFieldErrors(prev => {
+      if (!prev.email) return prev;
+      const next = {...prev};
+      delete next.email;
+      return next;
+    });
+    setErrorMessage(null);
+    update('email', val);
+  };
+
+  const handleEmailBlur = () => {
+    if (form.email && form.email.trim()) {
+      if (/[A-Z]/.test(form.email)) {
+        const msg = 'Email must use lowercase letters and end with @gmail.com.';
+        setFieldErrors(prev => ({...prev, email: msg}));
+        setErrorMessage(msg);
+      } else if (!/^[a-z0-9._%+-]+@gmail\.com$/.test(form.email.trim())) {
+        const msg = 'Please enter a valid Gmail address ending with @gmail.com.';
+        setFieldErrors(prev => ({...prev, email: msg}));
+        setErrorMessage(msg);
+      }
+    }
+  };
+
+  const handleDobChange = (val: string) => {
+    if (/[a-zA-Z]/.test(val)) {
+      const msg = 'Please enter a valid date of birth.';
+      setFieldErrors(prev => ({...prev, dob: msg}));
+      setErrorMessage(msg);
+      const clean = val.replace(/[a-zA-Z]/g, '').slice(0, 10);
+      update('dob', clean);
+      return;
+    }
+
+    setFieldErrors(prev => {
+      if (!prev.dob) return prev;
+      const next = {...prev};
+      delete next.dob;
+      return next;
+    });
+    setErrorMessage(null);
+    update('dob', val.slice(0, 10));
+  };
+
+  const handleDobBlur = () => {
+    if (form.dob && form.dob.trim()) {
+      if (!toApiDate(form.dob)) {
+        const msg = 'Please enter a valid date of birth.';
+        setFieldErrors(prev => ({...prev, dob: msg}));
+        setErrorMessage(msg);
+      }
+    }
+  };
+
+  const handleAadhaarChange = (val: string) => {
+    if (/\D/.test(val)) {
+      const msg = 'Aadhaar number must contain digits only.';
+      setFieldErrors(prev => ({...prev, aadhaar: msg}));
+      setErrorMessage(msg);
+      const clean = val.replace(/\D/g, '').slice(0, 12);
+      update('aadhaar', clean);
+      return;
+    }
+
+    const clean = val.slice(0, 12);
+    setFieldErrors(prev => {
+      if (!prev.aadhaar) return prev;
+      const next = {...prev};
+      delete next.aadhaar;
+      return next;
+    });
+    setErrorMessage(null);
+    update('aadhaar', clean);
+  };
+
+  const handleAadhaarBlur = () => {
+    if (form.aadhaar && form.aadhaar.length > 0 && form.aadhaar.length !== 12) {
+      const msg = 'Aadhaar number must be exactly 12 digits.';
+      setFieldErrors(prev => ({...prev, aadhaar: msg}));
+      setErrorMessage(msg);
+    }
+  };
+
+  const handlePincodeChange = (val: string) => {
+    if (/\D/.test(val)) {
+      const msg = 'Pincode must contain numbers only.';
+      setFieldErrors(prev => ({...prev, pin: msg}));
+      setErrorMessage(msg);
+      const clean = val.replace(/\D/g, '').slice(0, 6);
+      update('pin', clean);
+      return;
+    }
+
+    const clean = val.slice(0, 6);
+    setFieldErrors(prev => {
+      if (!prev.pin) return prev;
+      const next = {...prev};
+      delete next.pin;
+      return next;
+    });
+    setErrorMessage(null);
+    update('pin', clean);
+  };
+
+  const handlePincodeBlur = () => {
+    if (form.pin && form.pin.length > 0 && form.pin.length !== 6) {
+      const msg = 'Pincode must be exactly 6 digits.';
+      setFieldErrors(prev => ({...prev, pin: msg}));
+      setErrorMessage(msg);
+    }
+  };
+
   // Branches available for the Investor flow are filtered by the
   // selected state. Admin / Super Admin can pick from every branch.
   const availableBranches = useMemo(() => {
@@ -183,6 +374,7 @@ const RegistrationScreen = ({navigation}: any) => {
   const selectRole = (next: Role) => {
     setRole(next);
     setErrorMessage(null);
+    setFieldErrors({});
     // Reset role-specific fields so a leftover value from one role never
     // gets sent to another role's endpoint.
     setForm(prev => ({
@@ -243,24 +435,90 @@ const RegistrationScreen = ({navigation}: any) => {
   };
 
   const validateStep1 = (): string | null => {
-    if (!form.fullName.trim()) return 'Full name is required.';
-    if (!form.mobile.trim()) return 'Mobile number is required.';
-    if (!form.password.trim()) return 'Password is required.';
+    const errors: Record<string, string> = {};
+
+    const fullNameClean = form.fullName.trim();
+    if (!fullNameClean) {
+      errors.fullName = 'Full name is required.';
+    } else if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(fullNameClean)) {
+      errors.fullName = 'Full name can contain letters and spaces only.';
+    }
+
+    if (!form.mobile.trim()) {
+      errors.mobile = 'Mobile number is required.';
+    } else if (/\D/.test(form.mobile)) {
+      errors.mobile = 'Mobile number must contain digits only.';
+    } else if (form.mobile.length !== 10) {
+      errors.mobile = 'Mobile number must be exactly 10 digits.';
+    }
+
+    if (!form.email.trim()) {
+      errors.email = 'Enter a valid lowercase Gmail address ending with @gmail.com.';
+    } else if (/[A-Z]/.test(form.email) || /\s/.test(form.email)) {
+      errors.email = 'Email must use lowercase letters and end with @gmail.com.';
+    } else if (!/^[a-z0-9._%+-]+@gmail\.com$/.test(form.email.trim())) {
+      errors.email = 'Please enter a valid Gmail address ending with @gmail.com.';
+    }
+
+    if (!form.password.trim()) {
+      errors.password = 'Password is required.';
+    }
 
     if (role === 'investor') {
-      if (!form.dob.trim()) return 'Date of birth is required.';
-      if (!toApiDate(form.dob)) return 'Date of birth must be in DD-MM-YYYY format.';
-      if (!form.aadhaar.trim()) return 'Aadhaar number is required.';
-      if (!form.address.trim()) return 'Address is required.';
-      if (!form.city.trim()) return 'City is required.';
-      if (!form.pin.trim()) return 'PIN code is required.';
-      if (!form.stateId) return 'Please select a state.';
-      if (!form.branchId) return 'Please select a branch.';
+      if (!form.dob.trim()) {
+        errors.dob = 'Date of birth is required.';
+      } else if (!toApiDate(form.dob)) {
+        errors.dob = 'Please enter a valid date of birth.';
+      }
+
+      if (!form.aadhaar.trim()) {
+        errors.aadhaar = 'Aadhaar number is required.';
+      } else if (/\D/.test(form.aadhaar)) {
+        errors.aadhaar = 'Aadhaar number must contain digits only.';
+      } else if (form.aadhaar.length !== 12) {
+        errors.aadhaar = 'Aadhaar number must be exactly 12 digits.';
+      }
+
+      if (!form.address.trim()) {
+        errors.address = 'Address is required.';
+      }
+
+      if (!form.city.trim()) {
+        errors.city = 'City is required.';
+      } else if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(form.city.trim())) {
+        errors.city = 'City should contain only letters and spaces.';
+      }
+
+      if (!form.pin.trim()) {
+        errors.pin = 'PIN code is required.';
+      } else if (/\D/.test(form.pin)) {
+        errors.pin = 'Pincode must contain numbers only.';
+      } else if (form.pin.length !== 6) {
+        errors.pin = 'Pincode must be exactly 6 digits.';
+      }
+
+      if (!form.stateId) {
+        errors.stateId = 'Please select a state.';
+      }
+
+      if (!form.branchId) {
+        errors.branchId = 'Please select a branch.';
+      }
     } else {
-      if (!form.username.trim()) return 'Username is required.';
-      if (!form.branchId) return 'Please select a branch.';
+      if (!form.username.trim()) {
+        errors.username = 'Username is required.';
+      } else if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(form.username.trim())) {
+        errors.username = 'Username must contain letters only.';
+      }
+
+      if (!form.branchId) {
+        errors.branchId = 'Please select a branch.';
+      }
     }
-    return null;
+
+    setFieldErrors(errors);
+    const firstError = Object.values(errors)[0] || null;
+    return firstError;
   };
 
   const buildPayload = () => {
@@ -519,9 +777,12 @@ const RegistrationScreen = ({navigation}: any) => {
                 placeholder="As per Aadhaar card"
                 placeholderTextColor="#9CA3AF"
                 value={form.fullName}
-                onChangeText={v => update('fullName', v)}
+                onChangeText={handleFullNameChange}
               />
             </View>
+            {fieldErrors.fullName ? (
+              <Text style={local.fieldError}>{fieldErrors.fullName}</Text>
+            ) : null}
 
             <Text style={styles.label}>
               Mobile number <Text style={styles.required}>*</Text>
@@ -533,10 +794,15 @@ const RegistrationScreen = ({navigation}: any) => {
                 placeholder="+91 XXXXX XXXXX"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="phone-pad"
+                maxLength={10}
                 value={form.mobile}
-                onChangeText={v => update('mobile', v)}
+                onChangeText={handleMobileChange}
+                onBlur={handleMobileBlur}
               />
             </View>
+            {fieldErrors.mobile ? (
+              <Text style={local.fieldError}>{fieldErrors.mobile}</Text>
+            ) : null}
 
             <Text style={styles.label}>Email address</Text>
             <View style={styles.inputWrapper}>
@@ -546,10 +812,15 @@ const RegistrationScreen = ({navigation}: any) => {
                 placeholder="your@email.com"
                 placeholderTextColor="#9CA3AF"
                 keyboardType="email-address"
+                autoCapitalize="none"
                 value={form.email}
-                onChangeText={v => update('email', v)}
+                onChangeText={handleEmailChange}
+                onBlur={handleEmailBlur}
               />
             </View>
+            {fieldErrors.email ? (
+              <Text style={local.fieldError}>{fieldErrors.email}</Text>
+            ) : null}
 
             <Text style={styles.label}>
               Password <Text style={styles.required}>*</Text>
@@ -562,9 +833,21 @@ const RegistrationScreen = ({navigation}: any) => {
                 placeholderTextColor="#9CA3AF"
                 secureTextEntry
                 value={form.password}
-                onChangeText={v => update('password', v)}
+                onChangeText={v => {
+                  setFieldErrors(prev => {
+                    if (!prev.password) return prev;
+                    const next = {...prev};
+                    delete next.password;
+                    return next;
+                  });
+                  setErrorMessage(null);
+                  update('password', v);
+                }}
               />
             </View>
+            {fieldErrors.password ? (
+              <Text style={local.fieldError}>{fieldErrors.password}</Text>
+            ) : null}
 
             {role !== 'investor' && (
               <>
@@ -579,9 +862,21 @@ const RegistrationScreen = ({navigation}: any) => {
                     placeholderTextColor="#9CA3AF"
                     autoCapitalize="none"
                     value={form.username}
-                    onChangeText={v => update('username', v)}
+                    onChangeText={v => {
+                      setFieldErrors(prev => {
+                        if (!prev.username) return prev;
+                        const next = {...prev};
+                        delete next.username;
+                        return next;
+                      });
+                      setErrorMessage(null);
+                      update('username', v);
+                    }}
                   />
                 </View>
+                {fieldErrors.username ? (
+                  <Text style={local.fieldError}>{fieldErrors.username}</Text>
+                ) : null}
               </>
             )}
 
@@ -596,11 +891,16 @@ const RegistrationScreen = ({navigation}: any) => {
                     style={styles.inputField}
                     placeholder="dd-mm-yyyy"
                     placeholderTextColor="#9CA3AF"
+                    maxLength={10}
                     value={form.dob}
-                    onChangeText={v => update('dob', v)}
+                    onChangeText={handleDobChange}
+                    onBlur={handleDobBlur}
                   />
                   <Icon name="calendar-month-outline" size={18} color="#9CA3AF" />
                 </View>
+                {fieldErrors.dob ? (
+                  <Text style={local.fieldError}>{fieldErrors.dob}</Text>
+                ) : null}
 
                 <Text style={styles.label}>
                   Aadhaar number <Text style={styles.required}>*</Text>
@@ -612,10 +912,15 @@ const RegistrationScreen = ({navigation}: any) => {
                     placeholder="XXXX XXXX XXXX"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="number-pad"
+                    maxLength={12}
                     value={form.aadhaar}
-                    onChangeText={v => update('aadhaar', v)}
+                    onChangeText={handleAadhaarChange}
+                    onBlur={handleAadhaarBlur}
                   />
                 </View>
+                {fieldErrors.aadhaar ? (
+                  <Text style={local.fieldError}>{fieldErrors.aadhaar}</Text>
+                ) : null}
 
                 <Text style={styles.label}>
                   Address <Text style={styles.required}>*</Text>
@@ -627,9 +932,21 @@ const RegistrationScreen = ({navigation}: any) => {
                     placeholder="Street address"
                     placeholderTextColor="#9CA3AF"
                     value={form.address}
-                    onChangeText={v => update('address', v)}
+                    onChangeText={v => {
+                      setFieldErrors(prev => {
+                        if (!prev.address) return prev;
+                        const next = {...prev};
+                        delete next.address;
+                        return next;
+                      });
+                      setErrorMessage(null);
+                      update('address', v);
+                    }}
                   />
                 </View>
+                {fieldErrors.address ? (
+                  <Text style={local.fieldError}>{fieldErrors.address}</Text>
+                ) : null}
 
                 <View style={styles.row3}>
                   <View style={styles.col}>
@@ -643,9 +960,21 @@ const RegistrationScreen = ({navigation}: any) => {
                         placeholder="City"
                         placeholderTextColor="#9CA3AF"
                         value={form.city}
-                        onChangeText={v => update('city', v)}
+                        onChangeText={v => {
+                          setFieldErrors(prev => {
+                            if (!prev.city) return prev;
+                            const next = {...prev};
+                            delete next.city;
+                            return next;
+                          });
+                          setErrorMessage(null);
+                          update('city', v);
+                        }}
                       />
                     </View>
+                    {fieldErrors.city ? (
+                      <Text style={local.fieldError}>{fieldErrors.city}</Text>
+                    ) : null}
                   </View>
                   <View style={styles.col}>
                     <Text style={styles.label}>
@@ -658,10 +987,15 @@ const RegistrationScreen = ({navigation}: any) => {
                         placeholder="400001"
                         placeholderTextColor="#9CA3AF"
                         keyboardType="number-pad"
+                        maxLength={6}
                         value={form.pin}
-                        onChangeText={v => update('pin', v)}
+                        onChangeText={handlePincodeChange}
+                        onBlur={handlePincodeBlur}
                       />
                     </View>
+                    {fieldErrors.pin ? (
+                      <Text style={local.fieldError}>{fieldErrors.pin}</Text>
+                    ) : null}
                   </View>
                 </View>
 
@@ -680,6 +1014,9 @@ const RegistrationScreen = ({navigation}: any) => {
                   </Text>
                   <Icon name="chevron-down" size={20} color="#9CA3AF" />
                 </TouchableOpacity>
+                {fieldErrors.stateId ? (
+                  <Text style={local.fieldError}>{fieldErrors.stateId}</Text>
+                ) : null}
                 {stateDropdownOpen && (
                   <View style={styles.dropdownList}>
                     {STATE_OPTIONS.map(opt => (
@@ -699,6 +1036,13 @@ const RegistrationScreen = ({navigation}: any) => {
                             branchId: null,
                             branchName: '',
                           }));
+                          setFieldErrors(prev => {
+                            if (!prev.stateId) return prev;
+                            const next = {...prev};
+                            delete next.stateId;
+                            return next;
+                          });
+                          setErrorMessage(null);
                           setStateDropdownOpen(false);
                         }}>
                         <Text style={styles.dropdownOptionText}>{opt.name}</Text>
@@ -724,6 +1068,9 @@ const RegistrationScreen = ({navigation}: any) => {
               </Text>
               <Icon name="chevron-down" size={20} color="#9CA3AF" />
             </TouchableOpacity>
+            {fieldErrors.branchId ? (
+              <Text style={local.fieldError}>{fieldErrors.branchId}</Text>
+            ) : null}
             {branchDropdownOpen && (
               <View style={styles.dropdownList}>
                 {availableBranches.length === 0 && (
@@ -746,11 +1093,24 @@ const RegistrationScreen = ({navigation}: any) => {
                         branchId: opt.id,
                         branchName: opt.name,
                       }));
+                      setFieldErrors(prev => {
+                        if (!prev.branchId) return prev;
+                        const next = {...prev};
+                        delete next.branchId;
+                        return next;
+                      });
+                      setErrorMessage(null);
                       setBranchDropdownOpen(false);
                     }}>
                     <Text style={styles.dropdownOptionText}>{opt.name}</Text>
                   </TouchableOpacity>
                 ))}
+              </View>
+            )}
+
+            {errorMessage && (
+              <View style={local.errorBox}>
+                <Text style={local.errorText}>{errorMessage}</Text>
               </View>
             )}
           </View>
@@ -812,6 +1172,7 @@ const RegistrationScreen = ({navigation}: any) => {
               style={styles.prevBtn}
               onPress={() => {
                 setErrorMessage(null);
+                setFieldErrors({});
                 setStep(step - 1);
               }}>
               <Icon name="arrow-left" size={16} color="#3B5BFF" />
@@ -834,6 +1195,7 @@ const RegistrationScreen = ({navigation}: any) => {
                   return;
                 }
                 setErrorMessage(null);
+                setFieldErrors({});
                 setStep(step + 1);
               }}>
               <Text style={styles.nextBtnText}>Next step</Text>

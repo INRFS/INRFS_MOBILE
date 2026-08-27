@@ -563,4 +563,10 @@ export const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 4,
   },
+  fieldError: {
+    color: '#DC2626',
+    fontSize: 11.5,
+    marginTop: 4,
+    fontWeight: '600',
+  },
 });

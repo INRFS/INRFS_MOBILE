@@ -19,6 +19,7 @@ import {styles} from '../../styles/admin/AdminDashboardScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import AppHeader from '../../components/AppHeader';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
+import {validation} from '../../utils/validation';
 
 const API_BASE_URL = 'http://187.52.115.32:8000';
 
@@ -298,6 +299,7 @@ const AdminDashboardScreen = ({
 
   const [amountText, setAmountText] =
     useState('');
+  const [modalErrors, setModalErrors] = useState<Record<string, string>>({});
 
   const [tenureIndex, setTenureIndex] =
     useState(1);
@@ -559,6 +561,7 @@ const AdminDashboardScreen = ({
     setAmountText('');
     setTenureIndex(1);
     setPaymentReference('');
+    setModalErrors({});
 
     setInvestedDate(
       new Date()
@@ -578,21 +581,26 @@ const AdminDashboardScreen = ({
   ======================================================= */
 
   const handleSaveAndGenerateBond = () => {
-    if (!selectedInvestor) {
-      Alert.alert(
-        'Select an investor',
-        'Please search and select an investor first.',
-      );
+    const errs: Record<string, string> = {};
 
-      return;
+    if (!selectedInvestor) {
+      errs.investor = 'Please search and select an investor first.';
     }
 
-    if (amount <= 0) {
-      Alert.alert(
-        'Enter an amount',
-        'Please enter a valid investment amount.',
-      );
+    const cleanAmount = amountText.trim();
+    if (!cleanAmount) {
+      errs.amount = 'Please enter an investment amount.';
+    } else if (/\D/.test(cleanAmount) || amount <= 0) {
+      errs.amount = 'Please enter a valid numeric investment amount.';
+    }
 
+    const dateCheck = validation.isValidDateString(investedDate, 'DD-MM-YYYY');
+    if (!dateCheck.isValid) {
+      errs.date = dateCheck.error || 'Please enter a valid date in DD-MM-YYYY format.';
+    }
+
+    setModalErrors(errs);
+    if (Object.keys(errs).length > 0 || !selectedInvestor) {
       return;
     }
 
@@ -609,10 +617,10 @@ const AdminDashboardScreen = ({
         tenure.months,
 
       investedDateStr:
-        investedDate,
+        investedDate.trim(),
 
       reference:
-        paymentReference ||
+        paymentReference.trim() ||
         undefined,
     });
 
@@ -2246,6 +2254,12 @@ const AdminDashboardScreen = ({
                 </>
               )}
 
+              {modalErrors.investor ? (
+                <Text style={{color: '#DC2626', fontSize: 12, marginTop: 4, marginBottom: 6, fontWeight: '500'}}>
+                  {modalErrors.investor}
+                </Text>
+              ) : null}
+
               {/* Amount */}
 
               <Text
@@ -2263,10 +2277,17 @@ const AdminDashboardScreen = ({
                 placeholderTextColor="#9CA3AF"
                 keyboardType="numeric"
                 value={amountText}
-                onChangeText={
-                  setAmountText
-                }
+                onChangeText={t => {
+                  setAmountText(t);
+                  if (modalErrors.amount) setModalErrors(prev => ({...prev, amount: ''}));
+                }}
               />
+
+              {modalErrors.amount ? (
+                <Text style={{color: '#DC2626', fontSize: 12, marginTop: 4, marginBottom: 4, fontWeight: '500'}}>
+                  {modalErrors.amount}
+                </Text>
+              ) : null}
 
               {/* Tenure */}
 
@@ -2339,10 +2360,17 @@ const AdminDashboardScreen = ({
                 value={
                   investedDate
                 }
-                onChangeText={
-                  setInvestedDate
-                }
+                onChangeText={t => {
+                  setInvestedDate(t);
+                  if (modalErrors.date) setModalErrors(prev => ({...prev, date: ''}));
+                }}
               />
+
+              {modalErrors.date ? (
+                <Text style={{color: '#DC2626', fontSize: 12, marginTop: 4, marginBottom: 4, fontWeight: '500'}}>
+                  {modalErrors.date}
+                </Text>
+              ) : null}
 
               {/* Payment Reference */}
 

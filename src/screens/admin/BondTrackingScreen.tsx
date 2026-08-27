@@ -22,6 +22,7 @@ import {
   approveInvestment,
   rejectInvestment,
   getPendingTenureExtensions,
+  approveTenureExtension,
   submitTenureExtension,
   getErrorMessage,
   InvestmentRecord,
@@ -195,8 +196,8 @@ const BondTrackingScreen = ({navigation}: any) => {
   const handleConfirmApprove = async () => {
     if (!approvingItem) return;
     const rateNum = parseFloat(approveRate.trim());
-    if (isNaN(rateNum) || rateNum < 0) {
-      Alert.alert('Validation Error', 'Please enter a valid numeric interest rate.');
+    if (isNaN(rateNum) || rateNum < 0 || rateNum > 100) {
+      Alert.alert('Validation Error', 'Please enter a valid interest rate between 0 and 100%.');
       return;
     }
 
@@ -248,24 +249,27 @@ const BondTrackingScreen = ({navigation}: any) => {
     }
   };
 
-  // TENURE REVIEW & SEND
+  // TENURE REVIEW & APPROVE
   const handleOpenReviewTenure = (r: TenureExtensionRecord) => {
     setReviewingTenure(r);
     setTenureRemarks('');
   };
 
-  const handleConfirmSendTenure = async () => {
+  const handleConfirmApproveTenure = async () => {
     if (!reviewingTenure) return;
 
     try {
       setIsSubmittingTenure(true);
-      await submitTenureExtension(reviewingTenure.requestId, {
-        remarks: tenureRemarks.trim() || 'Submitted to Super Admin by Admin.',
+      await approveTenureExtension(reviewingTenure.requestId, {
+        remarks: tenureRemarks.trim() || 'Approved by Admin.',
       });
 
       setReviewingTenure(null);
       await loadData(false);
-      Alert.alert('Success', 'Tenure extension request sent to Super Admin for approval.');
+      Alert.alert(
+        'Success',
+        'Tenure extension approved successfully. Investment tenure has been updated.',
+      );
     } catch (err: any) {
       Alert.alert('Action Failed', getErrorMessage(err));
     } finally {
@@ -902,7 +906,7 @@ const BondTrackingScreen = ({navigation}: any) => {
                 </View>
 
                 <Text style={local.modalSubtitle}>
-                  Review the investor's requested tenure extension before sending to Super Admin:
+                  Review and approve the investor's requested tenure extension:
                 </Text>
 
                 <View style={local.tenureReviewCard}>
@@ -930,7 +934,7 @@ const BondTrackingScreen = ({navigation}: any) => {
 
                 <View style={local.noticeBox}>
                   <Text style={local.noticeText}>
-                    ℹ️ This request will be forwarded to Super Admin. Admin cannot directly approve or reject tenure extensions.
+                    ℹ️ Admin approval directly finalizes this tenure extension. No Super Admin approval is required.
                   </Text>
                 </View>
 
@@ -941,7 +945,7 @@ const BondTrackingScreen = ({navigation}: any) => {
                     value={tenureRemarks}
                     onChangeText={setTenureRemarks}
                     multiline
-                    placeholder="Submitted to Super Admin by Admin."
+                    placeholder="Approved by Admin."
                     placeholderTextColor="#9CA3AF"
                   />
                 </View>
@@ -957,11 +961,11 @@ const BondTrackingScreen = ({navigation}: any) => {
                   <TouchableOpacity
                     style={[local.modalApproveBtn, isSubmittingTenure && {opacity: 0.6}]}
                     disabled={isSubmittingTenure}
-                    onPress={handleConfirmSendTenure}>
+                    onPress={handleConfirmApproveTenure}>
                     {isSubmittingTenure ? (
                       <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
-                      <Text style={local.modalApproveBtnText}>Send to Super Admin</Text>
+                      <Text style={local.modalApproveBtnText}>Approve Extension</Text>
                     )}
                   </TouchableOpacity>
                 </View>

@@ -244,16 +244,40 @@ export function resolveInvestmentStatus(item: ApiInvestment): BondStatus {
   // =========================================================================
   // 4. PENDING TENURE EXTENSION REQUEST
   // =========================================================================
-  if (
-    extensionValues.some(
-      s =>
-        s.includes('pending') ||
-        s.includes('requested') ||
-        s.includes('extension'),
-    ) ||
-    rawStatus.includes('extension')
-  ) {
-    return 'Extension Requested';
+  const isExtensionApproved = extensionValues.some(
+    s =>
+      s === 'approved' ||
+      s === 'completed' ||
+      s === 'active' ||
+      s.includes('approved') ||
+      s.includes('completed'),
+  );
+
+  const isExtensionSuperAdmin = extensionValues.some(
+    s =>
+      s === 'pendingsuperadmin' ||
+      s.includes('superadmin') ||
+      s.includes('super admin'),
+  );
+
+  // If extension is already approved/completed, or if it reflects SuperAdmin stage,
+  // do NOT mark it as pending extension — it resolves directly to Active.
+  if (!isExtensionApproved && !isExtensionSuperAdmin) {
+    const isExtensionPending =
+      extensionValues.some(
+        s =>
+          s.includes('pending') ||
+          s.includes('requested') ||
+          (s.includes('extension') && !s.includes('reject') && !s.includes('active')),
+      ) ||
+      (rawStatus.includes('extension') &&
+        (rawStatus.includes('pending') ||
+         rawStatus.includes('requested') ||
+         rawStatus === 'extension requested'));
+
+    if (isExtensionPending) {
+      return 'Extension Requested';
+    }
   }
 
   // =========================================================================
@@ -404,6 +428,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
   const [localActionState, setLocalActionState] = useState<
     Record<string, LocalActionState>
   >({});
+  const [targetTenures, setTargetTenures] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -428,7 +453,13 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     ) {
       return '';
     }
-    return localActionState[String(item.investmentDbId)] || '';
+    const idKey = String(item.investmentDbId);
+    const target = targetTenures[idKey];
+    // If backend tenure has reached or exceeded the requested target tenure, Admin has approved!
+    if (target && item.tenureMonths >= target) {
+      return '';
+    }
+    return localActionState[idKey] || '';
   };
 
   const getItemEffectiveStatus = (item: Investment): BondStatus => {
@@ -449,14 +480,35 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     try {
       setError('');
       const response = await investorService.getMyInvestments();
-      setItems(response.map(mapInvestment));
+      const mapped = response.map(mapInvestment);
+      setItems(mapped);
+
+      // Once a fresh backend response confirms that:
+      // - investment status is Active (with tenure updated to/past target), OR
+      // - backend tenure is equal to/greater than the requested target tenure,
+      // clear the local 'Extension Requested' state.
+      setLocalActionState(previous => {
+        let changed = false;
+        const next = {...previous};
+        mapped.forEach(item => {
+          const idKey = String(item.investmentDbId);
+          if (next[idKey] === 'Extension Requested') {
+            const target = targetTenures[idKey];
+            if (target && item.tenureMonths >= target) {
+              delete next[idKey];
+              changed = true;
+            }
+          }
+        });
+        return changed ? next : previous;
+      });
     } catch (e: any) {
       setError(e?.message || 'Unable to load investments.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [targetTenures]);
 
   useEffect(() => {
     load();
@@ -550,17 +602,39 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       XLSX.utils.book_append_sheet(wb, ws, 'My Investments');
 
       const wbout = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-      const path = `${RNFS.DocumentDirectoryPath}/INRFS_My_Investments_${Date.now()}.xlsx`;
+      const cleanFilename = `INRFS_My_Investments_${Date.now()}.xlsx`;
+      const dir = RNFS.CachesDirectoryPath || RNFS.DocumentDirectoryPath;
+      const path = `${dir}/${cleanFilename}`;
 
       await RNFS.writeFile(path, wbout, 'base64');
+
+      const exists = await RNFS.exists(path);
+      if (!exists) {
+        Alert.alert('Export Error', 'Export file could not be created on the device.');
+        return;
+      }
+
+      const fileUrl = `file://${path}`;
+      if (!fileUrl) {
+        Alert.alert('Export Error', 'Generated file URI is null or invalid.');
+        return;
+      }
+
       await RNShare.open({
-        url: `file://${path}`,
+        url: fileUrl,
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         title: 'Share My Investments Report',
+        subject: cleanFilename,
+        useInternalStorage: true,
+        failOnCancel: false,
       });
     } catch (e: any) {
-      if (e?.message !== 'User did not share') {
-        Alert.alert('Export Error', 'Unable to export report.');
+      if (
+        e?.message !== 'User did not share' &&
+        !e?.message?.includes('DISMISSED') &&
+        !e?.message?.includes('cancel')
+      ) {
+        Alert.alert('Export Error', e?.message || 'Unable to export report.');
       }
     }
   };
@@ -609,6 +683,10 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       setLocalActionState(previous => ({
         ...previous,
         [String(extension.investmentDbId)]: 'Extension Requested',
+      }));
+      setTargetTenures(previous => ({
+        ...previous,
+        [String(extension.investmentDbId)]: selectedTarget,
       }));
 
       setExtension(null);
@@ -693,9 +771,6 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       return 'Waiting for Admin Approval — actions unlock once approved.';
     }
     if (status === 'Extension Requested' || status === 'Pending Extension') {
-      if (item.stage === 'SuperAdmin') {
-        return 'Waiting for Super Admin Approval — your extension has been approved by the admin and sent for final approval.';
-      }
       return 'Waiting for Admin Approval — tenure extension request submitted.';
     }
     if (status === 'Pre-Close Requested' || status === 'Pending Settlement') {
