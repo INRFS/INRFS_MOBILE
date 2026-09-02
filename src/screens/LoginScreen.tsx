@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  Modal,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, {Path, Circle} from 'react-native-svg';
@@ -312,6 +314,124 @@ const LoginScreen = ({navigation}: any) => {
 
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // ---- Forgot Password State ----
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp' | 'reset'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
+
+  const openForgotPassword = () => {
+    setForgotEmail('');
+    setForgotOtp('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotError('');
+    setForgotSuccess('');
+    setForgotStep('email');
+    setForgotModalVisible(true);
+  };
+
+  const closeForgotPassword = () => {
+    setForgotModalVisible(false);
+    setForgotError('');
+    setForgotSuccess('');
+    setForgotStep('email');
+  };
+
+  const handleSendOtp = async () => {
+    setForgotError('');
+    setForgotSuccess('');
+    const trimmedEmail = forgotEmail.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setForgotError('Please enter your email address.');
+      return;
+    }
+    const emailCheck = validation.isValidEmail(trimmedEmail);
+    if (!emailCheck.isValid) {
+      setForgotError(emailCheck.error || 'Please enter a valid email address.');
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const res = await authService.sendForgotPasswordOtp(trimmedEmail);
+      setForgotSuccess(res?.message || 'OTP has been sent to your email.');
+      setForgotStep('otp');
+    } catch (err: any) {
+      setForgotError(err?.message || 'Unable to send OTP. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setForgotError('');
+    const trimmedOtp = forgotOtp.trim();
+    if (!trimmedOtp || trimmedOtp.length !== 6 || /\D/.test(trimmedOtp)) {
+      setForgotError('Please enter a valid 6-digit OTP.');
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const res = await authService.verifyForgotPasswordOtp(forgotEmail, trimmedOtp);
+      setForgotSuccess(res?.message || 'OTP verified successfully.');
+      setForgotStep('reset');
+    } catch (err: any) {
+      setForgotError(err?.message || 'Invalid OTP. Please check and try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setForgotError('');
+    const cleanNewPassword = forgotNewPassword;
+    const cleanConfirmPassword = forgotConfirmPassword;
+
+    if (!cleanNewPassword) {
+      setForgotError('Please enter a new password.');
+      return;
+    }
+
+    if (cleanNewPassword.length < 8) {
+      setForgotError('Password must contain at least 8 characters.');
+      return;
+    }
+
+    if (!cleanConfirmPassword) {
+      setForgotError('Please confirm your new password.');
+      return;
+    }
+
+    if (cleanNewPassword !== cleanConfirmPassword) {
+      setForgotError('Passwords do not match.');
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const res = await authService.resetForgotPassword(
+        forgotEmail,
+        forgotOtp,
+        cleanNewPassword,
+      );
+      const successMsg = res?.message || 'Password reset successfully.';
+      closeForgotPassword();
+      setErrorMsg('');
+      Alert.alert('Success', successMsg);
+    } catch (err: any) {
+      setForgotError(err?.message || 'Password reset failed. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setErrorMsg('');
@@ -748,6 +868,15 @@ const LoginScreen = ({navigation}: any) => {
               />
             </View>
 
+            <TouchableOpacity
+              style={styles.forgotPasswordBtn}
+              onPress={openForgotPassword}
+              activeOpacity={0.7}>
+              <Text style={styles.forgotPasswordText}>
+                Forgot Password?
+              </Text>
+            </TouchableOpacity>
+
             {errorMsg ? (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>
@@ -962,6 +1091,282 @@ const LoginScreen = ({navigation}: any) => {
           </View>
         </View>
       </ScrollView>
+
+      {/* =====================================================
+          INVESTOR FORGOT PASSWORD MODAL
+      ====================================================== */}
+      <Modal
+        visible={forgotModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={closeForgotPassword}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#E5EEFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                  <Icon name="lock-reset" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.modalTitle}>Forgot Password</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={closeForgotPassword}
+                activeOpacity={0.7}>
+                <Icon name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Step Indicators */}
+            <View style={styles.stepIndicatorRow}>
+              <View style={[styles.stepCircle, styles.stepCircleActive]}>
+                <Text style={[styles.stepCircleText, styles.stepCircleTextActive]}>1</Text>
+              </View>
+              <View
+                style={[
+                  styles.stepLine,
+                  (forgotStep === 'otp' || forgotStep === 'reset') && styles.stepLineActive,
+                ]}
+              />
+              <View
+                style={[
+                  styles.stepCircle,
+                  (forgotStep === 'otp' || forgotStep === 'reset') && styles.stepCircleActive,
+                ]}>
+                <Text
+                  style={[
+                    styles.stepCircleText,
+                    (forgotStep === 'otp' || forgotStep === 'reset') && styles.stepCircleTextActive,
+                  ]}>
+                  2
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.stepLine,
+                  forgotStep === 'reset' && styles.stepLineActive,
+                ]}
+              />
+              <View
+                style={[
+                  styles.stepCircle,
+                  forgotStep === 'reset' && styles.stepCircleActive,
+                ]}>
+                <Text
+                  style={[
+                    styles.stepCircleText,
+                    forgotStep === 'reset' && styles.stepCircleTextActive,
+                  ]}>
+                  3
+                </Text>
+              </View>
+            </View>
+
+            {/* Error Message Display */}
+            {forgotError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{forgotError}</Text>
+              </View>
+            ) : null}
+
+            {/* Success Message Display */}
+            {forgotSuccess && !forgotError ? (
+              <View style={styles.successBox}>
+                <Text style={styles.successText}>{forgotSuccess}</Text>
+              </View>
+            ) : null}
+
+            {/* STEP 1: ENTER EMAIL */}
+            {forgotStep === 'email' && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Enter your registered email address to receive a 6-digit OTP.
+                </Text>
+
+                <Text style={styles.label}>Email Address</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="email-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Enter your registered email"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={forgotEmail}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotEmail(text);
+                    }}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleSendOtp}
+                  disabled={forgotLoading}>
+                  <View style={styles.submitIconBox}>
+                    <Icon name="email-fast-outline" size={16} color="#fff" />
+                  </View>
+                  <Text style={styles.submitBtnText}>
+                    {forgotLoading ? 'Sending OTP...' : 'Send OTP'}
+                  </Text>
+                  {!forgotLoading && (
+                    <Icon
+                      name="arrow-right"
+                      size={18}
+                      color="#fff"
+                      style={styles.submitBtnArrow}
+                    />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* STEP 2: ENTER OTP */}
+            {forgotStep === 'otp' && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Please enter the 6-digit OTP sent to <Text style={{fontWeight: '700', color: '#111'}}>{forgotEmail}</Text>.
+                </Text>
+
+                <Text style={styles.label}>Enter 6-Digit OTP</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="shield-key-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="e.g. 123456"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    value={forgotOtp}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotOtp(text.replace(/[^0-9]/g, ''));
+                    }}
+                  />
+                </View>
+
+                <View style={styles.resendRow}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setForgotStep('email');
+                      setForgotError('');
+                      setForgotSuccess('');
+                    }}>
+                    <Text style={styles.resendLink}>Change Email</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handleSendOtp}
+                    disabled={forgotLoading}>
+                    <Text style={styles.resendLink}>
+                      {forgotLoading ? 'Sending...' : 'Resend OTP'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleVerifyOtp}
+                  disabled={forgotLoading}>
+                  <View style={styles.submitIconBox}>
+                    <Icon name="check-circle-outline" size={16} color="#fff" />
+                  </View>
+                  <Text style={styles.submitBtnText}>
+                    {forgotLoading ? 'Verifying OTP...' : 'Verify OTP'}
+                  </Text>
+                  {!forgotLoading && (
+                    <Icon
+                      name="arrow-right"
+                      size={18}
+                      color="#fff"
+                      style={styles.submitBtnArrow}
+                    />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* STEP 3: RESET PASSWORD */}
+            {forgotStep === 'reset' && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Create a new password of at least 8 characters for your account.
+                </Text>
+
+                <Text style={styles.label}>New Password</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="lock-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Enter new password (min. 8 characters)"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry
+                    value={forgotNewPassword}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotNewPassword(text);
+                    }}
+                  />
+                </View>
+
+                <Text style={styles.label}>Confirm New Password</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="lock-check-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Re-enter your new password"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry
+                    value={forgotConfirmPassword}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotConfirmPassword(text);
+                    }}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleResetPassword}
+                  disabled={forgotLoading}>
+                  <View style={styles.submitIconBox}>
+                    <Icon name="lock-reset" size={16} color="#fff" />
+                  </View>
+                  <Text style={styles.submitBtnText}>
+                    {forgotLoading ? 'Resetting Password...' : 'Reset Password'}
+                  </Text>
+                  {!forgotLoading && (
+                    <Icon
+                      name="arrow-right"
+                      size={18}
+                      color="#fff"
+                      style={styles.submitBtnArrow}
+                    />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
