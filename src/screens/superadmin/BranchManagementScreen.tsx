@@ -13,6 +13,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 
 import AppHeader from '../../components/AppHeader';
+import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {styles} from '../../styles/superadmin/BranchManagementScreen.styles';
 import {
   getBranches,
@@ -97,8 +98,19 @@ const BranchManagementScreen = ({navigation}: any) => {
         getBranchStates(),
       ]);
 
-      setBranches(branchRes.records || []);
-      setTotalCount(branchRes.total || (branchRes.records || []).length);
+      let records = branchRes.records || [];
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        records = records.filter(
+          b =>
+            (b.name && b.name.toLowerCase().includes(q)) ||
+            (b.cityName && b.cityName.toLowerCase().includes(q)) ||
+            (b.stateName && b.stateName.toLowerCase().includes(q)) ||
+            (b.adminName && b.adminName.toLowerCase().includes(q)),
+        );
+      }
+      setBranches(records);
+      setTotalCount(records.length > 0 ? branchRes.total || records.length : 0);
       if (statesRes && statesRes.length > 0) {
         setStates(statesRes);
       }
@@ -397,9 +409,11 @@ const BranchManagementScreen = ({navigation}: any) => {
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIcon}>🏢</Text>
             </View>
-            <Text style={styles.emptyTitle}>No branches found</Text>
+            <Text style={styles.emptyTitle}>
+              {search.trim() ? 'Not found' : 'No branches found'}
+            </Text>
             <Text style={styles.emptyText}>
-              {search || activeFilterCount > 0
+              {search
                 ? 'Try adjusting your search query or filters.'
                 : 'No branches registered in the system.'}
             </Text>
@@ -993,6 +1007,8 @@ const BranchManagementScreen = ({navigation}: any) => {
           </View>
         </View>
       </Modal>
+
+      <SuperAdminBottomTabBar navigation={navigation} active="BranchManagement" />
     </SafeAreaView>
   );
 };
