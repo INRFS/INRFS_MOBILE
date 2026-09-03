@@ -311,6 +311,7 @@ const LoginScreen = ({navigation}: any) => {
   const [investorId, setInvestorId] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
@@ -859,13 +860,23 @@ const LoginScreen = ({navigation}: any) => {
                 style={styles.inputField}
                 placeholder="Enter your password"
                 placeholderTextColor="#9CA3AF"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={text => {
                   setErrorMsg('');
                   setPassword(text);
                 }}
               />
+
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity
@@ -983,13 +994,23 @@ const LoginScreen = ({navigation}: any) => {
                 style={styles.inputField}
                 placeholder="Enter password"
                 placeholderTextColor="#9CA3AF"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
                 onChangeText={text => {
                   setErrorMsg('');
                   setPassword(text);
                 }}
               />
+
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
             </View>
 
             {errorMsg ? (

@@ -204,6 +204,10 @@ const RegistrationScreen = ({ navigation }: any) => {
   const [otpSuccessMessage, setOtpSuccessMessage] = useState<string | null>(null);
   const [otpErrorMessage, setOtpErrorMessage] = useState<string | null>(null);
 
+  // Password visibility state
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -901,7 +905,7 @@ const RegistrationScreen = ({ navigation }: any) => {
                 style={styles.inputField}
                 placeholder="Choose a password (min. 8 characters)"
                 placeholderTextColor="#9CA3AF"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={form.password}
                 onChangeText={v => {
                   setFieldErrors(prev => {
@@ -914,6 +918,15 @@ const RegistrationScreen = ({ navigation }: any) => {
                   update('password', v);
                 }}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
             </View>
             {fieldErrors.password ? (
               <Text style={local.fieldError}>{fieldErrors.password}</Text>
@@ -929,7 +942,7 @@ const RegistrationScreen = ({ navigation }: any) => {
                 style={styles.inputField}
                 placeholder="Re-enter your password"
                 placeholderTextColor="#9CA3AF"
-                secureTextEntry
+                secureTextEntry={!showConfirmPassword}
                 value={form.confirmPassword}
                 onChangeText={v => {
                   setFieldErrors(prev => {
@@ -942,6 +955,15 @@ const RegistrationScreen = ({ navigation }: any) => {
                   update('confirmPassword', v);
                 }}
               />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword(prev => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
             </View>
             {fieldErrors.confirmPassword ? (
               <Text style={local.fieldError}>{fieldErrors.confirmPassword}</Text>
