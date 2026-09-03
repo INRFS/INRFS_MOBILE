@@ -8,16 +8,28 @@ const SettingsScreen = ({navigation}: any) => {
   const {adminSettings, updateAdminSettings} = useAppData();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const handleUpdatePassword = () => {
-    if (!currentPassword || !newPassword) {
-      Alert.alert('Missing fields', 'Please enter your current and new password.');
+    const cleanCurrent = currentPassword.trim();
+    const cleanNew = newPassword.trim();
+    const errors: Record<string, string> = {};
+
+    if (!cleanCurrent) {
+      errors.currentPassword = 'Please enter your current password.';
+    }
+
+    if (!cleanNew) {
+      errors.newPassword = 'Please enter your new password.';
+    } else if (cleanNew.length < 8) {
+      errors.newPassword = 'New password should be at least 8 characters.';
+    }
+
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
       return;
     }
-    if (newPassword.length < 8) {
-      Alert.alert('Weak password', 'New password should be at least 8 characters.');
-      return;
-    }
+
     setCurrentPassword('');
     setNewPassword('');
     Alert.alert('Password updated', 'Your password has been changed successfully.');
@@ -89,8 +101,16 @@ const SettingsScreen = ({navigation}: any) => {
             placeholderTextColor="#9CA3AF"
             secureTextEntry
             value={currentPassword}
-            onChangeText={setCurrentPassword}
+            onChangeText={t => {
+              setCurrentPassword(t);
+              if (fieldErrors.currentPassword) setFieldErrors(prev => ({...prev, currentPassword: ''}));
+            }}
           />
+          {fieldErrors.currentPassword ? (
+            <Text style={{color: '#DC2626', fontSize: 11.5, marginTop: 4, fontWeight: '500'}}>
+              {fieldErrors.currentPassword}
+            </Text>
+          ) : null}
 
           <Text style={styles.inputLabel}>New Password</Text>
           <TextInput
@@ -99,8 +119,16 @@ const SettingsScreen = ({navigation}: any) => {
             placeholderTextColor="#9CA3AF"
             secureTextEntry
             value={newPassword}
-            onChangeText={setNewPassword}
+            onChangeText={t => {
+              setNewPassword(t);
+              if (fieldErrors.newPassword) setFieldErrors(prev => ({...prev, newPassword: ''}));
+            }}
           />
+          {fieldErrors.newPassword ? (
+            <Text style={{color: '#DC2626', fontSize: 11.5, marginTop: 4, fontWeight: '500'}}>
+              {fieldErrors.newPassword}
+            </Text>
+          ) : null}
 
           <TouchableOpacity style={styles.updateBtn} onPress={handleUpdatePassword}>
             <Text style={styles.updateBtnText}>Update Password</Text>

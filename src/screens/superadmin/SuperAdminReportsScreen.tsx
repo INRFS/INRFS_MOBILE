@@ -18,6 +18,7 @@ import RNShare from 'react-native-share';
 import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {styles} from '../../styles/superadmin/SuperAdminReportsScreen.styles';
+import {validation} from '../../utils/validation';
 import {
   formatCurrencyAUM,
   formatIndianNumber,
@@ -377,6 +378,30 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
   };
 
   const handleApplyFilterSheet = () => {
+    const from = draftFromDate.trim();
+    const to = draftToDate.trim();
+
+    if (from) {
+      const fromCheck = validation.isValidDateString(from, 'YYYY-MM-DD');
+      if (!fromCheck.isValid) {
+        Alert.alert('Invalid Date', 'From date must be a valid calendar date in YYYY-MM-DD format.');
+        return;
+      }
+    }
+
+    if (to) {
+      const toCheck = validation.isValidDateString(to, 'YYYY-MM-DD');
+      if (!toCheck.isValid) {
+        Alert.alert('Invalid Date', 'To date must be a valid calendar date in YYYY-MM-DD format.');
+        return;
+      }
+    }
+
+    if (from && to && from > to) {
+      Alert.alert('Invalid Date Range', 'From date cannot be after To date.');
+      return;
+    }
+
     setFilterSheetVisible(false);
     applyFilters({
       branch: draftBranch,
@@ -744,17 +769,39 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
 
       const wbout = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-      const path = `${RNFS.DocumentDirectoryPath}/INRFS_${sheetName}_Report_${Date.now()}.xlsx`;
+      const cleanFilename = `INRFS_${sheetName || 'Report'}_Report_${Date.now()}.xlsx`;
+      const dir = RNFS.CachesDirectoryPath || RNFS.DocumentDirectoryPath;
+      const path = `${dir}/${cleanFilename}`;
 
       await RNFS.writeFile(path, wbout, 'base64');
+
+      const exists = await RNFS.exists(path);
+      if (!exists) {
+        Alert.alert('Export Failed', 'Export file could not be created on the device.');
+        return;
+      }
+
+      const fileUrl = `file://${path}`;
+      if (!fileUrl) {
+        Alert.alert('Export Failed', 'Generated file URI is null or invalid.');
+        return;
+      }
+
       await RNShare.open({
-        url: `file://${path}`,
+        url: fileUrl,
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         title: `Share ${sheetName} Report`,
+        subject: cleanFilename,
+        useInternalStorage: true,
+        failOnCancel: false,
       });
     } catch (e: any) {
-      if (e?.message !== 'User did not share') {
-        Alert.alert('Export Notice', 'Unable to complete report export.');
+      if (
+        e?.message !== 'User did not share' &&
+        !e?.message?.includes('DISMISSED') &&
+        !e?.message?.includes('cancel')
+      ) {
+        Alert.alert('Export Notice', e?.message || 'Unable to complete report export.');
       }
     }
   };

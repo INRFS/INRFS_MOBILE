@@ -16,6 +16,7 @@ import {styles} from '../../styles/admin/AdminProfileScreen.styles';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import AppHeader from '../../components/AppHeader';
+import {validation} from '../../utils/validation';
 
 /**
  * Backend API
@@ -77,6 +78,7 @@ const AdminProfileScreen = ({navigation}: any) => {
   const [editName, setEditName] = useState('');
   const [editEmail, setEditEmail] = useState('');
   const [editMobile, setEditMobile] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   /**
    * ============================================================
@@ -263,30 +265,27 @@ const getAccessToken = async (): Promise<string | null> => {
    */
   const updateAdminProfile = async () => {
     /**
-     * Basic validation
+     * Strict input validation
      */
-    if (!editName.trim()) {
-      Alert.alert('Validation', 'Please enter your full name.');
-      return;
+    const errors: Record<string, string> = {};
+
+    const nameCheck = validation.isValidName(editName);
+    if (!nameCheck.isValid) {
+      errors.name = nameCheck.error || 'Name should contain only letters and spaces.';
     }
 
-    if (!editEmail.trim()) {
-      Alert.alert('Validation', 'Please enter your email.');
-      return;
+    const emailCheck = validation.isValidEmail(editEmail);
+    if (!emailCheck.isValid) {
+      errors.email = emailCheck.error || 'Please enter a valid email address.';
     }
 
-    if (!editMobile.trim()) {
-      Alert.alert('Validation', 'Please enter your mobile number.');
-      return;
+    const mobileCheck = validation.isValidIndianMobile(editMobile);
+    if (!mobileCheck.isValid) {
+      errors.mobile = mobileCheck.error || 'Please enter a valid 10-digit mobile number.';
     }
 
-    /**
-     * Simple email validation
-     */
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-    if (!emailRegex.test(editEmail.trim())) {
-      Alert.alert('Validation', 'Please enter a valid email address.');
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) {
       return;
     }
 
@@ -427,6 +426,7 @@ const getAccessToken = async (): Promise<string | null> => {
     setEditName(adminProfile.name || '');
     setEditEmail(adminProfile.email || '');
     setEditMobile(adminProfile.mobile || '');
+    setFieldErrors({});
 
     setEditModalVisible(true);
   };
@@ -780,7 +780,10 @@ const getAccessToken = async (): Promise<string | null> => {
 
             <TextInput
               value={editName}
-              onChangeText={setEditName}
+              onChangeText={text => {
+                setEditName(text);
+                if (fieldErrors.name) setFieldErrors(prev => ({...prev, name: ''}));
+              }}
               placeholder="Enter your full name"
               placeholderTextColor="#9CA3AF"
               editable={!saving}
@@ -792,9 +795,14 @@ const getAccessToken = async (): Promise<string | null> => {
                 paddingHorizontal: 14,
                 fontSize: 15,
                 color: '#111827',
-                marginBottom: 16,
+                marginBottom: fieldErrors.name ? 6 : 16,
               }}
             />
+            {fieldErrors.name ? (
+              <Text style={{color: '#DC2626', fontSize: 12, marginTop: -2, marginBottom: 12}}>
+                {fieldErrors.name}
+              </Text>
+            ) : null}
 
             {/* EMAIL */}
             <Text
@@ -809,7 +817,10 @@ const getAccessToken = async (): Promise<string | null> => {
 
             <TextInput
               value={editEmail}
-              onChangeText={setEditEmail}
+              onChangeText={text => {
+                setEditEmail(text);
+                if (fieldErrors.email) setFieldErrors(prev => ({...prev, email: ''}));
+              }}
               placeholder="Enter your email"
               placeholderTextColor="#9CA3AF"
               keyboardType="email-address"
@@ -823,9 +834,14 @@ const getAccessToken = async (): Promise<string | null> => {
                 paddingHorizontal: 14,
                 fontSize: 15,
                 color: '#111827',
-                marginBottom: 16,
+                marginBottom: fieldErrors.email ? 6 : 16,
               }}
             />
+            {fieldErrors.email ? (
+              <Text style={{color: '#DC2626', fontSize: 12, marginTop: -2, marginBottom: 12}}>
+                {fieldErrors.email}
+              </Text>
+            ) : null}
 
             {/* MOBILE */}
             <Text
@@ -840,7 +856,10 @@ const getAccessToken = async (): Promise<string | null> => {
 
             <TextInput
               value={editMobile}
-              onChangeText={setEditMobile}
+              onChangeText={text => {
+                setEditMobile(text);
+                if (fieldErrors.mobile) setFieldErrors(prev => ({...prev, mobile: ''}));
+              }}
               placeholder="Enter your mobile number"
               placeholderTextColor="#9CA3AF"
               keyboardType="phone-pad"
@@ -853,9 +872,14 @@ const getAccessToken = async (): Promise<string | null> => {
                 paddingHorizontal: 14,
                 fontSize: 15,
                 color: '#111827',
-                marginBottom: 22,
+                marginBottom: fieldErrors.mobile ? 6 : 22,
               }}
             />
+            {fieldErrors.mobile ? (
+              <Text style={{color: '#DC2626', fontSize: 12, marginTop: -2, marginBottom: 16}}>
+                {fieldErrors.mobile}
+              </Text>
+            ) : null}
 
             {/* BUTTONS */}
             <View

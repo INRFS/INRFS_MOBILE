@@ -234,4 +234,10 @@ profileActionButton: {
   justifyContent: 'center',
   marginLeft: 8,
 },
+fieldError: {
+  color: RED,
+  fontSize: 11,
+  marginTop: 4,
+  fontWeight: '500',
+},
 });

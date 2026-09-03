@@ -4,6 +4,7 @@ import {styles} from '../../styles/superadmin/SystemSettingsScreen.styles';
 import {useAppData} from '../../navigation/AppNavigator';
 import AppHeader from '../../components/AppHeader';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {validation} from '../../utils/validation';
 type Tab = 'System' | 'Email' | 'SMS' | 'Backup';
 
 const tabs: {key: Tab; label: string; icon: string}[] = [
@@ -39,17 +40,63 @@ const SystemSettingsScreen = ({navigation}: any) => {
   const [backupLocation, setBackupLocation] = useState('AWS S3');
 
   const handleSaveSystem = () => {
-    updateSystemSettings({appName, supportEmail, minInvestment, interestPaymentDay: interestDay});
+    if (!appName.trim()) {
+      Alert.alert('Validation Error', 'Application name cannot be empty.');
+      return;
+    }
+    const emailCheck = validation.isValidEmail(supportEmail);
+    if (!emailCheck.isValid) {
+      Alert.alert('Validation Error', 'Please enter a valid support email address.');
+      return;
+    }
+    const cleanMin = minInvestment.trim();
+    if (!cleanMin || /\D/.test(cleanMin) || Number(cleanMin) <= 0) {
+      Alert.alert('Validation Error', 'Please enter a valid positive minimum investment amount.');
+      return;
+    }
+    const dayNum = parseInt(interestDay.trim(), 10);
+    if (isNaN(dayNum) || dayNum < 1 || dayNum > 31) {
+      Alert.alert('Validation Error', 'Interest payment day must be a valid day between 1 and 31.');
+      return;
+    }
+    updateSystemSettings({
+      appName: appName.trim(),
+      supportEmail: supportEmail.trim(),
+      minInvestment: cleanMin,
+      interestPaymentDay: interestDay.trim(),
+    });
     Alert.alert('Saved', 'System settings updated.');
   };
 
   const handleSaveEmail = () => {
-    updateSystemSettings({smtpHost});
+    if (!smtpHost.trim()) {
+      Alert.alert('Validation Error', 'SMTP host cannot be empty.');
+      return;
+    }
+    const portNum = parseInt(smtpPort.trim(), 10);
+    if (isNaN(portNum) || portNum < 1 || portNum > 65535) {
+      Alert.alert('Validation Error', 'SMTP port must be a valid port number (1-65535).');
+      return;
+    }
+    const fromCheck = validation.isValidEmail(fromEmail);
+    if (!fromCheck.isValid) {
+      Alert.alert('Validation Error', 'Please enter a valid from email address.');
+      return;
+    }
+    updateSystemSettings({smtpHost: smtpHost.trim()});
     Alert.alert('Saved', 'Email settings updated.');
   };
 
   const handleSaveSms = () => {
-    updateSystemSettings({smsSenderId, smsProvider});
+    if (!smsProvider.trim()) {
+      Alert.alert('Validation Error', 'SMS provider cannot be empty.');
+      return;
+    }
+    if (!smsSenderId.trim()) {
+      Alert.alert('Validation Error', 'Sender ID cannot be empty.');
+      return;
+    }
+    updateSystemSettings({smsSenderId: smsSenderId.trim(), smsProvider: smsProvider.trim()});
     Alert.alert('Saved', 'SMS settings updated.');
   };
 

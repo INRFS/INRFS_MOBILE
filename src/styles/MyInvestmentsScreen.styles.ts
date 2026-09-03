@@ -566,24 +566,20 @@ export const styles = StyleSheet.create({
 
   modalChipRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     marginBottom: 20,
   },
 
   modalChip: {
-    flex: 1,
-
+    width: '31%',
     borderWidth: 1,
     borderColor: BORDER,
-
     borderRadius: 10,
-
     paddingVertical: 12,
-
     alignItems: 'center',
-
     backgroundColor: '#FFFFFF',
-
-    marginRight: 8,
+    marginBottom: 4,
   },
 
   modalChipActive: {

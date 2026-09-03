@@ -3,6 +3,7 @@ import {
   View,
   Text,
   TouchableOpacity,
+  Modal,
   Pressable,
   Animated,
   Image,
@@ -97,6 +98,7 @@ const BottomTabBar = ({
 }) => {
   const [moreVisible, setMoreVisible] = useState(false);
 
+  const slideAnim = useRef(new Animated.Value(500)).current;
   const indicatorAnim = useRef(
     new Animated.Value(0),
   ).current;
@@ -162,8 +164,16 @@ const BottomTabBar = ({
    */
 
   const openMore = () => {
-    console.log('MORE BUTTON CLICKED');
     setMoreVisible(true);
+    slideAnim.setValue(500);
+
+    Animated.spring(slideAnim, {
+      toValue: 0,
+      damping: 24,
+      stiffness: 190,
+      mass: 0.8,
+      useNativeDriver: true,
+    }).start();
   };
 
   /**
@@ -173,8 +183,11 @@ const BottomTabBar = ({
    */
 
   const closeMore = () => {
-    console.log('MORE MENU CLOSED');
-    setMoreVisible(false);
+    Animated.timing(slideAnim, {
+      toValue: 500,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => setMoreVisible(false));
   };
 
   /**
@@ -188,20 +201,10 @@ const BottomTabBar = ({
       return;
     }
 
-    console.log(
-      'MORE MENU NAVIGATION:',
-      route,
-    );
-
-    // Close menu first.
-    setMoreVisible(false);
-
-    // Navigate after the overlay is removed.
-    requestAnimationFrame(() => {
-      navigation.navigate(route, {
-        investorId,
-        investorName,
-      });
+    closeMore();
+    navigation.navigate(route, {
+      investorId,
+      investorName,
     });
   };
 
@@ -231,13 +234,11 @@ const BottomTabBar = ({
    */
 
   const handleLogout = () => {
-    setMoreVisible(false);
+    closeMore();
 
-    requestAnimationFrame(() => {
-      navigation.reset({
-        index: 0,
-        routes: [{name: 'Login'}],
-      });
+    navigation.reset({
+      index: 0,
+      routes: [{name: 'Login'}],
     });
   };
 
@@ -308,7 +309,7 @@ const BottomTabBar = ({
             <TouchableOpacity
               key={tab.key}
               style={styles.tabItem}
-              activeOpacity={0.75}
+              activeOpacity={0.82}
               onPress={() =>
                 handleMainTab(tab.route)
               }>
@@ -357,7 +358,7 @@ const BottomTabBar = ({
 
         <TouchableOpacity
           style={styles.tabItem}
-          activeOpacity={0.75}
+          activeOpacity={0.82}
           onPress={openMore}>
           <Animated.View
             style={[
@@ -397,36 +398,28 @@ const BottomTabBar = ({
         </TouchableOpacity>
       </View>
 
-      {/* ========================================================
-          MORE OVERLAY
+      {/* ------------------------------------------------------------- */}
+      {/* MORE SHEET                                                    */}
+      {/* ------------------------------------------------------------- */}
 
-          IMPORTANT:
-          This is NOT a React Native Modal.
-          It stays inside the same screen so Android touch
-          handling remains reliable.
-      ========================================================= */}
-
-      {moreVisible && (
-        <View
-          style={styles.moreOverlay}
-          pointerEvents="box-none">
-
-          {/* ====================================================
-              BACKDROP
-          ===================================================== */}
-
+      <Modal
+        visible={moreVisible}
+        transparent
+        animationType="none"
+        onRequestClose={closeMore}>
+        <View style={styles.modalRoot}>
           <Pressable
             style={styles.backdrop}
             onPress={closeMore}
           />
 
-          {/* ====================================================
-              SHEET
-          ===================================================== */}
-
-          <View style={styles.sheet}>
-            {/* Grabber */}
-
+          <Animated.View
+            style={[
+              styles.sheet,
+              {
+                transform: [{translateY: slideAnim}],
+              },
+            ]}>
             <View style={styles.grabber} />
 
             {/* ==================================================
@@ -599,9 +592,9 @@ const BottomTabBar = ({
                 />
               </TouchableOpacity>
             </View>
-          </View>
+          </Animated.View>
         </View>
-      )}
+      </Modal>
     </>
   );
 };

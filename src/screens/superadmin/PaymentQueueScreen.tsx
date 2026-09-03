@@ -275,15 +275,13 @@ const PaymentQueueScreen = ({navigation}: any) => {
   };
 
   const handleConfirmApprove = async () => {
-    if (!selectedPayment) return;
+    if (!selectedPayment || selectedPayment.paymentType === 'Tenure Extension') return;
 
     try {
       setIsApproving(true);
       const sourceId = selectedPayment.sourceId || selectedPayment.id;
 
-      if (selectedPayment.paymentType === 'Tenure Extension') {
-        await approveTenureExtension(sourceId, 'Approved by Super Admin.');
-      } else if (selectedPayment.paymentType === 'Tenure Settlement') {
+      if (selectedPayment.paymentType === 'Tenure Settlement') {
         await approveTenureTimeoutSettlement(sourceId);
       } else if (selectedPayment.paymentType === 'Pre-Close Settlement') {
         await approvePrecloseRequest(sourceId);
@@ -303,6 +301,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
   };
 
   const handleOpenReject = (item: SuperAdminPaymentRecord) => {
+    if (item.paymentType === 'Tenure Extension') return;
     setSelectedPayment(item);
     setRejectionReason('');
     setRejectionError('');
@@ -310,7 +309,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
   };
 
   const handleConfirmReject = async () => {
-    if (!selectedPayment) return;
+    if (!selectedPayment || selectedPayment.paymentType === 'Tenure Extension') return;
 
     if (!rejectionReason.trim()) {
       setRejectionError('Rejection reason is mandatory');
@@ -322,9 +321,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
       const sourceId = selectedPayment.sourceId || selectedPayment.id;
       const reason = rejectionReason.trim();
 
-      if (selectedPayment.paymentType === 'Tenure Extension') {
-        await rejectTenureExtension(sourceId, reason);
-      } else if (selectedPayment.paymentType === 'Tenure Settlement') {
+      if (selectedPayment.paymentType === 'Tenure Settlement') {
         await rejectTenureTimeoutSettlement(sourceId, reason);
       } else if (selectedPayment.paymentType === 'Pre-Close Settlement') {
         await rejectPrecloseRequest(sourceId, reason);
@@ -344,20 +341,19 @@ const PaymentQueueScreen = ({navigation}: any) => {
   };
 
   const handleOpenMarkPaid = (item: SuperAdminPaymentRecord) => {
+    if (item.paymentType === 'Tenure Extension') return;
     setSelectedPayment(item);
     setMarkPaidModalVisible(true);
   };
 
   const handleConfirmMarkPaid = async () => {
-    if (!selectedPayment) return;
+    if (!selectedPayment || selectedPayment.paymentType === 'Tenure Extension') return;
 
     try {
       setIsMarkingPaid(true);
       const sourceId = selectedPayment.sourceId || selectedPayment.id;
 
-      if (selectedPayment.paymentType === 'Tenure Extension') {
-        await markTenureExtensionPaid(sourceId);
-      } else if (selectedPayment.paymentType === 'Tenure Settlement') {
+      if (selectedPayment.paymentType === 'Tenure Settlement') {
         await markTenureTimeoutSettlementPaid(sourceId);
       } else if (selectedPayment.paymentType === 'Pre-Close Settlement') {
         await markPrecloseRequestPaid(sourceId);
@@ -376,14 +372,14 @@ const PaymentQueueScreen = ({navigation}: any) => {
     }
   };
 
-  const getStatusBadgeStyle = (status: string) => {
+  const getStatusBadgeStyle = (status: string, paymentType?: string) => {
     const s = (status || '').toLowerCase().trim();
     if (s === 'paid' || s === 'completed' || s === 'settled') {
       return {
         badge: styles.statusBadgePaid,
         text: styles.statusTextPaid,
         dotColor: '#059669',
-        label: 'Paid',
+        label: paymentType === 'Tenure Extension' ? 'Completed' : 'Paid',
       };
     }
     if (s === 'approved' || s === 'active') {
@@ -391,7 +387,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
         badge: styles.statusBadgeApproved,
         text: styles.statusTextApproved,
         dotColor: '#1D4ED8',
-        label: 'Approved',
+        label: s === 'active' ? 'Active' : 'Approved',
       };
     }
     if (s === 'rejected' || s === 'declined') {
@@ -403,10 +399,10 @@ const PaymentQueueScreen = ({navigation}: any) => {
       };
     }
     return {
-      badge: styles.statusBadgePending,
-      text: styles.statusTextPending,
-      dotColor: '#D97706',
-      label: 'Pending',
+      badge: paymentType === 'Tenure Extension' ? styles.statusBadgeApproved : styles.statusBadgePending,
+      text: paymentType === 'Tenure Extension' ? styles.statusTextApproved : styles.statusTextPending,
+      dotColor: paymentType === 'Tenure Extension' ? '#1D4ED8' : '#D97706',
+      label: paymentType === 'Tenure Extension' ? 'Active' : 'Pending',
     };
   };
 
@@ -569,7 +565,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
           </View>
         ) : (
           payments.map((payment, index) => {
-            const statusBadge = getStatusBadgeStyle(payment.status);
+            const statusBadge = getStatusBadgeStyle(payment.status, payment.paymentType);
             const initial =
               payment.investorName && payment.investorName !== '—'
                 ? payment.investorName.trim().charAt(0).toUpperCase()
@@ -622,102 +618,176 @@ const PaymentQueueScreen = ({navigation}: any) => {
 
                 <View style={styles.cardDivider} />
 
-                {/* INFO GRID ROW 1: AMOUNT & GST */}
-                <View style={styles.infoGrid}>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>AMOUNT</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      ₹{formatIndianNumber(payment.amount || 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>GST</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      ₹{formatIndianNumber(payment.gstAmount || 0)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* INFO GRID ROW 2: NET AMOUNT & REQUESTED BY */}
-                <View style={styles.infoGrid}>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>NET AMOUNT</Text>
-                    <Text style={styles.netAmountValue} numberOfLines={1}>
-                      ₹{formatIndianNumber(payment.netAmount || 0)}
-                    </Text>
-                  </View>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>REQUESTED BY</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      {payment.requestedBy}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* INFO GRID ROW 3: APPROVED BY & DATE */}
-                <View style={styles.infoGrid}>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>APPROVED BY ADMIN</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      {payment.approvedBy}
-                    </Text>
-                  </View>
-                  <View style={styles.infoItem}>
-                    <Text style={styles.infoLabel}>DATE</Text>
-                    <Text style={styles.infoValue} numberOfLines={1}>
-                      {payment.createdDate !== '—'
-                        ? formatSuperAdminDate(payment.createdDate)
-                        : '—'}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* CARD ACTIONS (Matches Web Screenshot Table Actions) */}
-                {!(payment.status.toLowerCase() === 'approved' && payment.paymentType === 'Tenure Extension') && (
+                {payment.paymentType === 'Tenure Extension' ? (
                   <>
-                    <View style={styles.cardDivider} />
-                    <View style={styles.cardActions}>
-                      {payment.status.toLowerCase() === 'pending' ? (
-                        <>
-                          <TouchableOpacity
-                            style={styles.actionBtnReview}
-                            activeOpacity={0.7}
-                            onPress={() => handleOpenReview(payment)}>
-                            <Text style={styles.actionBtnReviewText}>👁️ Review</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.actionBtnReject}
-                            activeOpacity={0.7}
-                            onPress={() => handleOpenReject(payment)}>
-                            <Text style={styles.actionBtnRejectText}>⛔ Reject</Text>
-                          </TouchableOpacity>
-                        </>
-                      ) : payment.status.toLowerCase() === 'approved' ? (
-                        <TouchableOpacity
-                          style={styles.actionBtnApprove}
-                          activeOpacity={0.7}
-                          onPress={() => handleOpenMarkPaid(payment)}>
-                          <Text style={styles.actionBtnApproveText}>💳 Mark Paid</Text>
-                        </TouchableOpacity>
-                      ) : payment.status.toLowerCase() === 'paid' ? (
-                        <View style={styles.actionBadgePaid}>
-                          <Text style={styles.actionBadgePaidText}>✓ Paid</Text>
-                        </View>
-                      ) : payment.status.toLowerCase() === 'rejected' ? (
-                        <View style={styles.actionBadgeRejected}>
-                          <Text style={styles.actionBadgeRejectedText}>✕ Rejected</Text>
-                        </View>
-                      ) : (
-                        <TouchableOpacity
-                          style={styles.actionBtnReview}
-                          activeOpacity={0.7}
-                          onPress={() => handleOpenReview(payment)}>
-                          <Text style={styles.actionBtnReviewText}>👁️ Review</Text>
-                        </TouchableOpacity>
-                      )}
+                    {/* INFO GRID ROW 1: EXTENSION TENURE & CURRENT MATURITY */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>EXTENSION TENURE</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.requestedExtension || '—'}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>CURRENT MATURITY</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.currentMaturityDate !== '—'
+                            ? formatSuperAdminDate(payment.currentMaturityDate)
+                            : '—'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 2: AMOUNT & REQUESTED BY */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>AMOUNT</Text>
+                        <Text style={styles.netAmountValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.amount || payment.principalAmount || 0)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>REQUESTED BY</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.requestedBy}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 3: APPROVED BY & DATE */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>APPROVED BY ADMIN</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.approvedBy}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>DATE</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.createdDate !== '—'
+                            ? formatSuperAdminDate(payment.createdDate)
+                            : '—'}
+                        </Text>
+                      </View>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    {/* INFO GRID ROW 1: AMOUNT & GST */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>AMOUNT</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.amount || 0)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>GST</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.gstAmount || 0)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 2: NET AMOUNT & REQUESTED BY */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>NET AMOUNT</Text>
+                        <Text style={styles.netAmountValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.netAmount || 0)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>REQUESTED BY</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.requestedBy}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 3: APPROVED BY & DATE */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>APPROVED BY ADMIN</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.approvedBy}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>DATE</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.createdDate !== '—'
+                            ? formatSuperAdminDate(payment.createdDate)
+                            : '—'}
+                        </Text>
+                      </View>
                     </View>
                   </>
                 )}
+
+                {/* CARD ACTIONS */}
+                <View style={styles.cardDivider} />
+                <View style={styles.cardActions}>
+                  {payment.paymentType === 'Tenure Extension' ? (
+                    <>
+                      <TouchableOpacity
+                        style={styles.actionBtnReview}
+                        activeOpacity={0.7}
+                        onPress={() => handleOpenReview(payment)}>
+                        <Text style={styles.actionBtnReviewText}>👁️ View Details</Text>
+                      </TouchableOpacity>
+                      <View style={styles.actionBadgePaid}>
+                        <Text style={styles.actionBadgePaidText}>
+                          {payment.status.toLowerCase() === 'active'
+                            ? '✓ Active'
+                            : payment.status.toLowerCase() === 'completed'
+                            ? '✓ Completed'
+                            : payment.status.toLowerCase() === 'approved'
+                            ? '✓ Approved'
+                            : 'ℹ Reflection Only'}
+                        </Text>
+                      </View>
+                    </>
+                  ) : payment.status.toLowerCase() === 'pending' ? (
+                    <>
+                      <TouchableOpacity
+                        style={styles.actionBtnReview}
+                        activeOpacity={0.7}
+                        onPress={() => handleOpenReview(payment)}>
+                        <Text style={styles.actionBtnReviewText}>👁️ Review</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.actionBtnReject}
+                        activeOpacity={0.7}
+                        onPress={() => handleOpenReject(payment)}>
+                        <Text style={styles.actionBtnRejectText}>⛔ Reject</Text>
+                      </TouchableOpacity>
+                    </>
+                  ) : payment.status.toLowerCase() === 'approved' ? (
+                    <TouchableOpacity
+                      style={styles.actionBtnApprove}
+                      activeOpacity={0.7}
+                      onPress={() => handleOpenMarkPaid(payment)}>
+                      <Text style={styles.actionBtnApproveText}>💳 Mark Paid</Text>
+                    </TouchableOpacity>
+                  ) : payment.status.toLowerCase() === 'paid' ? (
+                    <View style={styles.actionBadgePaid}>
+                      <Text style={styles.actionBadgePaidText}>✓ Paid</Text>
+                    </View>
+                  ) : payment.status.toLowerCase() === 'rejected' ? (
+                    <View style={styles.actionBadgeRejected}>
+                      <Text style={styles.actionBadgeRejectedText}>✕ Rejected</Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.actionBtnReview}
+                      activeOpacity={0.7}
+                      onPress={() => handleOpenReview(payment)}>
+                      <Text style={styles.actionBtnReviewText}>👁️ Review</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               </View>
             );
           })
@@ -813,7 +883,11 @@ const PaymentQueueScreen = ({navigation}: any) => {
             {selectedPayment && (
               <>
                 <View style={styles.modalHeaderRow}>
-                  <Text style={styles.modalTitle}>Payment Review</Text>
+                  <Text style={styles.modalTitle}>
+                    {selectedPayment.paymentType === 'Tenure Extension'
+                      ? 'Tenure Extension Details'
+                      : 'Payment Review'}
+                  </Text>
                   <TouchableOpacity
                     onPress={() => setReviewModalVisible(false)}
                     hitSlop={{top: 8, bottom: 8, left: 8, right: 8}}>
@@ -851,7 +925,10 @@ const PaymentQueueScreen = ({navigation}: any) => {
                         style={[
                           styles.detailVal,
                           {
-                            color: getStatusBadgeStyle(selectedPayment.status).dotColor,
+                            color: getStatusBadgeStyle(
+                              selectedPayment.status,
+                              selectedPayment.paymentType,
+                            ).dotColor,
                             fontWeight: '700',
                           },
                         ]}>
@@ -859,35 +936,66 @@ const PaymentQueueScreen = ({navigation}: any) => {
                       </Text>
                     </View>
 
-                    <View style={styles.detailField}>
-                      <Text style={styles.detailLabel}>AMOUNT</Text>
-                      <Text style={styles.detailVal}>
-                        ₹{formatIndianNumber(selectedPayment.amount || 0)}
-                      </Text>
-                    </View>
+                    {selectedPayment.paymentType === 'Tenure Extension' ? (
+                      <>
+                        {selectedPayment.requestedExtension ? (
+                          <View style={styles.detailField}>
+                            <Text style={styles.detailLabel}>EXTENSION TENURE</Text>
+                            <Text style={[styles.detailVal, {color: '#059669', fontWeight: '700'}]}>
+                              {selectedPayment.requestedExtension}
+                            </Text>
+                          </View>
+                        ) : null}
 
-                    <View style={styles.detailField}>
-                      <Text style={styles.detailLabel}>GST AMOUNT</Text>
-                      <Text style={styles.detailVal}>
-                        ₹{formatIndianNumber(selectedPayment.gstAmount || 0)}
-                      </Text>
-                    </View>
+                        {selectedPayment.currentMaturityDate !== '—' && (
+                          <View style={styles.detailField}>
+                            <Text style={styles.detailLabel}>CURRENT / UPDATED MATURITY</Text>
+                            <Text style={styles.detailVal}>
+                              {formatSuperAdminDate(selectedPayment.currentMaturityDate)}
+                            </Text>
+                          </View>
+                        )}
 
-                    {/* NET SETTLEMENT HIGHLIGHT BOX */}
-                    <View style={styles.amountBox}>
-                      <Text style={styles.amountBoxLabel}>NET AMOUNT</Text>
-                      <Text style={styles.amountBoxValue}>
-                        ₹{formatIndianNumber(selectedPayment.netAmount || 0)}
-                      </Text>
-                    </View>
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>AMOUNT</Text>
+                          <Text style={styles.detailVal}>
+                            ₹{formatIndianNumber(selectedPayment.amount || selectedPayment.principalAmount || 0)}
+                          </Text>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>AMOUNT</Text>
+                          <Text style={styles.detailVal}>
+                            ₹{formatIndianNumber(selectedPayment.amount || 0)}
+                          </Text>
+                        </View>
 
-                    {selectedPayment.bankName !== '—' && (
-                      <View style={styles.detailField}>
-                        <Text style={styles.detailLabel}>BANK / ACCOUNT</Text>
-                        <Text style={styles.detailVal}>
-                          {selectedPayment.bankName} • {selectedPayment.accountNumber} ({selectedPayment.ifscCode})
-                        </Text>
-                      </View>
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>GST AMOUNT</Text>
+                          <Text style={styles.detailVal}>
+                            ₹{formatIndianNumber(selectedPayment.gstAmount || 0)}
+                          </Text>
+                        </View>
+
+                        {/* NET SETTLEMENT HIGHLIGHT BOX */}
+                        <View style={styles.amountBox}>
+                          <Text style={styles.amountBoxLabel}>NET AMOUNT</Text>
+                          <Text style={styles.amountBoxValue}>
+                            ₹{formatIndianNumber(selectedPayment.netAmount || 0)}
+                          </Text>
+                        </View>
+
+                        {selectedPayment.bankName !== '—' && (
+                          <View style={styles.detailField}>
+                            <Text style={styles.detailLabel}>BANK / ACCOUNT</Text>
+                            <Text style={styles.detailVal}>
+                              {selectedPayment.bankName} • {selectedPayment.accountNumber} ({selectedPayment.ifscCode})
+                            </Text>
+                          </View>
+                        )}
+                      </>
                     )}
 
                     <View style={styles.detailField}>
@@ -919,26 +1027,27 @@ const PaymentQueueScreen = ({navigation}: any) => {
                 )}
 
                 <View style={styles.modalBtnRow}>
-                  {selectedPayment.status.toLowerCase() === 'pending' && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.modalConfirmApproveBtn}
-                        onPress={() => {
-                          setReviewModalVisible(false);
-                          handleOpenApprove(selectedPayment);
-                        }}>
-                        <Text style={styles.btnTextWhite}>Approve</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.modalConfirmRejectBtn}
-                        onPress={() => {
-                          setReviewModalVisible(false);
-                          handleOpenReject(selectedPayment);
-                        }}>
-                        <Text style={styles.btnTextWhite}>Reject</Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
+                  {selectedPayment.status.toLowerCase() === 'pending' &&
+                    selectedPayment.paymentType !== 'Tenure Extension' && (
+                      <>
+                        <TouchableOpacity
+                          style={styles.modalConfirmApproveBtn}
+                          onPress={() => {
+                            setReviewModalVisible(false);
+                            handleOpenApprove(selectedPayment);
+                          }}>
+                          <Text style={styles.btnTextWhite}>Approve</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.modalConfirmRejectBtn}
+                          onPress={() => {
+                            setReviewModalVisible(false);
+                            handleOpenReject(selectedPayment);
+                          }}>
+                          <Text style={styles.btnTextWhite}>Reject</Text>
+                        </TouchableOpacity>
+                      </>
+                    )}
 
                   {selectedPayment.status.toLowerCase() === 'approved' &&
                     selectedPayment.paymentType !== 'Tenure Extension' && (

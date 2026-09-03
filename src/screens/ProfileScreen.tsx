@@ -152,6 +152,7 @@ const ProfileScreen = ({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   /**
    * ==========================================================
@@ -205,6 +206,7 @@ const ProfileScreen = ({
     }
 
     setDraft({...investor});
+    setFieldErrors({});
     setIsEditing(true);
   };
 
@@ -212,7 +214,7 @@ const ProfileScreen = ({
     if (investor) {
       setDraft({...investor});
     }
-
+    setFieldErrors({});
     setIsEditing(false);
   };
 
@@ -223,87 +225,78 @@ const ProfileScreen = ({
    */
 
   const validateProfile = (data: Investor): boolean => {
-    if (!data.name.trim()) {
-      Alert.alert('Missing details', 'Full name cannot be empty.');
-      return false;
+    const errors: Record<string, string> = {};
+
+    const nameCheck = validation.isValidName(data.name);
+    if (!nameCheck.isValid) {
+      errors.name = nameCheck.error || 'Please enter a valid full name.';
     }
 
-    const mobileCheck = validation.isValidMobile(data.mobile);
+    const mobileCheck = validation.isValidIndianMobile(data.mobile);
     if (!mobileCheck.isValid) {
-      Alert.alert('Validation Error', mobileCheck.error || 'Invalid mobile number.');
-      return false;
+      errors.mobile = mobileCheck.error || 'Please enter a valid 10-digit mobile number.';
     }
 
     const emailCheck = validation.isValidEmail(data.email);
     if (!emailCheck.isValid) {
-      Alert.alert('Validation Error', emailCheck.error || 'Invalid email address.');
-      return false;
+      errors.email = emailCheck.error || 'Please enter a valid email address.';
     }
 
     if (!data.dateOfBirth.trim()) {
-      Alert.alert('Missing details', 'Date of birth cannot be empty.');
-      return false;
+      errors.dateOfBirth = 'Date of birth cannot be empty.';
     }
 
     if (!data.address.trim()) {
-      Alert.alert('Missing details', 'Address cannot be empty.');
-      return false;
+      errors.address = 'Address cannot be empty.';
     }
 
-    if (!data.city.trim()) {
-      Alert.alert('Missing details', 'City cannot be empty.');
-      return false;
+    const cityCheck = validation.isValidCity(data.city);
+    if (!cityCheck.isValid) {
+      errors.city = cityCheck.error || 'Please enter a valid city name.';
     }
 
     if (!data.stateId || Number(data.stateId) <= 0) {
-      Alert.alert('Missing details', 'State is required.');
-      return false;
+      errors.stateId = 'State is required.';
     }
 
-    if (!data.pincode.trim()) {
-      Alert.alert('Missing details', 'Pincode cannot be empty.');
-      return false;
+    const pinCheck = validation.isValidPincode(data.pincode);
+    if (!pinCheck.isValid) {
+      errors.pincode = pinCheck.error || 'Please enter a valid 6-digit PIN code.';
     }
 
     if (!data.branchId || Number(data.branchId) <= 0) {
-      Alert.alert('Missing details', 'Branch is required.');
-      return false;
+      errors.branchId = 'Branch is required.';
     }
 
-    if (!data.bank.accountHolderName.trim()) {
-      Alert.alert(
-        'Missing details',
-        'Bank account holder name cannot be empty.',
-      );
-      return false;
+    const holderCheck = validation.isValidName(data.bank.accountHolderName);
+    if (!holderCheck.isValid) {
+      errors.accountHolderName =
+        holderCheck.error || 'Bank account holder name should contain only letters and spaces.';
     }
 
     if (!data.bank.name.trim()) {
-      Alert.alert('Missing details', 'Bank name cannot be empty.');
-      return false;
+      errors.bankName = 'Bank name cannot be empty.';
     }
 
     if (
       !data.bank.accountTypeId ||
       Number(data.bank.accountTypeId) <= 0
     ) {
-      Alert.alert('Missing details', 'Bank account type is required.');
-      return false;
+      errors.accountTypeId = 'Bank account type is required.';
     }
 
     const accCheck = validation.isValidAccountNumber(data.bank.accountNumber);
     if (!accCheck.isValid) {
-      Alert.alert('Validation Error', accCheck.error || 'Invalid bank account number.');
-      return false;
+      errors.accountNumber = accCheck.error || 'Invalid bank account number.';
     }
 
     const ifscCheck = validation.isValidIFSC(data.bank.ifsc);
     if (!ifscCheck.isValid) {
-      Alert.alert('Validation Error', ifscCheck.error || 'Invalid IFSC code.');
-      return false;
+      errors.ifsc = ifscCheck.error || 'Invalid IFSC code.';
     }
 
-    return true;
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   /**
@@ -360,6 +353,12 @@ const ProfileScreen = ({
     field: keyof Investor,
     value: string | number,
   ) => {
+    setFieldErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = {...prev};
+      delete next[field];
+      return next;
+    });
     setDraft(prev => {
       if (!prev) {
         return prev;
@@ -376,6 +375,13 @@ const ProfileScreen = ({
     field: keyof Investor['bank'],
     value: string | number,
   ) => {
+    const errKey = field === 'accountHolderName' ? 'accountHolderName' : field === 'name' ? 'bankName' : field;
+    setFieldErrors(prev => {
+      if (!prev[errKey]) return prev;
+      const next = {...prev};
+      delete next[errKey];
+      return next;
+    });
     setDraft(prev => {
       if (!prev) {
         return prev;
@@ -668,15 +674,20 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.name}
-                    onChangeText={v =>
-                      updateDraft('name', v)
-                    }
-                    placeholder="Full name"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.name}
+                      onChangeText={v =>
+                        updateDraft('name', v)
+                      }
+                      placeholder="Full name"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.name ? (
+                      <Text style={styles.fieldError}>{fieldErrors.name}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.name}
@@ -695,16 +706,21 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.mobile}
-                    onChangeText={v =>
-                      updateDraft('mobile', v)
-                    }
-                    keyboardType="phone-pad"
-                    placeholder="Mobile number"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.mobile}
+                      onChangeText={v =>
+                        updateDraft('mobile', v)
+                      }
+                      keyboardType="phone-pad"
+                      placeholder="Mobile number"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.mobile ? (
+                      <Text style={styles.fieldError}>{fieldErrors.mobile}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.mobile}
@@ -725,17 +741,22 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.email}
-                    onChangeText={v =>
-                      updateDraft('email', v)
-                    }
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    placeholder="Email address"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.email}
+                      onChangeText={v =>
+                        updateDraft('email', v)
+                      }
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      placeholder="Email address"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.email ? (
+                      <Text style={styles.fieldError}>{fieldErrors.email}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.email}
@@ -753,15 +774,20 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.dateOfBirth}
-                    onChangeText={v =>
-                      updateDraft('dateOfBirth', v)
-                    }
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.dateOfBirth}
+                      onChangeText={v =>
+                        updateDraft('dateOfBirth', v)
+                      }
+                      placeholder="YYYY-MM-DD"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.dateOfBirth ? (
+                      <Text style={styles.fieldError}>{fieldErrors.dateOfBirth}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.dateOfBirth}
@@ -786,15 +812,20 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.address}
-                    onChangeText={v =>
-                      updateDraft('address', v)
-                    }
-                    placeholder="Address"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.address}
+                      onChangeText={v =>
+                        updateDraft('address', v)
+                      }
+                      placeholder="Address"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.address ? (
+                      <Text style={styles.fieldError}>{fieldErrors.address}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.address}
@@ -815,15 +846,20 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.city}
-                    onChangeText={v =>
-                      updateDraft('city', v)
-                    }
-                    placeholder="City"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.city}
+                      onChangeText={v =>
+                        updateDraft('city', v)
+                      }
+                      placeholder="City"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.city ? (
+                      <Text style={styles.fieldError}>{fieldErrors.city}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.city}
@@ -841,16 +877,21 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.pincode}
-                    onChangeText={v =>
-                      updateDraft('pincode', v)
-                    }
-                    keyboardType="number-pad"
-                    placeholder="Pincode"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.pincode}
+                      onChangeText={v =>
+                        updateDraft('pincode', v)
+                      }
+                      keyboardType="number-pad"
+                      placeholder="Pincode"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.pincode ? (
+                      <Text style={styles.fieldError}>{fieldErrors.pincode}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.pincode}
@@ -885,6 +926,10 @@ const ProfileScreen = ({
                       placeholder="State ID"
                       placeholderTextColor="#9CA3AF"
                     />
+
+                    {fieldErrors.stateId ? (
+                      <Text style={styles.fieldError}>{fieldErrors.stateId}</Text>
+                    ) : null}
 
                     {!!draft.stateName && (
                       <Text
@@ -929,6 +974,10 @@ const ProfileScreen = ({
                       placeholder="Branch ID"
                       placeholderTextColor="#9CA3AF"
                     />
+
+                    {fieldErrors.branchId ? (
+                      <Text style={styles.fieldError}>{fieldErrors.branchId}</Text>
+                    ) : null}
 
                     {!!draft.branchName && (
                       <Text
@@ -1026,20 +1075,25 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={
-                      draft.bank.accountHolderName
-                    }
-                    onChangeText={v =>
-                      updateBankDraft(
-                        'accountHolderName',
-                        v,
-                      )
-                    }
-                    placeholder="Account holder name"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={
+                        draft.bank.accountHolderName
+                      }
+                      onChangeText={v =>
+                        updateBankDraft(
+                          'accountHolderName',
+                          v,
+                        )
+                      }
+                      placeholder="Account holder name"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.accountHolderName ? (
+                      <Text style={styles.fieldError}>{fieldErrors.accountHolderName}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.bank.accountHolderName}
@@ -1060,15 +1114,20 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.bank.name}
-                    onChangeText={v =>
-                      updateBankDraft('name', v)
-                    }
-                    placeholder="Bank name"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.bank.name}
+                      onChangeText={v =>
+                        updateBankDraft('name', v)
+                      }
+                      placeholder="Bank name"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.bankName ? (
+                      <Text style={styles.fieldError}>{fieldErrors.bankName}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.bank.name}
@@ -1092,21 +1151,26 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={
-                      draft.bank.accountNumber
-                    }
-                    onChangeText={v =>
-                      updateBankDraft(
-                        'accountNumber',
-                        v,
-                      )
-                    }
-                    keyboardType="number-pad"
-                    placeholder="Account number"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={
+                        draft.bank.accountNumber
+                      }
+                      onChangeText={v =>
+                        updateBankDraft(
+                          'accountNumber',
+                          v,
+                        )
+                      }
+                      keyboardType="number-pad"
+                      placeholder="Account number"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.accountNumber ? (
+                      <Text style={styles.fieldError}>{fieldErrors.accountNumber}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.bank.accountNumber}
@@ -1128,19 +1192,24 @@ const ProfileScreen = ({
                 </Text>
 
                 {isEditing ? (
-                  <TextInput
-                    style={styles.input}
-                    value={draft.bank.ifsc}
-                    onChangeText={v =>
-                      updateBankDraft(
-                        'ifsc',
-                        v.toUpperCase(),
-                      )
-                    }
-                    autoCapitalize="characters"
-                    placeholder="IFSC code"
-                    placeholderTextColor="#9CA3AF"
-                  />
+                  <>
+                    <TextInput
+                      style={styles.input}
+                      value={draft.bank.ifsc}
+                      onChangeText={v =>
+                        updateBankDraft(
+                          'ifsc',
+                          v.toUpperCase(),
+                        )
+                      }
+                      autoCapitalize="characters"
+                      placeholder="IFSC code"
+                      placeholderTextColor="#9CA3AF"
+                    />
+                    {fieldErrors.ifsc ? (
+                      <Text style={styles.fieldError}>{fieldErrors.ifsc}</Text>
+                    ) : null}
+                  </>
                 ) : (
                   <Text style={styles.infoValue}>
                     {investor.bank.ifsc}
@@ -1189,6 +1258,10 @@ const ProfileScreen = ({
                       placeholder="Account Type ID"
                       placeholderTextColor="#9CA3AF"
                     />
+
+                    {fieldErrors.accountTypeId ? (
+                      <Text style={styles.fieldError}>{fieldErrors.accountTypeId}</Text>
+                    ) : null}
 
                     {!!draft.bank.accountType && (
                       <Text

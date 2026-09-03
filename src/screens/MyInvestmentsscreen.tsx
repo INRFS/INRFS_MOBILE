@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -11,19 +11,19 @@ import {
   View,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
-import {SafeAreaView} from 'react-native-safe-area-context';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import XLSX from 'xlsx';
 import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
 
 import BottomTabBar from '../components/BottomTabBar';
 import AppHeader from '../components/AppHeader';
-import {styles} from '../styles/MyInvestmentsScreen.styles';
+import { styles } from '../styles/MyInvestmentsScreen.styles';
 import {
   investorService,
   ApiInvestment,
 } from '../services/investorService';
-import {validation} from '../utils/validation';
+import { validation } from '../utils/validation';
 
 type BondStatus =
   | 'Active'
@@ -63,7 +63,7 @@ type Investment = {
   bondNumber?: string;
 };
 
-const EXTENSION_OPTIONS = [3, 6, 12, 36];
+const EXTENSION_OPTIONS = [3, 6, 9, 12, 24, 36];
 
 const n = (v: any, fallback = 0) => {
   const x = Number(v);
@@ -93,7 +93,7 @@ function monthsBetween(
   return Math.max(
     1,
     (e.getFullYear() - s.getFullYear()) * 12 +
-      (e.getMonth() - s.getMonth()),
+    (e.getMonth() - s.getMonth()),
   );
 }
 
@@ -103,13 +103,19 @@ export function resolveInvestmentStatus(item: ApiInvestment): BondStatus {
   const extractString = (val: any): string => {
     if (!val) return '';
     if (typeof val === 'string') return val.trim().toLowerCase();
+    if (typeof val === 'number') return String(val);
+    if (typeof val === 'boolean') return val ? 'pending' : '';
     if (typeof val === 'object') {
       return String(
         val.status ||
         val.request_status ||
+        val.extension_status ||
+        val.tenure_extension_status ||
         val.settlement_status ||
         val.status_name ||
         val.approval_status ||
+        val.workflow_status ||
+        val.state ||
         '',
       ).trim().toLowerCase();
     }
@@ -153,7 +159,32 @@ export function resolveInvestmentStatus(item: ApiInvestment): BondStatus {
     extractString(anyItem.extension_status),
     extractString(anyItem.tenure_extension_status),
     extractString(anyItem.extension_request),
+    extractString(anyItem.tenure_extension),
     extractString(anyItem.extension),
+    extractString(anyItem.pending_extension),
+    extractString(anyItem.pending_tenure_extension),
+    extractString(anyItem.tenure_request_status),
+    extractString(anyItem.tenure_request),
+    extractString(anyItem.requested_extension_status),
+    extractString(anyItem.latest_extension),
+    extractString(anyItem.latest_request),
+    extractString(anyItem.pending_request),
+    extractString(anyItem.pending_action),
+    extractString(
+      anyItem.request_type === 'extension' ||
+      anyItem.request_type === 'tenure_extension' ||
+      anyItem.pending_action === 'Tenure Extension' ||
+      anyItem.pending_action === 'extension'
+        ? anyItem.request_status || anyItem.status || anyItem.approval_status || 'pending'
+        : '',
+    ),
+    extractString(
+      anyItem.workflow_type === 'extension' || anyItem.workflow_type === 'tenure_extension'
+        ? anyItem.workflow_status || anyItem.status || anyItem.approval_status || 'pending'
+        : '',
+    ),
+    extractString(anyItem.extension_workflow_status),
+    extractString(anyItem.extension_approval_status),
   ].filter(Boolean);
 
   const hasSettlementDate = Boolean(
@@ -171,6 +202,46 @@ export function resolveInvestmentStatus(item: ApiInvestment): BondStatus {
     anyItem.is_closed === true ||
     anyItem.is_preclosed === true ||
     anyItem.is_paid === true,
+  );
+
+  const checkArrayForPending = (arr: any): boolean => {
+    if (!Array.isArray(arr) || arr.length === 0) return false;
+    return arr.some(x => {
+      const st = extractString(x);
+      return (
+        st.includes('pending') ||
+        st.includes('requested') ||
+        st.includes('superadmin') ||
+        st.includes('super admin') ||
+        st === 'submitted' ||
+        st === 'under review' ||
+        st === 'awaiting approval' ||
+        (st.includes('extension') &&
+          !st.includes('approved') &&
+          !st.includes('completed') &&
+          !st.includes('reject') &&
+          !st.includes('cancel'))
+      );
+    });
+  };
+
+  const hasExtensionFlag = Boolean(
+    anyItem.has_pending_extension === true ||
+    anyItem.is_extension_requested === true ||
+    anyItem.extension_requested === true ||
+    anyItem.tenure_extension_requested === true ||
+    anyItem.is_pending_extension === true ||
+    anyItem.pending_extension === true ||
+    anyItem.has_extension === true ||
+    (anyItem.pending_action && String(anyItem.pending_action).toLowerCase().includes('extension')) ||
+    checkArrayForPending(anyItem.tenure_extensions) ||
+    checkArrayForPending(anyItem.extension_requests) ||
+    checkArrayForPending(anyItem.extensions) ||
+    (anyItem.tenure_extension_id && !anyItem.is_tenure_extended && !anyItem.is_extension_approved) ||
+    (anyItem.requested_extension && !anyItem.is_extension_approved && !anyItem.is_tenure_extended) ||
+    (anyItem.extension_id && !anyItem.is_extension_approved && !anyItem.is_tenure_extended) ||
+    (anyItem.extended_months && !anyItem.is_extension_approved && !anyItem.is_tenure_extended) ||
+    (anyItem.extension_months && !anyItem.is_extension_approved && !anyItem.is_tenure_extended)
   );
 
   const isPrecloseSettled = precloseValues.some(
@@ -243,17 +314,45 @@ export function resolveInvestmentStatus(item: ApiInvestment): BondStatus {
 
   // =========================================================================
   // 4. PENDING TENURE EXTENSION REQUEST
+  // Priority: Pending extension on this investment > generic Active status
   // =========================================================================
-  if (
-    extensionValues.some(
-      s =>
-        s.includes('pending') ||
-        s.includes('requested') ||
-        s.includes('extension'),
-    ) ||
-    rawStatus.includes('extension')
-  ) {
-    return 'Extension Requested';
+  const isExtensionApproved = extensionValues.some(
+    s =>
+      s === 'approved' ||
+      s === 'completed' ||
+      s === 'extension_approved' ||
+      s === 'tenure_extended' ||
+      s.includes('approved') ||
+      s.includes('completed'),
+  );
+
+  if (!isExtensionApproved) {
+    const isExtensionPending =
+      hasExtensionFlag ||
+      extensionValues.some(
+        s =>
+          s.includes('pending') ||
+          s.includes('requested') ||
+          s.includes('superadmin') ||
+          s.includes('super admin') ||
+          s === 'submitted' ||
+          s === 'under review' ||
+          s === 'awaiting approval' ||
+          (s.includes('extension') &&
+            !s.includes('reject') &&
+            !s.includes('cancel') &&
+            !s.includes('active')),
+      ) ||
+      (rawStatus.includes('extension') &&
+        (rawStatus.includes('pending') ||
+          rawStatus.includes('requested') ||
+          rawStatus.includes('superadmin') ||
+          rawStatus.includes('super admin') ||
+          rawStatus === 'extension requested'));
+
+    if (isExtensionPending) {
+      return 'Extension Requested';
+    }
   }
 
   // =========================================================================
@@ -317,13 +416,13 @@ function mapInvestment(item: ApiInvestment): Investment {
   const now = new Date();
   const elapsedMonths = investedDate
     ? Math.max(
-        0,
-        Math.min(
-          tenure,
-          (now.getFullYear() - investedDate.getFullYear()) * 12 +
-            (now.getMonth() - investedDate.getMonth()),
-        ),
-      )
+      0,
+      Math.min(
+        tenure,
+        (now.getFullYear() - investedDate.getFullYear()) * 12 +
+        (now.getMonth() - investedDate.getMonth()),
+      ),
+    )
     : 0;
   const earned = Math.min(expected, (expected / tenure) * elapsedMonths);
   const bondNum = String(item.bond_number ?? item.bond_id ?? '').trim();
@@ -331,8 +430,8 @@ function mapInvestment(item: ApiInvestment): Investment {
   const stage =
     anyItem.stage ||
     (anyItem.request_status === 'PendingSuperAdmin' ||
-    anyItem.approval_status === 'PendingSuperAdmin' ||
-    anyItem.status === 'PendingSuperAdmin'
+      anyItem.approval_status === 'PendingSuperAdmin' ||
+      anyItem.status === 'PendingSuperAdmin'
       ? 'SuperAdmin'
       : 'Admin');
 
@@ -361,23 +460,23 @@ const money = (value: number) =>
 const statusColor = (status: string) => {
   switch (status) {
     case 'Active':
-      return {bg: '#DCFCE7', fg: '#15803D'};
+      return { bg: '#DCFCE7', fg: '#15803D' };
     case 'Settled':
     case 'Closed':
     case 'Matured':
-      return {bg: '#E5E7EB', fg: '#374151'};
+      return { bg: '#E5E7EB', fg: '#374151' };
     case 'Extension Requested':
     case 'Pre-Close Requested':
     case 'Pending Extension':
     case 'Pending Settlement':
     case 'Pending Approval':
     case 'Pending':
-      return {bg: '#FEF3C7', fg: '#B45309'};
+      return { bg: '#FEF3C7', fg: '#B45309' };
     case 'Rejected':
     case 'Refunded':
-      return {bg: '#FEF2F2', fg: '#DC2626'};
+      return { bg: '#FEF2F2', fg: '#DC2626' };
     default:
-      return {bg: '#FEF3C7', fg: '#B45309'};
+      return { bg: '#FEF3C7', fg: '#B45309' };
   }
 };
 
@@ -397,13 +496,15 @@ const isOthersStatus = (s: BondStatus) =>
 
 const isActiveStatus = (s: BondStatus) => s === 'Active';
 
-const MyInvestmentsScreen = ({navigation, route}: any) => {
-  const {investorId} = route?.params || {};
+const MyInvestmentsScreen = ({ navigation, route }: any) => {
+  const { investorId } = route?.params || {};
 
   const [items, setItems] = useState<Investment[]>([]);
   const [localActionState, setLocalActionState] = useState<
     Record<string, LocalActionState>
   >({});
+  const [targetTenures, setTargetTenures] = useState<Record<string, number>>({});
+  const targetTenuresRef = useRef<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
@@ -428,7 +529,28 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     ) {
       return '';
     }
-    return localActionState[String(item.investmentDbId)] || '';
+
+    // If backend itself resolved item.status to 'Extension Requested' or 'Pre-Close Requested', use that!
+    if (item.status === 'Extension Requested' || item.status === 'Pre-Close Requested') {
+      return item.status;
+    }
+
+    const idKey = String(item.investmentDbId);
+    const altKey = String(item.id);
+    const localState = localActionState[idKey] || localActionState[altKey] || '';
+
+    if (localState === 'Extension Requested') {
+      const target =
+        targetTenuresRef.current[idKey] ||
+        targetTenuresRef.current[altKey] ||
+        targetTenures[idKey] ||
+        targetTenures[altKey];
+      // If backend tenure has reached or exceeded the requested target tenure, Admin has approved!
+      if (target && item.tenureMonths >= target) {
+        return '';
+      }
+    }
+    return localState;
   };
 
   const getItemEffectiveStatus = (item: Investment): BondStatus => {
@@ -449,14 +571,43 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     try {
       setError('');
       const response = await investorService.getMyInvestments();
-      setItems(response.map(mapInvestment));
+      const mapped = response.map(mapInvestment);
+      setItems(mapped);
+
+      // Once a fresh backend response confirms that:
+      // - investment status is Active with tenure updated to/past target, OR
+      // - backend explicitly returned a final status,
+      // clear the local 'Extension Requested' state.
+      setLocalActionState(previous => {
+        let changed = false;
+        const next = { ...previous };
+        mapped.forEach(item => {
+          const idKey = String(item.investmentDbId);
+          const altKey = String(item.id);
+          if (next[idKey] === 'Extension Requested' || next[altKey] === 'Extension Requested') {
+            const target =
+              targetTenuresRef.current[idKey] ||
+              targetTenuresRef.current[altKey] ||
+              targetTenures[idKey] ||
+              targetTenures[altKey];
+            if (target && item.tenureMonths >= target) {
+              delete next[idKey];
+              delete next[altKey];
+              delete targetTenuresRef.current[idKey];
+              delete targetTenuresRef.current[altKey];
+              changed = true;
+            }
+          }
+        });
+        return changed ? next : previous;
+      });
     } catch (e: any) {
       setError(e?.message || 'Unable to load investments.');
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [targetTenures]);
 
   useEffect(() => {
     load();
@@ -500,7 +651,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       pending,
       others,
     };
-  }, [items, localActionState]);
+  }, [items, localActionState, targetTenures]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -523,7 +674,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         (item.bondNumber && item.bondNumber.toLowerCase().includes(q))
       );
     });
-  }, [items, activeTab, query, localActionState]);
+  }, [items, activeTab, query, localActionState, targetTenures]);
 
   const total = useMemo(
     () => items.reduce((sum, x) => sum + x.amount + x.earned, 0),
@@ -549,25 +700,47 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       const ws = XLSX.utils.json_to_sheet(exportData);
       XLSX.utils.book_append_sheet(wb, ws, 'My Investments');
 
-      const wbout = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-      const path = `${RNFS.DocumentDirectoryPath}/INRFS_My_Investments_${Date.now()}.xlsx`;
+      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const cleanFilename = `INRFS_My_Investments_${Date.now()}.xlsx`;
+      const dir = RNFS.CachesDirectoryPath || RNFS.DocumentDirectoryPath;
+      const path = `${dir}/${cleanFilename}`;
 
       await RNFS.writeFile(path, wbout, 'base64');
+
+      const exists = await RNFS.exists(path);
+      if (!exists) {
+        Alert.alert('Export Error', 'Export file could not be created on the device.');
+        return;
+      }
+
+      const fileUrl = `file://${path}`;
+      if (!fileUrl) {
+        Alert.alert('Export Error', 'Generated file URI is null or invalid.');
+        return;
+      }
+
       await RNShare.open({
-        url: `file://${path}`,
+        url: fileUrl,
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         title: 'Share My Investments Report',
+        subject: cleanFilename,
+        useInternalStorage: true,
+        failOnCancel: false,
       });
     } catch (e: any) {
-      if (e?.message !== 'User did not share') {
-        Alert.alert('Export Error', 'Unable to export report.');
+      if (
+        e?.message !== 'User did not share' &&
+        !e?.message?.includes('DISMISSED') &&
+        !e?.message?.includes('cancel')
+      ) {
+        Alert.alert('Export Error', e?.message || 'Unable to export report.');
       }
     }
   };
 
   const openDetails = async (item: Investment) => {
     const currentStatus = getItemEffectiveStatus(item);
-    setView({...item, status: currentStatus});
+    setView({ ...item, status: currentStatus });
 
     try {
       const details = await investorService.getInvestmentDetails(
@@ -576,7 +749,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       if (details) {
         const mapped = mapInvestment(details);
         const mappedStatus = getItemEffectiveStatus(mapped);
-        setView({...mapped, status: mappedStatus});
+        setView({ ...mapped, status: mappedStatus });
       }
     } catch (e: any) {
       console.log('Could not fetch rich investment details:', e?.message);
@@ -585,6 +758,16 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
   const submitExtension = async () => {
     if (!extension) return;
+
+    const currentEffectiveStatus = getItemEffectiveStatus(extension);
+    if (
+      currentEffectiveStatus === 'Extension Requested' ||
+      currentEffectiveStatus === 'Pending Extension' ||
+      currentEffectiveStatus === 'Pre-Close Requested'
+    ) {
+      setExtension(null);
+      return;
+    }
 
     const selectedTarget = Number(extensionMonths);
     if (!validation.isValidExtensionMonths(selectedTarget)) {
@@ -596,6 +779,8 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
     // Calculate increment so backend computes (currentTenure + deltaMonths = selectedTarget)
     const deltaMonths =
       selectedTarget > currentTenure ? selectedTarget - currentTenure : selectedTarget;
+    const targetTenureToAchieve =
+      selectedTarget > currentTenure ? selectedTarget : currentTenure + selectedTarget;
 
     try {
       setBusy(true);
@@ -605,10 +790,23 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         '',
       );
 
+      const dbKey = String(extension.investmentDbId);
+      const idKey = String(extension.id);
+
+      targetTenuresRef.current[dbKey] = targetTenureToAchieve;
+      targetTenuresRef.current[idKey] = targetTenureToAchieve;
+
+      setTargetTenures(previous => ({
+        ...previous,
+        [dbKey]: targetTenureToAchieve,
+        [idKey]: targetTenureToAchieve,
+      }));
+
       // Set local requested state immediately
       setLocalActionState(previous => ({
         ...previous,
-        [String(extension.investmentDbId)]: 'Extension Requested',
+        [dbKey]: 'Extension Requested',
+        [idKey]: 'Extension Requested',
       }));
 
       setExtension(null);
@@ -651,6 +849,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       setLocalActionState(previous => ({
         ...previous,
         [String(preclose.investmentDbId)]: 'Pre-Close Requested',
+        [String(preclose.id)]: 'Pre-Close Requested',
       }));
 
       setPreclose(null);
@@ -693,9 +892,6 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
       return 'Waiting for Admin Approval — actions unlock once approved.';
     }
     if (status === 'Extension Requested' || status === 'Pending Extension') {
-      if (item.stage === 'SuperAdmin') {
-        return 'Waiting for Super Admin Approval — your extension has been approved by the admin and sent for final approval.';
-      }
       return 'Waiting for Admin Approval — tenure extension request submitted.';
     }
     if (status === 'Pre-Close Requested' || status === 'Pending Settlement') {
@@ -813,9 +1009,9 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
         </ScrollView>
 
         {loading ? (
-          <View style={{padding: 40, alignItems: 'center'}}>
+          <View style={{ padding: 40, alignItems: 'center' }}>
             <ActivityIndicator />
-            <Text style={{marginTop: 10}}>Loading investments...</Text>
+            <Text style={{ marginTop: 10 }}>Loading investments...</Text>
           </View>
         ) : error ? (
           <View style={styles.emptyState}>
@@ -851,7 +1047,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                       style={[
                         styles.bondId,
                         displayStatus === 'Pending Approval' &&
-                          styles.bondIdPending,
+                        styles.bondIdPending,
                       ]}>
                       {item.id}
                     </Text>
@@ -860,12 +1056,12 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                   <View
                     style={[
                       styles.statusBadge,
-                      {backgroundColor: colors.bg},
+                      { backgroundColor: colors.bg },
                     ]}>
                     <Text
                       style={[
                         styles.statusBadgeText,
-                        {color: colors.fg},
+                        { color: colors.fg },
                       ]}>
                       {displayStatus.toUpperCase()}
                     </Text>
@@ -1000,6 +1196,20 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                       <TouchableOpacity
                         style={styles.actionIconBtn}
                         onPress={() => {
+                          const currentEffectiveStatus = getItemEffectiveStatus(item);
+                          if (
+                            currentEffectiveStatus === 'Extension Requested' ||
+                            currentEffectiveStatus === 'Pending Extension'
+                          ) {
+                            Alert.alert(
+                              'Request Already Pending',
+                              'Your tenure extension request is already pending admin approval.',
+                            );
+                            return;
+                          }
+                          if (currentEffectiveStatus === 'Pre-Close Requested') {
+                            return;
+                          }
                           setExtension(item);
                           const curr = Number(item.tenureMonths) || 3;
                           const defaultOpt =
@@ -1037,7 +1247,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
 
         <TouchableOpacity
           style={styles.newInvestmentBtn}
-          onPress={() => navigation.navigate('InvestNow', {investorId})}>
+          onPress={() => navigation.navigate('InvestNow', { investorId })}>
           <Icon name="plus-circle-outline" size={18} color="#8A6D2F" />
           <Text style={styles.newInvestmentBtnText}>New Investment</Text>
         </TouchableOpacity>
@@ -1070,7 +1280,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
                   </View>
                   <TouchableOpacity
                     onPress={() => setView(null)}
-                    hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Icon name="close" size={20} color="#6B7280" />
                   </TouchableOpacity>
                 </View>
@@ -1118,7 +1328,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               <Text style={styles.modalTitle}>Request Tenure Extension</Text>
               <TouchableOpacity
                 onPress={() => setExtension(null)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Icon name="close" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -1183,7 +1393,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               <Text style={styles.modalTitle}>Request Pre-Close</Text>
               <TouchableOpacity
                 onPress={() => setPreclose(null)}
-                hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                 <Icon name="close" size={20} color="#6B7280" />
               </TouchableOpacity>
             </View>
@@ -1216,7 +1426,7 @@ const MyInvestmentsScreen = ({navigation, route}: any) => {
               <TouchableOpacity
                 style={[
                   styles.modalConfirmBtn,
-                  !reason.trim() && {opacity: 0.5},
+                  !reason.trim() && { opacity: 0.5 },
                 ]}
                 disabled={!reason.trim() || busy}
                 onPress={submitPreclose}>

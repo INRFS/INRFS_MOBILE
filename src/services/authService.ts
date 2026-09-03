@@ -22,7 +22,115 @@ export type UserResponse = {
   branch_id?: number | null;
 };
 
+export type ForgotPasswordSendOtpResponse = {
+  message?: string;
+  detail?: string;
+};
+
+export type ForgotPasswordVerifyOtpResponse = {
+  message?: string;
+  detail?: string;
+};
+
+export type ForgotPasswordResetResponse = {
+  message?: string;
+  detail?: string;
+};
+
+export type SendEmailOtpResponse = {
+  success?: boolean;
+  message?: string;
+  detail?: string;
+};
+
+export type VerifyEmailOtpResponse = {
+  success?: boolean;
+  valid?: boolean;
+  message?: string;
+  detail?: string;
+};
+
+export type InvestorRegisterPayload = {
+  full_name: string;
+  mobile: string;
+  email?: string | null;
+  password: string;
+  date_of_birth: string;
+  aadhaar_number: string;
+  address: string;
+  city: string;
+  state_id: number;
+  pincode: string;
+  branch_id: number;
+};
+
+export type StaffRegisterPayload = {
+  full_name: string;
+  mobile: string;
+  email?: string | null;
+  username: string;
+  password: string;
+  branch_id?: number | null;
+};
+
 export const authService = {
+  /**
+   * Send Email OTP (Registration)
+   * POST /auth/email/send-otp
+   */
+  sendEmailOtp: async (email: string, name?: string): Promise<SendEmailOtpResponse> => {
+    const response = await apiClient.post<SendEmailOtpResponse>(
+      '/auth/email/send-otp',
+      {
+        email: email.trim().toLowerCase(),
+        name: name?.trim() || 'User',
+      },
+    );
+    return response.data;
+  },
+
+  /**
+   * Verify Email OTP (Registration)
+   * POST /auth/email/verify-otp
+   */
+  verifyEmailOtp: async (email: string, otp: string): Promise<VerifyEmailOtpResponse> => {
+    const response = await apiClient.post<VerifyEmailOtpResponse>(
+      '/auth/email/verify-otp',
+      {
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
+      },
+    );
+    return response.data;
+  },
+
+  /**
+   * Register Investor
+   * POST /auth/investor/register
+   */
+  registerInvestor: async (payload: InvestorRegisterPayload): Promise<any> => {
+    const response = await apiClient.post('/auth/investor/register', payload);
+    return response.data;
+  },
+
+  /**
+   * Register Admin
+   * POST /auth/admin/register
+   */
+  registerAdmin: async (payload: StaffRegisterPayload): Promise<any> => {
+    const response = await apiClient.post('/auth/admin/register', payload);
+    return response.data;
+  },
+
+  /**
+   * Register Super Admin
+   * POST /auth/superadmin/register
+   */
+  registerSuperAdmin: async (payload: StaffRegisterPayload): Promise<any> => {
+    const response = await apiClient.post('/auth/superadmin/register', payload);
+    return response.data;
+  },
+
   /**
    * Investor Login
    * POST /auth/investor/login
@@ -44,6 +152,58 @@ export const authService = {
     }
 
     return data;
+  },
+
+  /**
+   * Send Forgot Password OTP
+   * POST /auth/forgot-password/send-otp
+   */
+  sendForgotPasswordOtp: async (email: string): Promise<ForgotPasswordSendOtpResponse> => {
+    const response = await apiClient.post<ForgotPasswordSendOtpResponse>(
+      '/auth/forgot-password/send-otp',
+      {
+        email: email.trim().toLowerCase(),
+      },
+    );
+    return response.data;
+  },
+
+  /**
+   * Verify Forgot Password OTP
+   * POST /auth/forgot-password/verify-otp
+   */
+  verifyForgotPasswordOtp: async (
+    email: string,
+    otp: string,
+  ): Promise<ForgotPasswordVerifyOtpResponse> => {
+    const response = await apiClient.post<ForgotPasswordVerifyOtpResponse>(
+      '/auth/forgot-password/verify-otp',
+      {
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
+      },
+    );
+    return response.data;
+  },
+
+  /**
+   * Reset Forgot Password
+   * POST /auth/forgot-password/reset
+   */
+  resetForgotPassword: async (
+    email: string,
+    otp: string,
+    newPassword: string,
+  ): Promise<ForgotPasswordResetResponse> => {
+    const response = await apiClient.post<ForgotPasswordResetResponse>(
+      '/auth/forgot-password/reset',
+      {
+        email: email.trim().toLowerCase(),
+        otp: otp.trim(),
+        new_password: newPassword,
+      },
+    );
+    return response.data;
   },
 
   /**

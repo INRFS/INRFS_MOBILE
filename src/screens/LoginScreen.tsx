@@ -7,6 +7,8 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
+  Modal,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import Svg, {Path, Circle} from 'react-native-svg';
@@ -156,6 +158,150 @@ const BottomWaveDecor = () => (
   </View>
 );
 
+// -----------------------------------------------------------------------
+// Backend error message formatters
+// Transforms backend responses to user-friendly messages without exposing
+// technical error details.
+// -----------------------------------------------------------------------
+const formatInvestorBackendError = (rawError: any): string => {
+  const detail = (
+    rawError?.data?.detail ||
+    rawError?.originalError?.response?.data?.detail ||
+    rawError?.response?.data?.detail ||
+    rawError?.message ||
+    ''
+  ).toLowerCase();
+
+  // Network / timeout
+  if (
+    detail.includes('network') ||
+    detail.includes('unable to reach') ||
+    detail.includes('timeout') ||
+    detail.includes('connection')
+  ) {
+    return 'Unable to reach the server. Please check your internet connection.';
+  }
+
+  // If combined/ambiguous (e.g. "invalid investor ID or password"), return standard ambiguous message
+  if (detail.includes(' or ') || detail.includes('credential')) {
+    return 'Invalid Investor ID or password.';
+  }
+
+  // Clearly incorrect/invalid password
+  if (
+    detail.includes('password') &&
+    (detail.includes('incorrect') || detail.includes('wrong') || detail.includes('invalid'))
+  ) {
+    return 'Invalid password.';
+  }
+
+  // Clearly investor ID not found / does not exist
+  if (
+    detail.includes('not found') ||
+    detail.includes('does not exist') ||
+    detail.includes('no user') ||
+    detail.includes('invalid investor')
+  ) {
+    return 'Invalid Investor ID.';
+  }
+
+  // Default fallback when ambiguous or generic
+  return 'Invalid Investor ID or password.';
+};
+
+const formatAdminBackendError = (rawError: any): string => {
+  const detail = (
+    rawError?.detail ||
+    rawError?.data?.detail ||
+    rawError?.message ||
+    ''
+  ).toLowerCase();
+
+  // Network / timeout
+  if (
+    detail.includes('network') ||
+    detail.includes('unable to reach') ||
+    detail.includes('timeout') ||
+    detail.includes('connection')
+  ) {
+    return 'Unable to reach the server. Please check your internet connection.';
+  }
+
+  // If combined/ambiguous, return standard ambiguous message
+  if (detail.includes(' or ') || detail.includes('credential')) {
+    return 'Invalid username or password.';
+  }
+
+  // Clearly incorrect/invalid password
+  if (
+    detail.includes('password') &&
+    (detail.includes('incorrect') || detail.includes('wrong') || detail.includes('invalid'))
+  ) {
+    return 'Invalid password.';
+  }
+
+  // Clearly username not found / does not exist
+  if (
+    detail.includes('not found') ||
+    detail.includes('does not exist') ||
+    detail.includes('no user') ||
+    detail.includes('invalid admin') ||
+    detail.includes('invalid username')
+  ) {
+    return 'Invalid username.';
+  }
+
+  // Default fallback when ambiguous or generic
+  return 'Invalid username or password.';
+};
+
+const formatSuperAdminBackendError = (rawError: any): string => {
+  const detail = (
+    rawError?.detail ||
+    rawError?.data?.detail ||
+    rawError?.message ||
+    ''
+  ).toLowerCase();
+
+  // Network / timeout
+  if (
+    detail.includes('network') ||
+    detail.includes('unable to reach') ||
+    detail.includes('timeout') ||
+    detail.includes('connection')
+  ) {
+    return 'Unable to reach the server. Please check your internet connection.';
+  }
+
+  // If combined/ambiguous, return standard ambiguous message
+  if (detail.includes(' or ') || detail.includes('credential')) {
+    return 'Invalid username or password.';
+  }
+
+  // Clearly incorrect/invalid password
+  if (
+    detail.includes('password') &&
+    (detail.includes('incorrect') || detail.includes('wrong') || detail.includes('invalid'))
+  ) {
+    return 'Invalid password.';
+  }
+
+  // Clearly username not found / does not exist
+  if (
+    detail.includes('not found') ||
+    detail.includes('does not exist') ||
+    detail.includes('no user') ||
+    detail.includes('invalid superadmin') ||
+    detail.includes('invalid admin') ||
+    detail.includes('invalid username')
+  ) {
+    return 'Invalid username.';
+  }
+
+  // Default fallback when ambiguous or generic
+  return 'Invalid username or password.';
+};
+
 const LoginScreen = ({navigation}: any) => {
   const {setAdminProfile} = useAppData();
 
@@ -165,9 +311,128 @@ const LoginScreen = ({navigation}: any) => {
   const [investorId, setInvestorId] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // ---- Forgot Password State ----
+  const [forgotModalVisible, setForgotModalVisible] = useState(false);
+  const [forgotStep, setForgotStep] = useState<'email' | 'otp' | 'reset'>('email');
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotOtp, setForgotOtp] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState('');
+  const [forgotSuccess, setForgotSuccess] = useState('');
+
+  const openForgotPassword = () => {
+    setForgotEmail('');
+    setForgotOtp('');
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setForgotError('');
+    setForgotSuccess('');
+    setForgotStep('email');
+    setForgotModalVisible(true);
+  };
+
+  const closeForgotPassword = () => {
+    setForgotModalVisible(false);
+    setForgotError('');
+    setForgotSuccess('');
+    setForgotStep('email');
+  };
+
+  const handleSendOtp = async () => {
+    setForgotError('');
+    setForgotSuccess('');
+    const trimmedEmail = forgotEmail.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setForgotError('Please enter your email address.');
+      return;
+    }
+    const emailCheck = validation.isValidEmail(trimmedEmail);
+    if (!emailCheck.isValid) {
+      setForgotError(emailCheck.error || 'Please enter a valid email address.');
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const res = await authService.sendForgotPasswordOtp(trimmedEmail);
+      setForgotSuccess(res?.message || 'OTP has been sent to your email.');
+      setForgotStep('otp');
+    } catch (err: any) {
+      setForgotError(err?.message || 'Unable to send OTP. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    setForgotError('');
+    const trimmedOtp = forgotOtp.trim();
+    if (!trimmedOtp || trimmedOtp.length !== 6 || /\D/.test(trimmedOtp)) {
+      setForgotError('Please enter a valid 6-digit OTP.');
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const res = await authService.verifyForgotPasswordOtp(forgotEmail, trimmedOtp);
+      setForgotSuccess(res?.message || 'OTP verified successfully.');
+      setForgotStep('reset');
+    } catch (err: any) {
+      setForgotError(err?.message || 'Invalid OTP. Please check and try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const handleResetPassword = async () => {
+    setForgotError('');
+    const cleanNewPassword = forgotNewPassword;
+    const cleanConfirmPassword = forgotConfirmPassword;
+
+    if (!cleanNewPassword) {
+      setForgotError('Please enter a new password.');
+      return;
+    }
+
+    if (cleanNewPassword.length < 8) {
+      setForgotError('Password must contain at least 8 characters.');
+      return;
+    }
+
+    if (!cleanConfirmPassword) {
+      setForgotError('Please confirm your new password.');
+      return;
+    }
+
+    if (cleanNewPassword !== cleanConfirmPassword) {
+      setForgotError('Passwords do not match.');
+      return;
+    }
+
+    try {
+      setForgotLoading(true);
+      const res = await authService.resetForgotPassword(
+        forgotEmail,
+        forgotOtp,
+        cleanNewPassword,
+      );
+      const successMsg = res?.message || 'Password reset successfully.';
+      closeForgotPassword();
+      setErrorMsg('');
+      Alert.alert('Success', successMsg);
+    } catch (err: any) {
+      setForgotError(err?.message || 'Password reset failed. Please try again.');
+    } finally {
+      setForgotLoading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setErrorMsg('');
@@ -183,11 +448,16 @@ const LoginScreen = ({navigation}: any) => {
     // }
     // =========================================================
     if (selectedRole === 'investor') {
-      if (!validation.isValidInvestorId(investorId)) {
+      const trimmedInvestorId = investorId.trim();
+      if (!trimmedInvestorId) {
         setErrorMsg('Please enter your Investor ID.');
         return;
       }
-      if (!validation.isValidPassword(password)) {
+      if (!trimmedInvestorId.startsWith('INV')) {
+        setErrorMsg('Invalid Investor ID. Investor ID must start with INV.');
+        return;
+      }
+      if (!password.trim()) {
         setErrorMsg('Please enter your password.');
         return;
       }
@@ -196,7 +466,7 @@ const LoginScreen = ({navigation}: any) => {
         setLoading(true);
 
         const data = await authService.loginInvestor(
-          investorId.trim(),
+          trimmedInvestorId,
           password,
         );
 
@@ -204,10 +474,7 @@ const LoginScreen = ({navigation}: any) => {
         navigation.navigate('InvestorDashboard');
       } catch (error: any) {
         setLoading(false);
-        setErrorMsg(
-          error?.message ||
-            'Invalid Investor ID or password. Please try again.',
-        );
+        setErrorMsg(formatInvestorBackendError(error));
       }
 
       return;
@@ -224,10 +491,17 @@ const LoginScreen = ({navigation}: any) => {
     // }
     // =========================================================
     if (selectedRole === 'admin') {
-      if (!username.trim() || !password.trim()) {
-        setErrorMsg(
-          'Please enter username and password.',
-        );
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername) {
+        setErrorMsg('Please enter your username.');
+        return;
+      }
+      if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(trimmedUsername)) {
+        setErrorMsg('Invalid Admin username. Username must contain letters only.');
+        return;
+      }
+      if (!password.trim()) {
+        setErrorMsg('Please enter your password.');
         return;
       }
 
@@ -242,7 +516,7 @@ const LoginScreen = ({navigation}: any) => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              username: username.trim(),
+              username: trimmedUsername,
               password: password,
             }),
           },
@@ -272,20 +546,20 @@ const LoginScreen = ({navigation}: any) => {
           );
         }
         const accessToken =
-  data?.access_token ||
-  data?.token ||
-  data?.accessToken;
+          data?.access_token ||
+          data?.token ||
+          data?.accessToken;
 
-if (!accessToken) {
-  throw new Error(
-    'Login successful, but no access token was returned by the server.',
-  );
-}
+        if (!accessToken) {
+          throw new Error(
+            'Login successful, but no access token was returned by the server.',
+          );
+        }
 
-await AsyncStorage.setItem(
-  'access_token',
-  accessToken,
-);
+        await AsyncStorage.setItem(
+          'access_token',
+          accessToken,
+        );
 
         setLoading(false);
 
@@ -293,7 +567,7 @@ await AsyncStorage.setItem(
           name:
             data?.full_name ||
             data?.name ||
-            username.trim(),
+            trimmedUsername,
 
           email:
             data?.email ||
@@ -310,10 +584,7 @@ await AsyncStorage.setItem(
 
         console.log('Admin Login Error:', error);
 
-        setErrorMsg(
-          error?.message ||
-            'Admin login failed. Please check your credentials.',
-        );
+        setErrorMsg(formatAdminBackendError(error));
       }
 
       return;
@@ -330,10 +601,17 @@ await AsyncStorage.setItem(
     // }
     // =========================================================
     if (selectedRole === 'superadmin') {
-      if (!username.trim() || !password.trim()) {
-        setErrorMsg(
-          'Please enter username and password.',
-        );
+      const trimmedUsername = username.trim();
+      if (!trimmedUsername) {
+        setErrorMsg('Please enter your username.');
+        return;
+      }
+      if (!/^[A-Za-z]+( [A-Za-z]+)*$/.test(trimmedUsername)) {
+        setErrorMsg('Invalid Super Admin username. Username must contain letters only.');
+        return;
+      }
+      if (!password.trim()) {
+        setErrorMsg('Please enter your password.');
         return;
       }
 
@@ -348,7 +626,7 @@ await AsyncStorage.setItem(
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              username: username.trim(),
+              username: trimmedUsername,
               password: password,
             }),
           },
@@ -380,28 +658,28 @@ await AsyncStorage.setItem(
               'Super Admin login failed.',
           );
         }
-const accessToken =
-  data?.access_token ||
-  data?.token ||
-  data?.accessToken;
+        const accessToken =
+          data?.access_token ||
+          data?.token ||
+          data?.accessToken;
 
-if (!accessToken) {
-  throw new Error(
-    'Login successful, but no access token was returned by the server.',
-  );
-}
+        if (!accessToken) {
+          throw new Error(
+            'Login successful, but no access token was returned by the server.',
+          );
+        }
 
-await AsyncStorage.setItem(
-  'access_token',
-  accessToken,
-);
+        await AsyncStorage.setItem(
+          'access_token',
+          accessToken,
+        );
         setLoading(false);
 
         setAdminProfile({
           name:
             data?.full_name ||
             data?.name ||
-            username.trim(),
+            trimmedUsername,
 
           email:
             data?.email ||
@@ -421,10 +699,7 @@ await AsyncStorage.setItem(
           error,
         );
 
-        setErrorMsg(
-          error?.message ||
-            'Super Admin login failed. Please check your credentials.',
-        );
+        setErrorMsg(formatSuperAdminBackendError(error));
       }
 
       return;
@@ -560,7 +835,10 @@ await AsyncStorage.setItem(
                 placeholder="Enter your investor ID"
                 placeholderTextColor="#9CA3AF"
                 value={investorId}
-                onChangeText={setInvestorId}
+                onChangeText={text => {
+                  setErrorMsg('');
+                  setInvestorId(text);
+                }}
                 autoCapitalize="none"
               />
             </View>
@@ -582,11 +860,33 @@ await AsyncStorage.setItem(
                 style={styles.inputField}
                 placeholder="Enter your password"
                 placeholderTextColor="#9CA3AF"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => {
+                  setErrorMsg('');
+                  setPassword(text);
+                }}
               />
+
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.forgotPasswordBtn}
+              onPress={openForgotPassword}
+              activeOpacity={0.7}>
+              <Text style={styles.forgotPasswordText}>
+                Forgot Password?
+              </Text>
+            </TouchableOpacity>
 
             {errorMsg ? (
               <View style={styles.errorBox}>
@@ -661,7 +961,18 @@ await AsyncStorage.setItem(
                 placeholder="Enter username"
                 placeholderTextColor="#9CA3AF"
                 value={username}
-                onChangeText={setUsername}
+                onChangeText={text => {
+                  setUsername(text);
+                  if (text && !/^[A-Za-z ]*$/.test(text)) {
+                    setErrorMsg(
+                      selectedRole === 'admin'
+                        ? 'Invalid Admin username. Username must contain letters only.'
+                        : 'Invalid Super Admin username. Username must contain letters only.',
+                    );
+                  } else {
+                    setErrorMsg('');
+                  }
+                }}
                 autoCapitalize="none"
               />
             </View>
@@ -683,10 +994,23 @@ await AsyncStorage.setItem(
                 style={styles.inputField}
                 placeholder="Enter password"
                 placeholderTextColor="#9CA3AF"
-                secureTextEntry
+                secureTextEntry={!showPassword}
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={text => {
+                  setErrorMsg('');
+                  setPassword(text);
+                }}
               />
+
+              <TouchableOpacity
+                onPress={() => setShowPassword(prev => !prev)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color="#9CA3AF"
+                />
+              </TouchableOpacity>
             </View>
 
             {errorMsg ? (
@@ -788,6 +1112,282 @@ await AsyncStorage.setItem(
           </View>
         </View>
       </ScrollView>
+
+      {/* =====================================================
+          INVESTOR FORGOT PASSWORD MODAL
+      ====================================================== */}
+      <Modal
+        visible={forgotModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={closeForgotPassword}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            {/* Modal Header */}
+            <View style={styles.modalHeader}>
+              <View style={{flexDirection: 'row', alignItems: 'center', gap: 8}}>
+                <View
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: '#E5EEFF',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                  <Icon name="lock-reset" size={20} color="#2563EB" />
+                </View>
+                <Text style={styles.modalTitle}>Forgot Password</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.modalCloseBtn}
+                onPress={closeForgotPassword}
+                activeOpacity={0.7}>
+                <Icon name="close" size={18} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Step Indicators */}
+            <View style={styles.stepIndicatorRow}>
+              <View style={[styles.stepCircle, styles.stepCircleActive]}>
+                <Text style={[styles.stepCircleText, styles.stepCircleTextActive]}>1</Text>
+              </View>
+              <View
+                style={[
+                  styles.stepLine,
+                  (forgotStep === 'otp' || forgotStep === 'reset') && styles.stepLineActive,
+                ]}
+              />
+              <View
+                style={[
+                  styles.stepCircle,
+                  (forgotStep === 'otp' || forgotStep === 'reset') && styles.stepCircleActive,
+                ]}>
+                <Text
+                  style={[
+                    styles.stepCircleText,
+                    (forgotStep === 'otp' || forgotStep === 'reset') && styles.stepCircleTextActive,
+                  ]}>
+                  2
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.stepLine,
+                  forgotStep === 'reset' && styles.stepLineActive,
+                ]}
+              />
+              <View
+                style={[
+                  styles.stepCircle,
+                  forgotStep === 'reset' && styles.stepCircleActive,
+                ]}>
+                <Text
+                  style={[
+                    styles.stepCircleText,
+                    forgotStep === 'reset' && styles.stepCircleTextActive,
+                  ]}>
+                  3
+                </Text>
+              </View>
+            </View>
+
+            {/* Error Message Display */}
+            {forgotError ? (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{forgotError}</Text>
+              </View>
+            ) : null}
+
+            {/* Success Message Display */}
+            {forgotSuccess && !forgotError ? (
+              <View style={styles.successBox}>
+                <Text style={styles.successText}>{forgotSuccess}</Text>
+              </View>
+            ) : null}
+
+            {/* STEP 1: ENTER EMAIL */}
+            {forgotStep === 'email' && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Enter your registered email address to receive a 6-digit OTP.
+                </Text>
+
+                <Text style={styles.label}>Email Address</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="email-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Enter your registered email"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    value={forgotEmail}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotEmail(text);
+                    }}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleSendOtp}
+                  disabled={forgotLoading}>
+                  <View style={styles.submitIconBox}>
+                    <Icon name="email-fast-outline" size={16} color="#fff" />
+                  </View>
+                  <Text style={styles.submitBtnText}>
+                    {forgotLoading ? 'Sending OTP...' : 'Send OTP'}
+                  </Text>
+                  {!forgotLoading && (
+                    <Icon
+                      name="arrow-right"
+                      size={18}
+                      color="#fff"
+                      style={styles.submitBtnArrow}
+                    />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* STEP 2: ENTER OTP */}
+            {forgotStep === 'otp' && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Please enter the 6-digit OTP sent to <Text style={{fontWeight: '700', color: '#111'}}>{forgotEmail}</Text>.
+                </Text>
+
+                <Text style={styles.label}>Enter 6-Digit OTP</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="shield-key-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="e.g. 123456"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    value={forgotOtp}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotOtp(text.replace(/[^0-9]/g, ''));
+                    }}
+                  />
+                </View>
+
+                <View style={styles.resendRow}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setForgotStep('email');
+                      setForgotError('');
+                      setForgotSuccess('');
+                    }}>
+                    <Text style={styles.resendLink}>Change Email</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    onPress={handleSendOtp}
+                    disabled={forgotLoading}>
+                    <Text style={styles.resendLink}>
+                      {forgotLoading ? 'Sending...' : 'Resend OTP'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleVerifyOtp}
+                  disabled={forgotLoading}>
+                  <View style={styles.submitIconBox}>
+                    <Icon name="check-circle-outline" size={16} color="#fff" />
+                  </View>
+                  <Text style={styles.submitBtnText}>
+                    {forgotLoading ? 'Verifying OTP...' : 'Verify OTP'}
+                  </Text>
+                  {!forgotLoading && (
+                    <Icon
+                      name="arrow-right"
+                      size={18}
+                      color="#fff"
+                      style={styles.submitBtnArrow}
+                    />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+
+            {/* STEP 3: RESET PASSWORD */}
+            {forgotStep === 'reset' && (
+              <>
+                <Text style={styles.modalSubtitle}>
+                  Create a new password of at least 8 characters for your account.
+                </Text>
+
+                <Text style={styles.label}>New Password</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="lock-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Enter new password (min. 8 characters)"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry
+                    value={forgotNewPassword}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotNewPassword(text);
+                    }}
+                  />
+                </View>
+
+                <Text style={styles.label}>Confirm New Password</Text>
+                <View style={styles.inputWrapper}>
+                  <View style={styles.inputIconBox}>
+                    <Icon name="lock-check-outline" size={18} color={ICON_TINT} />
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    placeholder="Re-enter your new password"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry
+                    value={forgotConfirmPassword}
+                    onChangeText={text => {
+                      setForgotError('');
+                      setForgotConfirmPassword(text);
+                    }}
+                  />
+                </View>
+
+                <TouchableOpacity
+                  style={styles.submitBtn}
+                  onPress={handleResetPassword}
+                  disabled={forgotLoading}>
+                  <View style={styles.submitIconBox}>
+                    <Icon name="lock-reset" size={16} color="#fff" />
+                  </View>
+                  <Text style={styles.submitBtnText}>
+                    {forgotLoading ? 'Resetting Password...' : 'Reset Password'}
+                  </Text>
+                  {!forgotLoading && (
+                    <Icon
+                      name="arrow-right"
+                      size={18}
+                      color="#fff"
+                      style={styles.submitBtnArrow}
+                    />
+                  )}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };

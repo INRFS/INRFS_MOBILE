@@ -590,20 +590,55 @@ export const getPendingTenureExtensions = async (
 };
 
 /**
- * 7. PUT /admin/tenure-extensions/{request_id}/submit
- * Admin Reviews and Sends to Super Admin!
+ * 7. PUT /admin/tenure-extensions/{request_id}/approve
+ * Admin directly approves the tenure extension!
  */
-export const submitTenureExtension = async (
+export const approveTenureExtension = async (
   requestId: number | string,
   payload: { remarks?: string } = {},
 ): Promise<ApiResponse> => {
   const idNum = Number(requestId);
   if (!idNum) throw new Error('Valid Tenure Extension Request ID is required.');
 
-  return await apiRequest(`/admin/tenure-extensions/${idNum}/submit`, {
+  try {
+    return await apiRequest(`/admin/tenure-extensions/${idNum}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        remarks: payload.remarks?.trim() || 'Approved by Admin.',
+      }),
+    });
+  } catch (err) {
+    // Preserve fallback for existing backend compatibility if required
+    return await apiRequest(`/admin/tenure-extensions/${idNum}/submit`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        remarks: payload.remarks?.trim() || 'Approved by Admin.',
+      }),
+    });
+  }
+};
+
+/**
+ * 8. PUT /admin/tenure-extensions/{request_id}/reject
+ * Admin rejects the tenure extension request
+ */
+export const rejectTenureExtension = async (
+  requestId: number | string,
+  payload: { remarks?: string } = {},
+): Promise<ApiResponse> => {
+  const idNum = Number(requestId);
+  if (!idNum) throw new Error('Valid Tenure Extension Request ID is required.');
+
+  return await apiRequest(`/admin/tenure-extensions/${idNum}/reject`, {
     method: 'PUT',
     body: JSON.stringify({
-      remarks: payload.remarks?.trim() || 'Submitted to Super Admin by Admin.',
+      remarks: payload.remarks?.trim() || 'Rejected by Admin.',
     }),
   });
 };
+
+/**
+ * Backward compatibility alias:
+ * submitTenureExtension points to approveTenureExtension
+ */
+export const submitTenureExtension = approveTenureExtension;

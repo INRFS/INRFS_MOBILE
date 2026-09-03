@@ -244,8 +244,124 @@ export const styles = StyleSheet.create({
   submitBtnText: {color: '#fff', fontWeight: '700', fontSize: 15.5},
   submitBtnArrow: {marginLeft: 'auto', marginRight: 6},
 
+  forgotPasswordBtn: {
+    alignSelf: 'flex-end',
+    marginTop: -6,
+    marginBottom: 16,
+  },
+  forgotPasswordText: {
+    color: BLUE,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+
   footerText: {textAlign: 'center', fontSize: 12.5, color: GRAY, marginBottom: 22},
   footerLink: {color: BLUE, fontWeight: '700'},
+
+  // ---- Forgot Password Modal ----
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 22,
+    paddingBottom: 36,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: {width: 0, height: -4},
+    elevation: 10,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: NAVY,
+  },
+  modalSubtitle: {
+    fontSize: 13,
+    color: GRAY,
+    marginTop: 2,
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  modalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepIndicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 18,
+    gap: 8,
+  },
+  stepCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepCircleActive: {
+    backgroundColor: BLUE,
+  },
+  stepCircleText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  stepCircleTextActive: {
+    color: '#fff',
+  },
+  stepLine: {
+    height: 2,
+    width: 36,
+    backgroundColor: '#E2E8F0',
+  },
+  stepLineActive: {
+    backgroundColor: BLUE,
+  },
+  successBox: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 14,
+  },
+  successText: {
+    color: '#059669',
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
+  resendRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: -6,
+    marginBottom: 16,
+  },
+  resendLink: {
+    color: BLUE,
+    fontSize: 12.5,
+    fontWeight: '600',
+  },
 
   // ---- Trust badges row ----
   trustRow: {
