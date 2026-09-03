@@ -95,9 +95,21 @@ const InvestorManagementScreen = ({navigation}: any) => {
         getInvestorStatusesFilter(),
       ]);
 
-      const records = invRes.records || [];
-      const total = invRes.total || records.length;
+      let records = invRes.records || [];
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        records = records.filter(
+          i =>
+            (i.name && i.name.toLowerCase().includes(q)) ||
+            (i.email && i.email.toLowerCase().includes(q)) ||
+            (i.mobile && i.mobile.includes(q)) ||
+            (i.investorId && i.investorId.toLowerCase().includes(q)) ||
+            (i.branchName && i.branchName.toLowerCase().includes(q)) ||
+            (i.status && i.status.toLowerCase().includes(q)),
+        );
+      }
       setInvestors(records);
+      const total = records.length > 0 ? invRes.total || records.length : 0;
       setTotalCount(total);
 
       if (sumRes && sumRes.totalInvestors > 0) {
@@ -490,7 +502,9 @@ const InvestorManagementScreen = ({navigation}: any) => {
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIcon}>👥</Text>
             </View>
-            <Text style={styles.emptyTitle}>No investors found</Text>
+            <Text style={styles.emptyTitle}>
+              {search.trim() || isFiltered ? 'Not found' : 'No investors found'}
+            </Text>
             <Text style={styles.emptyText}>
               {isFiltered
                 ? 'Try adjusting your search query or filters.'

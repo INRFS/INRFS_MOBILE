@@ -117,7 +117,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<TabKey>('Pending');
+  const [activeTab, setActiveTab] = useState<TabKey>('All');
   const [query, setQuery] = useState('');
   const [dateFilter, setDateFilter] = useState(''); // dd-mm-yyyy
 
@@ -843,7 +843,11 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           </View>
         ) : groups.length === 0 ? (
           <View style={styles.emptyWrap}>
-            <Text style={styles.emptyText}>No interest payments found.</Text>
+            <Text style={styles.emptyText}>
+              {query.trim() || dateFilter.trim()
+                ? 'Not found'
+                : 'No interest payments found.'}
+            </Text>
           </View>
         ) : (
           groups.map(group => (
@@ -994,19 +998,27 @@ const InterestPayoutsScreen = ({navigation}: any) => {
 
 const local = StyleSheet.create({
   metricsScroll: {
+    marginHorizontal: -20,
     marginBottom: 16,
   },
   metricsContainer: {
     flexDirection: 'row',
     gap: 10,
-    paddingRight: 10,
+    paddingHorizontal: 20,
+    paddingVertical: 4,
+    alignItems: 'center',
   },
   metricCard: {
     borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    minWidth: 140,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    minWidth: 135,
     borderWidth: 1,
+    shadowColor: '#0F172A',
+    shadowOffset: {width: 0, height: 2},
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   metricCardNavy: {
     backgroundColor: '#0B1E45',

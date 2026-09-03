@@ -39,6 +39,25 @@ export const styles = StyleSheet.create({
     paddingBottom: 100,
   },
 
+  rejectionNoticeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEE2E2',
+    borderColor: '#FECACA',
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 8,
+    marginBottom: 8,
+    gap: 8,
+  },
+  rejectionNoticeText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#DC2626',
+    flex: 1,
+  },
+
   // =========================================================
   // HEADER
   // =========================================================

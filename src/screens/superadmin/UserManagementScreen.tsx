@@ -52,12 +52,14 @@ const UserManagementScreen = ({navigation}: any) => {
     loadData(true);
   }, [loadData]);
 
+  const q = search.trim().toLowerCase();
   const filtered = investors.filter(
     u =>
-      u.name.toLowerCase().includes(search.toLowerCase()) ||
-      u.email.toLowerCase().includes(search.toLowerCase()) ||
-      u.branchName.toLowerCase().includes(search.toLowerCase()) ||
-      u.investorId.toLowerCase().includes(search.toLowerCase()),
+      !q ||
+      u.name.toLowerCase().includes(q) ||
+      u.email.toLowerCase().includes(q) ||
+      u.branchName.toLowerCase().includes(q) ||
+      u.investorId.toLowerCase().includes(q),
   );
 
   return (
@@ -105,7 +107,9 @@ const UserManagementScreen = ({navigation}: any) => {
             <Text style={local.loadingText}>Loading registered users...</Text>
           </View>
         ) : filtered.length === 0 ? (
-          <Text style={styles.emptyText}>No users found.</Text>
+          <Text style={styles.emptyText}>
+            {search.trim() ? 'Not found' : 'No users found.'}
+          </Text>
         ) : (
           filtered.map(user => (
             <View key={String(user.id)} style={styles.card}>

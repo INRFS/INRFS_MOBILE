@@ -13,6 +13,7 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 
 import AppHeader from '../../components/AppHeader';
+import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
 import {validation} from '../../utils/validation';
 import {
@@ -105,12 +106,14 @@ const AdminManagementScreen = ({navigation}: any) => {
     loadData(true);
   }, [loadData]);
 
+  const searchTrimmed = search.trim().toLowerCase();
   const filtered = admins.filter(
     a =>
-      a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.email.toLowerCase().includes(search.toLowerCase()) ||
-      a.branchName.toLowerCase().includes(search.toLowerCase()) ||
-      a.mobile.includes(search),
+      !searchTrimmed ||
+      a.name.toLowerCase().includes(searchTrimmed) ||
+      a.email.toLowerCase().includes(searchTrimmed) ||
+      a.branchName.toLowerCase().includes(searchTrimmed) ||
+      a.mobile.includes(searchTrimmed),
   );
 
   /* ==========================================================
@@ -337,7 +340,9 @@ const AdminManagementScreen = ({navigation}: any) => {
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIcon}>👤</Text>
             </View>
-            <Text style={styles.emptyTitle}>No administrators found</Text>
+            <Text style={styles.emptyTitle}>
+              {search.trim() ? 'Not found' : 'No administrators found'}
+            </Text>
             <Text style={styles.emptyText}>
               {search
                 ? 'No admin records match your search criteria.'
@@ -862,6 +867,8 @@ const AdminManagementScreen = ({navigation}: any) => {
           </View>
         </View>
       </Modal>
+
+      <SuperAdminBottomTabBar navigation={navigation} active="AdminManagement" />
     </SafeAreaView>
   );
 };

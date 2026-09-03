@@ -23,6 +23,7 @@ import {
   rejectInvestment,
   getPendingTenureExtensions,
   approveTenureExtension,
+  rejectTenureExtension,
   submitTenureExtension,
   getErrorMessage,
   InvestmentRecord,
@@ -277,6 +278,28 @@ const BondTrackingScreen = ({navigation}: any) => {
     }
   };
 
+  const handleConfirmRejectTenure = async () => {
+    if (!reviewingTenure) return;
+
+    try {
+      setIsSubmittingTenure(true);
+      await rejectTenureExtension(reviewingTenure.requestId, {
+        remarks: tenureRemarks.trim() || 'Rejected by Admin.',
+      });
+
+      setReviewingTenure(null);
+      await loadData(false);
+      Alert.alert(
+        'Success',
+        'Tenure extension request rejected successfully.',
+      );
+    } catch (err: any) {
+      Alert.alert('Action Failed', getErrorMessage(err));
+    } finally {
+      setIsSubmittingTenure(false);
+    }
+  };
+
   // EXPORT
   const handleExport = () => {
     Alert.alert('Export', 'Investment records exported successfully.');
@@ -476,7 +499,9 @@ const BondTrackingScreen = ({navigation}: any) => {
           ) : activeTab === 'tenure' ? (
             filteredTenureRequests.length === 0 ? (
               <View style={local.emptyWrap}>
-                <Text style={local.emptyText}>No pending tenure extension requests found.</Text>
+                <Text style={local.emptyText}>
+                  {query.trim() ? 'Not found' : 'No pending tenure extension requests found.'}
+                </Text>
               </View>
             ) : (
               filteredTenureRequests.map(r => (
@@ -534,7 +559,9 @@ const BondTrackingScreen = ({navigation}: any) => {
           ) : filteredInvestments.length === 0 ? (
             <View style={local.emptyWrap}>
               <Text style={local.emptyText}>
-                {activeTab === 'pending'
+                {query.trim()
+                  ? 'Not found'
+                  : activeTab === 'pending'
                   ? 'No pending investments awaiting approval.'
                   : 'No investments found.'}
               </Text>
@@ -956,6 +983,17 @@ const BondTrackingScreen = ({navigation}: any) => {
                     disabled={isSubmittingTenure}
                     onPress={() => setReviewingTenure(null)}>
                     <Text style={local.modalCancelBtnText}>Cancel</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[local.modalRejectBtn, isSubmittingTenure && {opacity: 0.6}]}
+                    disabled={isSubmittingTenure}
+                    onPress={handleConfirmRejectTenure}>
+                    {isSubmittingTenure ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={local.modalRejectBtnText}>Reject Extension</Text>
+                    )}
                   </TouchableOpacity>
 
                   <TouchableOpacity

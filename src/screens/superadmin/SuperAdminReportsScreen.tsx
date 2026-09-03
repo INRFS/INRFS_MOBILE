@@ -315,10 +315,78 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
     [currentQueryParams, loadedDatasets],
   );
 
-  // When filters or active tab change, load if not cached
+  // When filters or search or active tab change, load dataset
   useEffect(() => {
-    loadActiveDataset(activeDatasetType, false);
-  }, [activeDatasetType, loadActiveDataset]);
+    loadActiveDataset(activeDatasetType, true);
+  }, [activeDatasetType, currentQueryParams]);
+
+  const displayInvestments = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return investments;
+    return investments.filter(
+      i =>
+        (i.investor_name && i.investor_name.toLowerCase().includes(q)) ||
+        (i.investor_id && i.investor_id.toLowerCase().includes(q)) ||
+        (i.investment_id && i.investment_id.toLowerCase().includes(q)) ||
+        ((i as any).bond_number && (i as any).bond_number.toLowerCase().includes(q)) ||
+        (i.branch_name && i.branch_name.toLowerCase().includes(q)) ||
+        (i.admin_name && i.admin_name.toLowerCase().includes(q)) ||
+        (i.status_name && i.status_name.toLowerCase().includes(q)) ||
+        String(i.investment_amount || '').includes(q),
+    );
+  }, [investments, search]);
+
+  const displayInvestors = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return investors;
+    return investors.filter(
+      i =>
+        (i.name && i.name.toLowerCase().includes(q)) ||
+        (i.investor_id && i.investor_id.toLowerCase().includes(q)) ||
+        (i.mobile && i.mobile.includes(q)) ||
+        (i.email && i.email.toLowerCase().includes(q)) ||
+        (i.branch_name && i.branch_name.toLowerCase().includes(q)) ||
+        (i.status && i.status.toLowerCase().includes(q)),
+    );
+  }, [investors, search]);
+
+  const displayAdmins = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return admins;
+    return admins.filter(
+      a =>
+        (a.admin_name && a.admin_name.toLowerCase().includes(q)) ||
+        (a.email && a.email.toLowerCase().includes(q)) ||
+        (a.branch_name && a.branch_name.toLowerCase().includes(q)) ||
+        (a.status && a.status.toLowerCase().includes(q)),
+    );
+  }, [admins, search]);
+
+  const displaySettlements = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return settlements;
+    return settlements.filter(
+      s =>
+        (s.investor_name && s.investor_name.toLowerCase().includes(q)) ||
+        (s.investment_id && String(s.investment_id).toLowerCase().includes(q)) ||
+        (s.settlement_type && s.settlement_type.toLowerCase().includes(q)) ||
+        (s.branch_name && s.branch_name.toLowerCase().includes(q)) ||
+        (s.status && s.status.toLowerCase().includes(q)) ||
+        String(s.settlement_amount || '').includes(q),
+    );
+  }, [settlements, search]);
+
+  const displayExtensions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return extensions;
+    return extensions.filter(
+      e =>
+        (e.investor_name && e.investor_name.toLowerCase().includes(q)) ||
+        (e.investment_id && String(e.investment_id).toLowerCase().includes(q)) ||
+        (e.branch_name && e.branch_name.toLowerCase().includes(q)) ||
+        (e.status && e.status.toLowerCase().includes(q)),
+    );
+  }, [extensions, search]);
 
   // Pull-to-refresh action
   const handleRefresh = useCallback(() => {
@@ -1322,12 +1390,14 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
-                {investments.length === 0 ? (
+                {displayInvestments.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
                       <Text style={styles.emptyIcon}>📈</Text>
                     </View>
-                    <Text style={styles.emptyTitle}>No Investments Found</Text>
+                    <Text style={styles.emptyTitle}>
+                      {search.trim() || activeFilterCount > 0 ? 'Not found' : 'No Investments Found'}
+                    </Text>
                     <Text style={styles.emptySubtitle}>
                       No investments match your current search or filter criteria.
                     </Text>
@@ -1342,7 +1412,7 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                     )}
                   </View>
                 ) : (
-                  investments.map((inv, idx) => {
+                  displayInvestments.map((inv, idx) => {
                     const badge = getStatusBadge(inv.status_name);
                     return (
                       <TouchableOpacity
@@ -1477,18 +1547,20 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 )}
 
-                {investors.length === 0 ? (
+                {displayInvestors.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
                       <Text style={styles.emptyIcon}>👥</Text>
                     </View>
-                    <Text style={styles.emptyTitle}>No Investors Found</Text>
+                    <Text style={styles.emptyTitle}>
+                      {search.trim() || activeFilterCount > 0 ? 'Not found' : 'No Investors Found'}
+                    </Text>
                     <Text style={styles.emptySubtitle}>
                       No investor records found for the applied filters.
                     </Text>
                   </View>
                 ) : (
-                  investors.map((inv, idx) => {
+                  displayInvestors.map((inv, idx) => {
                     const badge = getStatusBadge(inv.status);
                     return (
                       <View
@@ -1709,18 +1781,20 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
-                {admins.length === 0 ? (
+                {displayAdmins.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
                       <Text style={styles.emptyIcon}>🛡️</Text>
                     </View>
-                    <Text style={styles.emptyTitle}>No Admins Found</Text>
+                    <Text style={styles.emptyTitle}>
+                      {search.trim() || activeFilterCount > 0 ? 'Not found' : 'No Admins Found'}
+                    </Text>
                     <Text style={styles.emptySubtitle}>
                       No admin records match the criteria.
                     </Text>
                   </View>
                 ) : (
-                  admins.map((adm, idx) => {
+                  displayAdmins.map((adm, idx) => {
                     const badge = getStatusBadge(adm.status || 'Active');
                     return (
                       <View
@@ -2114,18 +2188,20 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
-                {settlements.length === 0 ? (
+                {displaySettlements.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
                       <Text style={styles.emptyIcon}>💳</Text>
                     </View>
-                    <Text style={styles.emptyTitle}>No Settlements Found</Text>
+                    <Text style={styles.emptyTitle}>
+                      {search.trim() || activeFilterCount > 0 ? 'Not found' : 'No Settlements Found'}
+                    </Text>
                     <Text style={styles.emptySubtitle}>
                       Settlement requests and payouts will appear here.
                     </Text>
                   </View>
                 ) : (
-                  settlements.map((sett, idx) => {
+                  displaySettlements.map((sett, idx) => {
                     const badge = getStatusBadge(sett.status);
                     return (
                       <View
@@ -2431,18 +2507,20 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
                   </View>
                 </View>
 
-                {extensions.length === 0 ? (
+                {displayExtensions.length === 0 ? (
                   <View style={styles.emptyWrap}>
                     <View style={styles.emptyIconWrap}>
                       <Text style={styles.emptyIcon}>⏳</Text>
                     </View>
-                    <Text style={styles.emptyTitle}>No Extensions Found</Text>
+                    <Text style={styles.emptyTitle}>
+                      {search.trim() || activeFilterCount > 0 ? 'Not found' : 'No Extensions Found'}
+                    </Text>
                     <Text style={styles.emptySubtitle}>
                       Tenure extension requests will appear here.
                     </Text>
                   </View>
                 ) : (
-                  extensions.map((ext, idx) => {
+                  displayExtensions.map((ext, idx) => {
                     const badge = getStatusBadge(ext.status);
                     return (
                       <View

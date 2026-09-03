@@ -30,7 +30,9 @@ export type SuperAdminTabKey =
   | 'Investments'
   | 'Payments'
   | 'More'
-  | 'Profile';
+  | 'Profile'
+  | 'AdminManagement'
+  | 'BranchManagement';
 
 /*
  * ============================================================
@@ -175,7 +177,9 @@ const SuperAdminBottomTabBar = ({
 
   const isMoreActive =
     active === 'More' ||
-    active === 'Profile';
+    active === 'Profile' ||
+    active === 'AdminManagement' ||
+    active === 'BranchManagement';
 
   /*
    * ============================================================

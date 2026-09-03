@@ -676,6 +676,30 @@ const MyInvestmentsScreen = ({ navigation, route }: any) => {
     });
   }, [items, activeTab, query, localActionState, targetTenures]);
 
+  const hasRejectedTenureExtension = useMemo(() => {
+    return items.some(item => {
+      const anyItem = (item as any).raw || item;
+      const extStatus = String(
+        anyItem.extension_request_status ||
+        anyItem.tenure_extension_request_status ||
+        anyItem.extension_status ||
+        anyItem.tenure_extension_status ||
+        anyItem.extension_request ||
+        anyItem.latest_extension_status ||
+        anyItem.extension_rejection_reason ||
+        '',
+      ).toLowerCase();
+
+      return (
+        anyItem.is_extension_rejected === true ||
+        anyItem.has_rejected_extension === true ||
+        anyItem.tenure_extension_rejected === true ||
+        extStatus.includes('reject') ||
+        extStatus.includes('cancel')
+      );
+    });
+  }, [items]);
+
   const total = useMemo(
     () => items.reduce((sum, x) => sum + x.amount + x.earned, 0),
     [items],
@@ -874,7 +898,7 @@ const MyInvestmentsScreen = ({ navigation, route }: any) => {
   };
 
   const getEmptyMessage = () => {
-    if (query) return `No investments match "${query}"`;
+    if (query.trim()) return 'Not found';
     switch (activeTab) {
       case 'active':
         return 'No active investments found.';
@@ -919,6 +943,15 @@ const MyInvestmentsScreen = ({ navigation, route }: any) => {
           />
         }
         showsVerticalScrollIndicator={false}>
+        {hasRejectedTenureExtension && (
+          <View style={styles.rejectionNoticeCard}>
+            <Icon name="alert-circle-outline" size={20} color="#DC2626" />
+            <Text style={styles.rejectionNoticeText}>
+              Admin had rejected the extension request.
+            </Text>
+          </View>
+        )}
+
         <View style={styles.heroCard}>
           <Text style={styles.heroLabel}>TOTAL PORTFOLIO VALUE</Text>
           <Text style={styles.heroValue}>{money(total)}</Text>

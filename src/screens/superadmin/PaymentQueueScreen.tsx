@@ -200,6 +200,20 @@ const PaymentQueueScreen = ({navigation}: any) => {
     loadData(true);
   }, [loadData]);
 
+  const searchTrimmed = searchInput.trim().toLowerCase();
+  const filteredPayments = payments.filter(p => {
+    if (!searchTrimmed) return true;
+    return (
+      (p.investorName && p.investorName.toLowerCase().includes(searchTrimmed)) ||
+      (p.bondId && p.bondId.toLowerCase().includes(searchTrimmed)) ||
+      (p.branchName && p.branchName.toLowerCase().includes(searchTrimmed)) ||
+      (p.paymentType && p.paymentType.toLowerCase().includes(searchTrimmed)) ||
+      (p.status && p.status.toLowerCase().includes(searchTrimmed)) ||
+      String(p.netAmount || '').includes(searchTrimmed) ||
+      String(p.amount || '').includes(searchTrimmed)
+    );
+  });
+
   // Dynamic Pending Summary calculation matching Web
   const pendingRecords = payments.filter(
     p => (p.status || '').toLowerCase() === 'pending',
@@ -471,7 +485,10 @@ const PaymentQueueScreen = ({navigation}: any) => {
               placeholder="Search by investor, bond, amount..."
               placeholderTextColor="#94A3B8"
               value={searchInput}
-              onChangeText={setSearchInput}
+              onChangeText={val => {
+                setSearchInput(val);
+                setSearch(val);
+              }}
               onSubmitEditing={handleSearchSubmit}
               returnKeyType="search"
             />
@@ -551,20 +568,22 @@ const PaymentQueueScreen = ({navigation}: any) => {
             <ActivityIndicator size="large" color="#0B1E45" />
             <Text style={styles.loadingText}>Loading payment records...</Text>
           </View>
-        ) : payments.length === 0 ? (
+        ) : filteredPayments.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIcon}>💳</Text>
             </View>
-            <Text style={styles.emptyTitle}>No payments found</Text>
+            <Text style={styles.emptyTitle}>
+              {searchInput.trim() || isFiltered ? 'Not found' : 'No payments found'}
+            </Text>
             <Text style={styles.emptyText}>
-              {isFiltered
+              {searchInput.trim() || isFiltered
                 ? 'No payments match your current search or filter criteria.'
                 : `There are currently no records under ${activeTab}.`}
             </Text>
           </View>
         ) : (
-          payments.map((payment, index) => {
+          filteredPayments.map((payment, index) => {
             const statusBadge = getStatusBadgeStyle(payment.status, payment.paymentType);
             const initial =
               payment.investorName && payment.investorName !== '—'

@@ -91,8 +91,21 @@ const InvestmentManagementScreen = ({navigation}: any) => {
         getSuperAdminBranchesFilter(),
       ]);
 
-      setInvestments(invRes.records || []);
-      const total = invRes.total || (invRes.records || []).length;
+      let records = invRes.records || [];
+      if (search.trim()) {
+        const q = search.trim().toLowerCase();
+        records = records.filter(
+          i =>
+            (i.investorName && i.investorName.toLowerCase().includes(q)) ||
+            (i.bondId && i.bondId.toLowerCase().includes(q)) ||
+            (i.investmentId && i.investmentId.toLowerCase().includes(q)) ||
+            (i.branchName && i.branchName.toLowerCase().includes(q)) ||
+            (i.status && i.status.toLowerCase().includes(q)) ||
+            String(i.amount || '').includes(q),
+        );
+      }
+      setInvestments(records);
+      const total = records.length > 0 ? invRes.total || records.length : 0;
       setTotalCount(total);
 
       if (invRes.summary) {
@@ -406,7 +419,9 @@ const InvestmentManagementScreen = ({navigation}: any) => {
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIcon}>📊</Text>
             </View>
-            <Text style={styles.emptyTitle}>No investments found</Text>
+            <Text style={styles.emptyTitle}>
+              {search.trim() || activeFilterCount > 0 ? 'Not found' : 'No investments found'}
+            </Text>
             <Text style={styles.emptyText}>
               {search || activeFilterCount > 0
                 ? 'Try adjusting your search query or filters.'
