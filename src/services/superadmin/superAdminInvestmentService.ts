@@ -1,6 +1,7 @@
 import {getAuthToken, getErrorMessage} from './superAdminDashboardService';
+import {ENV} from '../../config/env';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 export interface SuperAdminInvestmentRecord {
   id: number | string;
@@ -22,6 +23,7 @@ export interface SuperAdminInvestmentRecord {
 
 export interface SuperAdminInvestmentSummary {
   totalInvestments: number;
+  totalInvestors?: number;
   activeInvestments: number;
   pendingApproval: number;
   matured: number;
@@ -32,6 +34,18 @@ export interface InvestmentFilterOption {
   id: number;
   name: string;
 }
+
+const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
 
 const apiRequest = async (
   endpoint: string,
@@ -51,7 +65,8 @@ const apiRequest = async (
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = resolveEndpoint(endpoint);
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...headers,
@@ -175,24 +190,52 @@ export const normalizeInvestment = (item: any): SuperAdminInvestmentRecord => {
   };
 };
 
+const normalizeNumber = (value: any): string => {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) {
+    return '';
+  }
+  return String(Math.trunc(number));
+};
+
 /**
- * 1. GET /superadmin/investments
+ * 1. GET /api/superadmin/investments
  */
 export const getSuperAdminInvestments = async (params?: {
   search?: string;
-  branch_id?: number;
+  branch_id?: number | string;
+  branchId?: number | string;
+  status_id?: number | string;
+  statusId?: number | string;
   status?: string;
   limit?: number;
   offset?: number;
 }): Promise<{records: SuperAdminInvestmentRecord[]; total: number; summary?: SuperAdminInvestmentSummary}> => {
   const queryParts: string[] = [];
-  if (params?.limit !== undefined) queryParts.push(`limit=${params.limit}`);
-  else queryParts.push('limit=10');
-  if (params?.offset !== undefined) queryParts.push(`offset=${params.offset}`);
-  if (params?.branch_id) queryParts.push(`branch_id=${params.branch_id}`);
-  if (params?.status && params.status !== 'All' && params.status !== 'All Status') {
+
+  const safeLimit = Math.min(Math.max(Number(params?.limit) || 100, 1), 100);
+  const safeOffset = Math.max(Number(params?.offset) || 0, 0);
+
+  queryParts.push(`limit=${safeLimit}`);
+  queryParts.push(`offset=${safeOffset}`);
+
+  const rawBranch = params?.branch_id ?? params?.branchId;
+  const safeBranchId = normalizeNumber(rawBranch);
+  if (safeBranchId) {
+    queryParts.push(`branch_id=${safeBranchId}`);
+  }
+
+  const rawStatus = params?.status_id ?? params?.statusId;
+  const safeStatusId = normalizeNumber(rawStatus);
+  if (safeStatusId) {
+    queryParts.push(`status_id=${safeStatusId}`);
+  } else if (params?.status && params.status !== 'All' && params.status !== 'All Status') {
     queryParts.push(`status=${encodeURIComponent(params.status)}`);
   }
+
   if (params?.search && params.search.trim()) {
     queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
   }
@@ -200,40 +243,79 @@ export const getSuperAdminInvestments = async (params?: {
   const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/investments${qs}`, {
+    response = await apiRequest(`/api/superadmin/investments${qs}`, {
       method: 'GET',
     });
   } catch (err: any) {
-    try {
-      response = await apiRequest(`/api/superadmin/investments${qs}`, {
-        method: 'GET',
-      });
-    } catch {
-      response = await apiRequest(`/admin/investments${qs}`, {
-        method: 'GET',
-      });
-    }
+    response = await apiRequest(`/superadmin/investments${qs}`, {
+      method: 'GET',
+    });
   }
 
   const list = getList(response);
   const records = list.map(normalizeInvestment);
-  const total = Number(
-    response?.total ??
-    response?.total_count ??
-    response?.count ??
-    response?.o_total_count ??
-    records.length,
+
+  const rawTotal = getValue(
+    response,
+    [
+      'total',
+      'total_records',
+      'totalRecords',
+      'total_count',
+      'totalCount',
+      'total_investments',
+      'totalInvestments',
+      'count',
+      'o_total_count',
+    ],
+    null,
   );
 
+  const nestedTotal =
+    rawTotal !== null
+      ? rawTotal
+      : getValue(
+          response?.data,
+          ['total', 'total_records', 'totalRecords', 'total_count', 'totalCount', 'total_investments', 'totalInvestments', 'count'],
+          null,
+        ) ??
+        getValue(
+          response?.pagination,
+          ['total', 'total_records', 'totalRecords', 'total_count', 'totalCount', 'count'],
+          null,
+        ) ??
+        getValue(
+          response?.summary,
+          ['total_investments', 'totalInvestments', 'total', 'total_count', 'count'],
+          null,
+        );
+
+  const total = Number(nestedTotal !== null && nestedTotal !== undefined ? nestedTotal : records.length);
+
   let summary: SuperAdminInvestmentSummary | undefined;
-  if (response?.summary) {
-    const s = response.summary;
+  const s =
+    response?.summary ||
+    (response &&
+    !Array.isArray(response) &&
+    typeof response === 'object' &&
+    (response.total_investors !== undefined ||
+      response.active_investments !== undefined ||
+      response.total_investments !== undefined)
+      ? response
+      : null);
+
+  if (s) {
+    const rawInvestors = Number(
+      getValue(s, ['total_investors', 'totalInvestors', 'investor_count', 'investors_count', 'unique_investors'], 0),
+    );
+    const fallbackInvestors = new Set(records.map(r => r.investorId || r.investorName).filter(Boolean)).size;
     summary = {
-      totalInvestments: Number(getValue(s, ['total_investments', 'total', 'count'], total)),
-      activeInvestments: Number(getValue(s, ['active_investments', 'active'], 0)),
-      pendingApproval: Number(getValue(s, ['pending_approval', 'pending'], 0)),
-      matured: Number(getValue(s, ['matured', 'matured_investments'], 0)),
-      totalInvested: Number(getValue(s, ['total_invested', 'total_amount', 'invested'], 0)),
+      totalInvestments: Number(getValue(s, ['total_investments', 'totalInvestments', 'total', 'total_count', 'count'], total)),
+      totalInvestors: rawInvestors > 0 ? rawInvestors : fallbackInvestors,
+      activeInvestments: Number(getValue(s, ['active_investments', 'activeInvestments', 'active', 'active_count'], 0)),
+      pendingApproval: Number(getValue(s, ['pending_approval', 'pendingApproval', 'pending', 'pending_count'], 0)),
+      matured: Number(getValue(s, ['matured', 'matured_investments', 'maturedInvestments', 'matured_count'], 0)),
+      totalInvested: Number(getValue(s, ['total_invested', 'totalInvested', 'total_amount', 'total_investment', 'invested'], 0)),
     };
   }
 
@@ -241,22 +323,22 @@ export const getSuperAdminInvestments = async (params?: {
 };
 
 /**
- * 2. GET /superadmin/investment-management/summary
+ * 2. GET /api/superadmin/investment-management/summary
  */
 export const getSuperAdminInvestmentSummary = async (): Promise<SuperAdminInvestmentSummary> => {
   try {
     let response: any = null;
     try {
-      response = await apiRequest('/superadmin/investment-management/summary', {
+      response = await apiRequest('/api/superadmin/investment-management/summary', {
         method: 'GET',
       });
     } catch {
       try {
-        response = await apiRequest('/superadmin/investments/summary', {
+        response = await apiRequest('/api/superadmin/investments/summary', {
           method: 'GET',
         });
       } catch {
-        response = await apiRequest('/api/superadmin/investment-management/summary', {
+        response = await apiRequest('/superadmin/investments/summary', {
           method: 'GET',
         });
       }
@@ -264,16 +346,18 @@ export const getSuperAdminInvestmentSummary = async (): Promise<SuperAdminInvest
 
     const d = response?.data || response || {};
     return {
-      totalInvestments: Number(getValue(d, ['total_investments', 'total', 'totalInvestments'], 0)),
-      activeInvestments: Number(getValue(d, ['active_investments', 'active', 'activeInvestments'], 0)),
-      pendingApproval: Number(getValue(d, ['pending_approval', 'pending', 'pendingApproval'], 0)),
-      matured: Number(getValue(d, ['matured', 'matured_investments', 'maturedInvestments'], 0)),
-      totalInvested: Number(getValue(d, ['total_invested', 'total_amount', 'totalInvested'], 0)),
+      totalInvestments: Number(getValue(d, ['total_investments', 'totalInvestments', 'total', 'total_count', 'count'], 0)),
+      totalInvestors: Number(getValue(d, ['total_investors', 'totalInvestors', 'investor_count', 'investors_count'], 0)),
+      activeInvestments: Number(getValue(d, ['active_investments', 'activeInvestments', 'active', 'active_count'], 0)),
+      pendingApproval: Number(getValue(d, ['pending_approval', 'pendingApproval', 'pending', 'pending_count'], 0)),
+      matured: Number(getValue(d, ['matured', 'matured_investments', 'maturedInvestments', 'matured_count'], 0)),
+      totalInvested: Number(getValue(d, ['total_invested', 'totalInvested', 'total_amount', 'total_investment', 'invested'], 0)),
     };
   } catch (err) {
     console.log('getSuperAdminInvestmentSummary note:', err);
     return {
       totalInvestments: 0,
+      totalInvestors: 0,
       activeInvestments: 0,
       pendingApproval: 0,
       matured: 0,
@@ -288,18 +372,22 @@ export const getSuperAdminInvestmentSummary = async (): Promise<SuperAdminInvest
 export const getSuperAdminInvestmentDetails = async (
   investmentId: number | string,
 ): Promise<SuperAdminInvestmentRecord> => {
+  if (!investmentId) {
+    throw new Error('Investment ID is required.');
+  }
+
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/investments/${investmentId}`, {
+    response = await apiRequest(`/superadmin/investments/${encodeURIComponent(String(investmentId))}`, {
       method: 'GET',
     });
   } catch {
     try {
-      response = await apiRequest(`/api/superadmin/investments/${investmentId}`, {
+      response = await apiRequest(`/api/superadmin/investments/${encodeURIComponent(String(investmentId))}`, {
         method: 'GET',
       });
     } catch {
-      response = await apiRequest(`/superadmin/investment-management/${investmentId}`, {
+      response = await apiRequest(`/superadmin/investment-management/${encodeURIComponent(String(investmentId))}`, {
         method: 'GET',
       });
     }

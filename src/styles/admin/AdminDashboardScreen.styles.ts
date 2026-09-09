@@ -117,96 +117,115 @@ export const styles = StyleSheet.create({
 
   // ---- Trend charts — premium card: strong soft shadow (no flat border),
   // bars sit inside a light rounded "track" so they read as meters rather
-  // than plain columns, current month highlighted in NAVY, header gets a
-  // small green trend badge like the investor dashboard's trendBadge. ----
+  // ---- Trend charts — premium fintech smooth line/area chart styling:
+  // identical dimensions, subtle fill shadow gradient, minimal gridlines,
+  // responsive width, and interactive touch points. ----
   chartCard: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 18,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 16,
     marginBottom: 16,
     shadowColor: '#0B1E45',
-    shadowOffset: {width: 0, height: 8},
-    shadowOpacity: 0.08,
-    shadowRadius: 16,
-    elevation: 4,
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.04,
+    shadowRadius: 10,
+    elevation: 2,
+    overflow: 'hidden',
   },
-  chartHeaderRow: {flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18},
-  chartTitleWrap: {},
-  chartTitle: {fontSize: 15, fontWeight: '800', color: '#111827', marginBottom: 2},
-  chartSubtitle: {fontSize: 11, color: GRAY, fontWeight: '600'},
+  chartHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  chartTitleWrap: {
+    flex: 1,
+  },
+  chartTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  chartSubtitle: {
+    fontSize: 11.5,
+    color: GRAY,
+    fontWeight: '500',
+  },
+  chartBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  chartBadgeActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  chartBadgeGreen: {
+    backgroundColor: '#F0FDF4',
+    borderColor: '#DCFCE7',
+  },
+  chartBadgeActiveGreen: {
+    backgroundColor: '#059669',
+    borderColor: '#059669',
+  },
+  chartBadgeText: {
+    color: '#2563EB',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chartBadgeTextActive: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chartBadgeTextGreen: {
+    color: '#059669',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  chartBadgeTextActiveGreen: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   chartTrendBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    backgroundColor: GREEN_BG, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: GREEN_BG,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
   },
   chartTrendText: {color: GREEN, fontSize: 11.5, fontWeight: '800'},
   chartMenu: {color: GRAY, fontSize: 16},
 
-  // ---- Bar chart — premium version: slimmer pill bars, more gap between
-  // them, soft shadow under each bar for depth, active month gets a glow
-  // dot + bold value label above it instead of just a color swap ----
-  chartBarsRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 130,
-    marginBottom: 10,
-    paddingHorizontal: 4,
-    columnGap: 8,
-  },
-  chartBarCol: {flex: 1, alignItems: 'center', height: '100%', justifyContent: 'flex-end'},
-
-  // small floating value label, only rendered above the active bar
-  chartBarValue: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: NAVY,
-    marginBottom: 4,
+  chartStyle: {
+    marginVertical: 4,
+    borderRadius: 12,
+    marginLeft: -10,
   },
 
-  // glow dot that sits at the top of the active bar
-  chartBarDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: PRIMARY,
-    marginBottom: 6,
-    shadowColor: PRIMARY,
-    shadowOffset: {width: 0, height: 0},
-    shadowOpacity: 0.9,
-    shadowRadius: 5,
-    elevation: 4,
+  chartEmptyWrap: {
+    height: 180,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
   },
-
-  chartBarTrack: {
-    width: 10,                       // slimmer than before (was 14)
-    height: '78%',                   // leaves headroom for the dot/value
-    borderRadius: 10,
-    backgroundColor: '#EEF1F8',
-    justifyContent: 'flex-end',
-    overflow: 'hidden',
+  chartEmptyText: {
+    fontSize: 12.5,
+    color: '#94A3B8',
+    fontWeight: '500',
   },
-  chartBar: {
-    width: '100%',
-    borderRadius: 10,
-    backgroundColor: '#AEC3FB',       // soft tint for inactive bars
-    shadowColor: PRIMARY,
-    shadowOffset: {width: 0, height: 3},
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  chartBarActive: {
-    backgroundColor: NAVY,
-    shadowColor: NAVY,
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
-  },
-
-  chartLabelsRow: {flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 2, marginTop: 8},
-  chartLabel: {color: GRAY, fontSize: 10.5, fontWeight: '600', width: 24, textAlign: 'center'},
-  chartLabelActive: {color: NAVY, fontWeight: '800'},
 
   // ---- Line chart (SVG-based) — wraps the <Svg> so the value callout
   // bubble can be absolutely positioned over the current/last point.

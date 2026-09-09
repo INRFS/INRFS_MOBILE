@@ -95,35 +95,59 @@ const InvestorManagementScreen = ({navigation}: any) => {
         getInvestorStatusesFilter(),
       ]);
 
-      let records = invRes.records || [];
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        records = records.filter(
-          i =>
-            (i.name && i.name.toLowerCase().includes(q)) ||
-            (i.email && i.email.toLowerCase().includes(q)) ||
-            (i.mobile && i.mobile.includes(q)) ||
-            (i.investorId && i.investorId.toLowerCase().includes(q)) ||
-            (i.branchName && i.branchName.toLowerCase().includes(q)) ||
-            (i.status && i.status.toLowerCase().includes(q)),
-        );
-      }
+      const records = invRes.records || [];
       setInvestors(records);
-      const total = records.length > 0 ? invRes.total || records.length : 0;
+
+      let total = Number(invRes.total ?? 0);
+      if (
+        (!total || total === records.length) &&
+        !search.trim() &&
+        selectedBranchId === null &&
+        selectedStatusName === 'All Status' &&
+        sumRes?.totalInvestors &&
+        sumRes.totalInvestors > total
+      ) {
+        total = sumRes.totalInvestors;
+      }
       setTotalCount(total);
 
-      if (sumRes && sumRes.totalInvestors > 0) {
-        setSummary(sumRes);
-      } else {
-        const activeCount = records.filter(i => (i.status || '').toLowerCase() === 'active').length;
-        const inactiveCount = records.filter(i => (i.status || '').toLowerCase() !== 'active').length;
-        setSummary({
-          totalInvestors: total,
-          activeInvestors: sumRes.activeInvestors || activeCount,
-          inactiveInvestors: sumRes.inactiveInvestors || inactiveCount,
-          totalAum: sumRes.totalAum || '₹0',
-        });
+      const totalInvCount =
+        sumRes?.totalInvestors ||
+        invRes.summary?.totalInvestors ||
+        total;
+
+      const activeCount =
+        sumRes?.activeInvestors ||
+        invRes.summary?.activeInvestors ||
+        records.filter(i => (i.status || '').toLowerCase() === 'active').length;
+
+      const inactiveCount =
+        sumRes?.inactiveInvestors ||
+        invRes.summary?.inactiveInvestors ||
+        records.filter(i => (i.status || '').toLowerCase() !== 'active').length;
+
+      let aumVal: string = sumRes?.totalAum || '';
+      if (!aumVal || aumVal === '₹0') {
+        aumVal = invRes.summary?.totalAum || '';
       }
+      if (!aumVal || aumVal === '₹0') {
+        const sumRecords = records.reduce(
+          (sum, item) => sum + (Number(item.totalInvested) || 0),
+          0,
+        );
+        if (sumRecords > 0) {
+          aumVal = `₹${sumRecords.toLocaleString('en-IN')}`;
+        } else {
+          aumVal = '₹0';
+        }
+      }
+
+      setSummary({
+        totalInvestors: totalInvCount,
+        activeInvestors: activeCount,
+        inactiveInvestors: inactiveCount,
+        totalAum: aumVal || '₹0',
+      });
 
       if (branchRes && branchRes.length > 0) {
         setBranches(branchRes);

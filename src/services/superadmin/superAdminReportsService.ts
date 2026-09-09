@@ -1,7 +1,7 @@
 import {getAuthToken} from './superAdminDashboardService';
 import {ENV} from '../../config/env';
 
-const API_BASE_URL = ENV.API_BASE_URL || 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 /* ============================================================
    TYPES & INTERFACES (Matching Swagger Super Admin Reports)
@@ -840,3 +840,81 @@ export const deriveMonthlyReports = (investments: InvestmentReportItem[]): Month
       maturity_amount: m.maturity_amount,
     }));
 };
+
+/* ============================================================
+   MATCHING WEB ASYNC REPORT SERVICES & ALIASES
+   ============================================================ */
+
+export const getSuperAdminReportMaturity = async (filters: ReportQueryParams = {}) => {
+  const {records} = await getInvestmentReports({...filters, limit: 500, offset: 0});
+  const data = deriveMaturityReports(records);
+  return {
+    success: true,
+    data,
+    total: data.length,
+  };
+};
+
+export const getSuperAdminReportInterest = async (filters: ReportQueryParams = {}) => {
+  const {records} = await getInvestmentReports({...filters, limit: 500, offset: 0});
+  const data = deriveInterestReports(records);
+  return {
+    success: true,
+    data,
+    total: data.length,
+  };
+};
+
+export const getSuperAdminReportBranches = async (filters: ReportQueryParams = {}) => {
+  const {records} = await getInvestmentReports({...filters, limit: 500, offset: 0});
+  const data = deriveBranchReports(records);
+  return {
+    success: true,
+    data,
+    total: data.length,
+  };
+};
+
+export const getSuperAdminReportMonthly = async (filters: ReportQueryParams = {}) => {
+  const {records} = await getInvestmentReports({...filters, limit: 500, offset: 0});
+  const data = deriveMonthlyReports(records);
+  return {
+    success: true,
+    data,
+    total: data.length,
+  };
+};
+
+export const getSuperAdminReportSummary = async (filters: ReportQueryParams = {}) => {
+  const [investmentsRes, adminsRes, investorsRes] = await Promise.all([
+    getInvestmentReports({...filters, limit: 500, offset: 0}),
+    getAdminReports({...filters, limit: 500, offset: 0}),
+    getInvestorReports({...filters, limit: 500, offset: 0}),
+  ]);
+
+  const investmentRows = investmentsRes.records || [];
+  const adminRows = adminsRes.records || [];
+  const investorRows = investorsRes.records || [];
+
+  return {
+    success: true,
+    data: {
+      investment_count: investmentRows.length,
+      investor_count: investorRows.length,
+      admin_count: adminRows.length,
+      principal_amount: investmentRows.reduce((sum, row) => sum + (Number(row.investment_amount) || 0), 0),
+      expected_interest: investmentRows.reduce((sum, row) => sum + (Number(row.expected_interest_amount) || 0), 0),
+      maturity_amount: investmentRows.reduce((sum, row) => sum + (Number(row.maturity_amount) || 0), 0),
+    },
+  };
+};
+
+// Direct Web Aliases
+export const getSuperAdminReportFilters = getReportFilters;
+export const getSuperAdminReportInvestments = getInvestmentReports;
+export const getSuperAdminReportInvestmentDetails = getInvestmentReportDetails;
+export const getSuperAdminReportInvestors = getInvestorReports;
+export const getSuperAdminReportAdmins = getAdminReports;
+export const getSuperAdminReportSettlement = getSettlementReports;
+export const getSuperAdminReportExtensions = getExtensionReports;
+

@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import apiClient, {TOKEN_KEYS} from '../api/client';
+import {investorService} from './investorService';
 
 export type TokenResponse = {
   access_token: string;
@@ -79,11 +80,18 @@ export const authService = {
    * POST /auth/email/send-otp
    */
   sendEmailOtp: async (email: string, name?: string): Promise<SendEmailOtpResponse> => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedName = String(name || '').trim();
+
+    if (!normalizedEmail) {
+      throw new Error('Please enter your email address.');
+    }
+
     const response = await apiClient.post<SendEmailOtpResponse>(
       '/auth/email/send-otp',
       {
-        email: email.trim().toLowerCase(),
-        name: name?.trim() || 'User',
+        email: normalizedEmail,
+        name: normalizedName || 'User',
       },
     );
     return response.data;
@@ -94,11 +102,18 @@ export const authService = {
    * POST /auth/email/verify-otp
    */
   verifyEmailOtp: async (email: string, otp: string): Promise<VerifyEmailOtpResponse> => {
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedOtp = String(otp || '').trim();
+
+    if (!normalizedEmail) {
+      throw new Error('Please enter your email address.');
+    }
+
     const response = await apiClient.post<VerifyEmailOtpResponse>(
       '/auth/email/verify-otp',
       {
-        email: email.trim().toLowerCase(),
-        otp: otp.trim(),
+        email: normalizedEmail,
+        otp: normalizedOtp,
       },
     );
     return response.data;
@@ -109,7 +124,20 @@ export const authService = {
    * POST /auth/investor/register
    */
   registerInvestor: async (payload: InvestorRegisterPayload): Promise<any> => {
-    const response = await apiClient.post('/auth/investor/register', payload);
+    const formattedPayload = {
+      full_name: String(payload.full_name || '').trim(),
+      mobile: String(payload.mobile || '').trim(),
+      email: payload.email ? String(payload.email).trim() : null,
+      password: payload.password,
+      date_of_birth: String(payload.date_of_birth || '').trim(),
+      aadhaar_number: String(payload.aadhaar_number || '').trim(),
+      address: String(payload.address || '').trim(),
+      city: String(payload.city || '').trim(),
+      state_id: Number(payload.state_id),
+      pincode: String(payload.pincode || '').trim(),
+      branch_id: Number(payload.branch_id),
+    };
+    const response = await apiClient.post('/auth/investor/register', formattedPayload);
     return response.data;
   },
 
@@ -136,9 +164,9 @@ export const authService = {
    * POST /auth/investor/login
    */
   loginInvestor: async (investorId: string, password: string): Promise<TokenResponse> => {
-    const formattedId = investorId.trim().toUpperCase();
+    const cleanId = String(investorId || '').trim();
     const response = await apiClient.post<TokenResponse>('/auth/investor/login', {
-      investor_id: formattedId,
+      investor_id: cleanId,
       password: password,
     });
 
@@ -146,7 +174,7 @@ export const authService = {
     if (data?.access_token) {
       await Promise.all([
         AsyncStorage.setItem(TOKEN_KEYS.ACCESS_TOKEN, data.access_token),
-        AsyncStorage.setItem(TOKEN_KEYS.INVESTOR_ID, formattedId),
+        AsyncStorage.setItem(TOKEN_KEYS.INVESTOR_ID, data.login_id || cleanId),
         AsyncStorage.setItem(TOKEN_KEYS.USER_INFO, JSON.stringify(data)),
       ]);
     }
@@ -162,7 +190,7 @@ export const authService = {
     const response = await apiClient.post<ForgotPasswordSendOtpResponse>(
       '/auth/forgot-password/send-otp',
       {
-        email: email.trim().toLowerCase(),
+        email: String(email || '').trim().toLowerCase(),
       },
     );
     return response.data;
@@ -179,8 +207,8 @@ export const authService = {
     const response = await apiClient.post<ForgotPasswordVerifyOtpResponse>(
       '/auth/forgot-password/verify-otp',
       {
-        email: email.trim().toLowerCase(),
-        otp: otp.trim(),
+        email: String(email || '').trim().toLowerCase(),
+        otp: String(otp || '').trim(),
       },
     );
     return response.data;
@@ -198,8 +226,8 @@ export const authService = {
     const response = await apiClient.post<ForgotPasswordResetResponse>(
       '/auth/forgot-password/reset',
       {
-        email: email.trim().toLowerCase(),
-        otp: otp.trim(),
+        email: String(email || '').trim().toLowerCase(),
+        otp: String(otp || '').trim(),
         new_password: newPassword,
       },
     );
@@ -236,6 +264,20 @@ export const authService = {
     } catch {
       return null;
     }
+  },
+
+  /**
+   * GET /masters/states
+   */
+  getStates: async () => {
+    return investorService.getStates();
+  },
+
+  /**
+   * GET /masters/branches?state_id={stateId}
+   */
+  getBranches: async (stateId?: number | string | null) => {
+    return investorService.getBranches(stateId);
   },
 
   /**

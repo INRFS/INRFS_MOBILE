@@ -19,10 +19,11 @@ import {
   getMonthlyInterest,
   sendMonthlyInterestForApproval,
   sendAllMonthlyInterestForApproval,
-  markMonthlyInterestPaid,
   getErrorMessage,
   MonthlyInterestRecord,
   PayoutStatus,
+  formatDate,
+  toISODate,
 } from '../../services/admin/monthlyInterestService';
 import {useAppData} from '../../navigation/AppNavigator';
 
@@ -36,7 +37,10 @@ const formatINR = (n: number) =>
 const parseDueDate = (dateStr: string): Date | null => {
   if (!dateStr || dateStr === '—' || dateStr === '-') return null;
   const parts = dateStr.split(/[-/]/).map(Number);
-  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) return null;
+  if (parts.length !== 3 || parts.some(n => Number.isNaN(n))) {
+    const dt = new Date(dateStr);
+    return isNaN(dt.getTime()) ? null : dt;
+  }
 
   // Support YYYY-MM-DD or DD-MM-YYYY
   if (parts[0] > 1000) {
@@ -69,6 +73,29 @@ const MONTHS = [
   'Dec',
 ];
 
+const CAL_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const getDaysInMonth = (year: number, month: number) => {
+  return new Date(year, month + 1, 0).getDate();
+};
+
+const getFirstDayOfMonth = (year: number, month: number) => {
+  return new Date(year, month, 1).getDay(); // 0 = Sunday
+};
+
 const formatGroupHeading = (dt: Date, today: Date) => {
   const day = String(dt.getDate()).padStart(2, '0');
   const label = `${day} ${MONTHS[dt.getMonth()]} ${dt.getFullYear()}`;
@@ -91,17 +118,15 @@ const matchesStatusTab = (p: MonthlyInterestRecord, tab: TabKey): boolean => {
   if (tab === 'All') return true;
   if (tab === 'Pending') {
     return (
-      p.status === 'pending' ||
-      p.status === 'pending_approval' ||
-      p.status === 'overdue' ||
-      p.status === 'upcoming'
+      p.status === 'Pending' ||
+      p.status === 'Awaiting Approval'
     );
   }
   if (tab === 'Approved') {
-    return p.status === 'approved' || p.status === 'paid';
+    return p.status === 'Approved' || p.status === 'Paid';
   }
   if (tab === 'Rejected') {
-    return p.status === 'rejected';
+    return p.status === 'Rejected';
   }
   return true;
 };
@@ -119,12 +144,108 @@ const InterestPayoutsScreen = ({navigation}: any) => {
 
   const [activeTab, setActiveTab] = useState<TabKey>('All');
   const [query, setQuery] = useState('');
-  const [dateFilter, setDateFilter] = useState(''); // dd-mm-yyyy
+  const [dateFilter, setDateFilter] = useState(''); // YYYY-MM-DD
 
-  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  // Calendar Picker Modal state
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [calViewYear, setCalViewYear] = useState(() => new Date().getFullYear());
+  const [calViewMonth, setCalViewMonth] = useState(() => new Date().getMonth());
+
+  const [actionLoadingId, setActionLoadingId] = useState<string | number | null>(null);
   const [confirmingPayout, setConfirmingPayout] =
     useState<MonthlyInterestRecord | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync calendar picker month/year when modal opens
+  useEffect(() => {
+    if (datePickerVisible) {
+      if (dateFilter) {
+        const dt = parseDueDate(dateFilter);
+        if (dt) {
+          setCalViewYear(dt.getFullYear());
+          setCalViewMonth(dt.getMonth());
+          return;
+        }
+      }
+      const now = new Date();
+      setCalViewYear(now.getFullYear());
+      setCalViewMonth(now.getMonth());
+    }
+  }, [datePickerVisible, dateFilter]);
+
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }, []);
+
+  const selectedIso = useMemo(() => {
+    return dateFilter ? toISODate(dateFilter) : '';
+  }, [dateFilter]);
+
+  const calendarGridDays = useMemo(() => {
+    const daysInMonth = getDaysInMonth(calViewYear, calViewMonth);
+    const firstDayIndex = getFirstDayOfMonth(calViewYear, calViewMonth); // 0 = Sunday
+
+    const prevMonthDays =
+      calViewMonth === 0
+        ? getDaysInMonth(calViewYear - 1, 11)
+        : getDaysInMonth(calViewYear, calViewMonth - 1);
+
+    const cells: {day: number; isCurrentMonth: boolean; iso: string}[] = [];
+
+    // Prev month trailing days
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const d = prevMonthDays - i;
+      const m = calViewMonth === 0 ? 12 : calViewMonth;
+      const y = calViewMonth === 0 ? calViewYear - 1 : calViewYear;
+      const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({day: d, isCurrentMonth: false, iso});
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const m = calViewMonth + 1;
+      const iso = `${calViewYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({day: d, isCurrentMonth: true, iso});
+    }
+
+    // Next month leading days to complete grid to multiple of 7
+    const remaining = (7 - (cells.length % 7)) % 7;
+    for (let d = 1; d <= remaining; d++) {
+      const m = calViewMonth === 11 ? 1 : calViewMonth + 2;
+      const y = calViewMonth === 11 ? calViewYear + 1 : calViewYear;
+      const iso = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      cells.push({day: d, isCurrentMonth: false, iso});
+    }
+
+    return cells;
+  }, [calViewYear, calViewMonth]);
+
+  const handlePrevMonth = () => {
+    if (calViewMonth === 0) {
+      setCalViewYear(prev => prev - 1);
+      setCalViewMonth(11);
+    } else {
+      setCalViewMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calViewMonth === 11) {
+      setCalViewYear(prev => prev + 1);
+      setCalViewMonth(0);
+    } else {
+      setCalViewMonth(prev => prev + 1);
+    }
+  };
+
+  const handleSelectCalendarDate = (iso: string) => {
+    setDateFilter(iso);
+    setDatePickerVisible(false);
+  };
 
   /* ==========================================================
      LOAD DATA FROM BACKEND
@@ -137,135 +258,59 @@ const InterestPayoutsScreen = ({navigation}: any) => {
         else setRefreshing(true);
 
         const response = await getMonthlyInterest({
-          dueDate: dateFilter.trim() || undefined,
-          query: query.trim() || undefined,
+          limit: 100,
+          offset: 0,
         });
 
-        // Use real backend records
-        if (Array.isArray(response?.records) && response.records.length > 0) {
+        if (Array.isArray(response?.records)) {
           setRecords(response.records);
-        } else if (Array.isArray(appData?.payouts) && appData.payouts.length > 0) {
-          const contextMapped: MonthlyInterestRecord[] = appData.payouts.map(p => {
-            let invName = p.investorName;
-            if (!invName || invName.trim().toLowerCase() === 'investor') {
-              const matchedBond = appData.bonds?.find(
-                (b: any) => b.id === p.bondId || b.bondId === p.bondId,
-              );
-              if (matchedBond?.investorName) {
-                invName = matchedBond.investorName;
-              } else {
-                const matchedInv = appData.investors?.find(
-                  (inv: any) => inv.id === (p as any).investorId,
-                );
-                if (matchedInv?.name) {
-                  invName = matchedInv.name;
-                }
-              }
-            }
-
-            return {
-              id: p.id,
-              interestScheduleId: Number(p.id) || 0,
-              investor: invName || p.bondId || '—',
-              investorName: invName || p.bondId || '—',
-              bondId: p.bondId,
-              amount: p.amount,
-              gstAmount: Math.round(p.amount * 0.18),
-              netPayable: p.amount - Math.round(p.amount * 0.18),
-              dueDate: p.dueDate,
-              status: p.status as PayoutStatus,
-              rawStatus: p.status,
-              reference: p.reference,
-              overdueDays: p.overdueDays,
-            };
-          });
-          setRecords(contextMapped);
         } else {
           setRecords([]);
         }
       } catch (error: any) {
         console.log('Error loading monthly interest from backend:', error);
-        if (Array.isArray(appData?.payouts) && appData.payouts.length > 0) {
-          const contextMapped: MonthlyInterestRecord[] = appData.payouts.map(p => {
-            let invName = p.investorName;
-            if (!invName || invName.trim().toLowerCase() === 'investor') {
-              const matchedBond = appData.bonds?.find(
-                (b: any) => b.id === p.bondId || b.bondId === p.bondId,
-              );
-              if (matchedBond?.investorName) {
-                invName = matchedBond.investorName;
-              } else {
-                const matchedInv = appData.investors?.find(
-                  (inv: any) => inv.id === (p as any).investorId,
-                );
-                if (matchedInv?.name) {
-                  invName = matchedInv.name;
-                }
-              }
-            }
-
-            return {
-              id: p.id,
-              interestScheduleId: Number(p.id) || 0,
-              investor: invName || p.bondId || '—',
-              investorName: invName || p.bondId || '—',
-              bondId: p.bondId,
-              amount: p.amount,
-              gstAmount: Math.round(p.amount * 0.18),
-              netPayable: p.amount - Math.round(p.amount * 0.18),
-              dueDate: p.dueDate,
-              status: p.status as PayoutStatus,
-              rawStatus: p.status,
-              reference: p.reference,
-              overdueDays: p.overdueDays,
-            };
-          });
-          setRecords(contextMapped);
-        } else {
-          setRecords([]);
-        }
+        setRecords([]);
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [dateFilter, query, appData?.payouts, appData.bonds, appData.investors],
+    [],
   );
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadData(true);
-    }, query.trim() || dateFilter.trim() ? 350 : 0);
-
-    return () => clearTimeout(timer);
+    loadData(true);
   }, [loadData]);
 
   /* ==========================================================
-     FILTERING & SUMMARY METRICS
+     FILTERING & SUMMARY METRICS (Matching Web Exactly)
      ========================================================== */
 
-  const tabFiltered = useMemo(() => {
-    return records.filter(p => matchesStatusTab(p, activeTab));
-  }, [records, activeTab]);
+  const dateFiltered = useMemo(() => {
+    const d = dateFilter.trim();
+    if (!d) return records;
+    const filterIso = toISODate(d);
+    return records.filter(p => {
+      if (!p.dueDate) return false;
+      const rowIso = toISODate(p.dueDate);
+      return (filterIso && rowIso === filterIso) || p.dueDate.includes(d);
+    });
+  }, [records, dateFilter]);
 
   const searchFiltered = useMemo(() => {
     const q = query.toLowerCase().trim();
-    if (!q) return tabFiltered;
-    return tabFiltered.filter(
+    if (!q) return dateFiltered;
+    return dateFiltered.filter(
       p =>
         (p.investorName && p.investorName.toLowerCase().includes(q)) ||
         (p.investor && p.investor.toLowerCase().includes(q)) ||
         (p.bondId && p.bondId.toLowerCase().includes(q)),
     );
-  }, [tabFiltered, query]);
+  }, [dateFiltered, query]);
 
-  const dateFiltered = useMemo(() => {
-    const d = dateFilter.trim();
-    if (!d) return searchFiltered;
-    return searchFiltered.filter(
-      p => p.dueDate === d || p.dueDate.includes(d),
-    );
-  }, [searchFiltered, dateFilter]);
+  const tabFiltered = useMemo(() => {
+    return searchFiltered.filter(p => matchesStatusTab(p, activeTab));
+  }, [searchFiltered, activeTab]);
 
   const stats = useMemo(() => {
     let totalInterest = 0;
@@ -273,18 +318,16 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     let approved = 0;
     let rejected = 0;
 
-    records.forEach(p => {
+    dateFiltered.forEach(p => {
       totalInterest += p.amount;
       if (
-        p.status === 'pending' ||
-        p.status === 'pending_approval' ||
-        p.status === 'overdue' ||
-        p.status === 'upcoming'
+        p.status === 'Pending' ||
+        p.status === 'Awaiting Approval'
       ) {
         pending += p.amount;
-      } else if (p.status === 'approved' || p.status === 'paid') {
+      } else if (p.status === 'Approved' || p.status === 'Paid') {
         approved += p.amount;
-      } else if (p.status === 'rejected') {
+      } else if (p.status === 'Rejected') {
         rejected += p.amount;
       }
     });
@@ -299,20 +342,11 @@ const InterestPayoutsScreen = ({navigation}: any) => {
       rejected,
       netPayable,
     };
-  }, [records]);
+  }, [dateFiltered]);
 
   const needsApprovalCount = useMemo(() => {
-    return records.filter(
-      p =>
-        p.status === 'overdue' ||
-        p.status === 'upcoming' ||
-        p.status === 'pending',
-    ).length;
-  }, [records]);
-
-  const approvedCount = useMemo(() => {
-    return records.filter(p => p.status === 'approved').length;
-  }, [records]);
+    return dateFiltered.filter(p => p.status === 'Pending').length;
+  }, [dateFiltered]);
 
   /* ==========================================================
      GROUP BY DUE DATE
@@ -323,7 +357,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     today.setHours(0, 0, 0, 0);
 
     const byKey = new Map<string, MonthlyInterestRecord[]>();
-    dateFiltered.forEach(p => {
+    tabFiltered.forEach(p => {
       const list = byKey.get(p.dueDate) || [];
       list.push(p);
       byKey.set(p.dueDate, list);
@@ -351,7 +385,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     });
 
     return built;
-  }, [dateFiltered]);
+  }, [tabFiltered]);
 
   /* ==========================================================
      ACTION HANDLERS
@@ -378,15 +412,14 @@ const InterestPayoutsScreen = ({navigation}: any) => {
       setIsSubmitting(true);
       setActionLoadingId(p.id);
 
-      // Call real Swagger PUT /admin/monthly-interest/{id}/send-for-approval
       await sendMonthlyInterestForApproval(scheduleId);
 
-      // Update app context if present
       if (appData?.requestPayoutApproval) {
-        appData.requestPayoutApproval(p.id);
+        appData.requestPayoutApproval(String(p.id));
       }
 
       setConfirmingPayout(null);
+      setActiveTab('Pending');
       await loadData(false);
 
       Alert.alert(
@@ -404,38 +437,38 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     }
   };
 
-  const handleMarkPaid = (p: MonthlyInterestRecord) => {
-    const scheduleId = p.interestScheduleId || p.scheduleId || p.id;
+  const handleBulkAction = () => {
+    if (needsApprovalCount === 0) return;
 
     Alert.alert(
-      'Mark as Paid',
-      `Mark ${formatINR(p.amount)} for ${p.investorName} (${p.bondId}) as paid?`,
+      'Send All for Approval',
+      `Send ${needsApprovalCount} pending payout${
+        needsApprovalCount === 1 ? '' : 's'
+      } to Super Admin for approval?`,
       [
         {text: 'Cancel', style: 'cancel'},
         {
-          text: 'Confirm',
+          text: 'Send All',
           onPress: async () => {
             try {
-              setActionLoadingId(p.id);
+              setLoading(true);
+              const isoDate = dateFilter.trim() ? toISODate(dateFilter.trim()) : undefined;
+              await sendAllMonthlyInterestForApproval(isoDate);
 
-              if (scheduleId) {
-                try {
-                  await markMonthlyInterestPaid(scheduleId);
-                } catch (apiErr) {
-                  console.log('markMonthlyInterestPaid API note:', apiErr);
-                }
+              if (appData?.requestAllPayoutsApproval) {
+                appData.requestAllPayoutsApproval();
               }
 
-              if (appData?.markPayoutPaid) {
-                appData.markPayoutPaid(p.id);
-              }
-
+              setActiveTab('Pending');
               await loadData(false);
-              Alert.alert('Success', 'Payout marked as paid successfully.');
+              Alert.alert(
+                'Success',
+                `${needsApprovalCount} payouts sent to Super Admin for approval.`,
+              );
             } catch (error: any) {
-              Alert.alert('Action Failed', getErrorMessage(error));
+              Alert.alert('Bulk Action Failed', getErrorMessage(error));
             } finally {
-              setActionLoadingId(null);
+              setLoading(false);
             }
           },
         },
@@ -443,100 +476,32 @@ const InterestPayoutsScreen = ({navigation}: any) => {
     );
   };
 
-  const handleBulkAction = () => {
-    if (needsApprovalCount > 0) {
-      Alert.alert(
-        'Send All for Approval',
-        `Send ${needsApprovalCount} pending payout${
-          needsApprovalCount === 1 ? '' : 's'
-        } to Super Admin for approval?`,
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {
-            text: 'Send All',
-            onPress: async () => {
-              try {
-                await sendAllMonthlyInterestForApproval(
-                  dateFilter.trim() || undefined,
-                );
-
-                if (appData?.requestAllPayoutsApproval) {
-                  appData.requestAllPayoutsApproval();
-                }
-
-                await loadData(false);
-                Alert.alert(
-                  'Success',
-                  `${needsApprovalCount} payouts sent to Super Admin for approval.`,
-                );
-              } catch (error: any) {
-                Alert.alert('Bulk Action Failed', getErrorMessage(error));
-              } finally {
-                setLoading(false);
-              }
-            },
-          },
-        ],
-      );
-      return;
-    }
-
-    if (approvedCount > 0) {
-      Alert.alert(
-        'Mark All Paid',
-        `Mark all ${approvedCount} approved payouts as paid?`,
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {
-            text: 'Confirm',
-            onPress: async () => {
-              try {
-                setLoading(true);
-                if (appData?.markAllPayoutsPaid) {
-                  appData.markAllPayoutsPaid();
-                }
-                await loadData(false);
-                Alert.alert('Success', 'All approved payouts marked as paid.');
-              } catch (error: any) {
-                Alert.alert('Bulk Action Failed', getErrorMessage(error));
-              } finally {
-                setLoading(false);
-              }
-            },
-          },
-        ],
-      );
-    }
-  };
-
   const bulkBtnLabel =
     needsApprovalCount > 0
       ? `Send All for Approval (${needsApprovalCount})`
-      : approvedCount > 0
-      ? `Mark All Paid (${approvedCount})`
-      : 'All Settled';
-  const bulkBtnDisabled = needsApprovalCount === 0 && approvedCount === 0;
+      : 'All Sent for Approval';
+  const bulkBtnDisabled = needsApprovalCount === 0;
 
   /* ==========================================================
-     STATUS PILL
+     STATUS PILL (Matching Web Badges)
      ========================================================== */
 
   const StatusPill = ({p}: {p: MonthlyInterestRecord}) => {
-    if (p.status === 'paid') {
+    if (p.status === 'Paid') {
       return (
         <View style={[local.pill, local.pillPaid]}>
           <Text style={[local.pillText, local.pillTextPaid]}>Paid</Text>
         </View>
       );
     }
-    if (p.status === 'approved') {
+    if (p.status === 'Approved') {
       return (
         <View style={[local.pill, local.pillApproved]}>
           <Text style={[local.pillText, local.pillTextApproved]}>Approved</Text>
         </View>
       );
     }
-    if (p.status === 'pending_approval') {
+    if (p.status === 'Awaiting Approval') {
       return (
         <View style={[local.pill, local.pillAwaiting]}>
           <Text style={[local.pillText, local.pillTextAwaiting]}>
@@ -545,19 +510,10 @@ const InterestPayoutsScreen = ({navigation}: any) => {
         </View>
       );
     }
-    if (p.status === 'rejected') {
+    if (p.status === 'Rejected') {
       return (
         <View style={[local.pill, local.pillRejected]}>
           <Text style={[local.pillText, local.pillTextRejected]}>Rejected</Text>
-        </View>
-      );
-    }
-    if (p.status === 'overdue') {
-      return (
-        <View style={[local.pill, local.pillOverdue]}>
-          <Text style={[local.pillText, local.pillTextOverdue]}>
-            Overdue{p.overdueDays ? ` ${p.overdueDays}d` : ''}
-          </Text>
         </View>
       );
     }
@@ -569,17 +525,13 @@ const InterestPayoutsScreen = ({navigation}: any) => {
   };
 
   /* ==========================================================
-     ROW ACTIONS
+     ROW ACTIONS (Matching Web Exactly)
      ========================================================== */
 
   const RowAction = ({p}: {p: MonthlyInterestRecord}) => {
     const isLoading = actionLoadingId === p.id;
 
-    if (
-      p.status === 'pending' ||
-      p.status === 'overdue' ||
-      p.status === 'upcoming'
-    ) {
+    if (p.status === 'Pending') {
       return (
         <TouchableOpacity
           disabled={isLoading}
@@ -594,7 +546,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
       );
     }
 
-    if (p.status === 'pending_approval') {
+    if (p.status === 'Awaiting Approval') {
       return (
         <View style={local.waitingPillWrap}>
           <Text style={local.waitingPillText}>
@@ -604,33 +556,31 @@ const InterestPayoutsScreen = ({navigation}: any) => {
       );
     }
 
-    if (p.status === 'approved') {
+    if (p.status === 'Approved') {
       return (
-        <TouchableOpacity
-          disabled={isLoading}
-          style={[local.markPaidBtn, isLoading && local.disabledBtn]}
-          onPress={() => handleMarkPaid(p)}>
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <Text style={local.markPaidBtnText}>Mark as Paid</Text>
-          )}
-        </TouchableOpacity>
+        <View style={[local.pill, local.pillApproved]}>
+          <Text style={[local.pillText, local.pillTextApproved]}>✓ Approved</Text>
+        </View>
       );
     }
 
-    if (p.status === 'rejected') {
+    if (p.status === 'Rejected') {
       return (
-        <TouchableOpacity
-          disabled={isLoading}
-          style={[local.resendBtn, isLoading && local.disabledBtn]}
-          onPress={() => handleOpenConfirm(p)}>
-          <Text style={local.resendBtnText}>Resend for Approval</Text>
-        </TouchableOpacity>
+        <View style={[local.pill, local.pillRejected]}>
+          <Text style={[local.pillText, local.pillTextRejected]}>✕ Rejected</Text>
+        </View>
       );
     }
 
-    return <Text style={styles.doneText}>✓ Paid</Text>;
+    if (p.status === 'Paid') {
+      return (
+        <View style={[local.pill, local.pillPaid]}>
+          <Text style={[local.pillText, local.pillTextPaid]}>✓ Paid</Text>
+        </View>
+      );
+    }
+
+    return null;
   };
 
   /* ==========================================================
@@ -670,7 +620,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
         <View style={local.rowGrid}>
           <View style={local.rowCol}>
             <Text style={local.rowLabel}>DUE DATE</Text>
-            <Text style={local.rowValue}>{p.dueDate}</Text>
+            <Text style={local.rowValue}>{formatDate(p.dueDate)}</Text>
           </View>
         </View>
 
@@ -775,8 +725,8 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           {STATUS_TABS.map(tab => {
             const isActive = activeTab === tab;
             let count = 0;
-            if (tab === 'All') count = records.length;
-            else count = records.filter(p => matchesStatusTab(p, tab)).length;
+            if (tab === 'All') count = dateFiltered.length;
+            else count = dateFiltered.filter(p => matchesStatusTab(p, tab)).length;
 
             return (
               <TouchableOpacity
@@ -819,18 +769,24 @@ const InterestPayoutsScreen = ({navigation}: any) => {
         </View>
 
         <View style={local.dateFilterRow}>
-          <TextInput
-            style={local.dateFilterInput}
-            placeholder="Filter by due date (dd-mm-yyyy)"
-            placeholderTextColor="#9CA3AF"
-            value={dateFilter}
-            onChangeText={setDateFilter}
-          />
+          <TouchableOpacity
+            style={local.dateFilterBtn}
+            activeOpacity={0.7}
+            onPress={() => setDatePickerVisible(true)}>
+            <Text style={local.dateFilterIcon}>📅</Text>
+            <Text
+              style={[
+                local.dateFilterText,
+                !dateFilter && local.dateFilterPlaceholder,
+              ]}>
+              {dateFilter ? formatDate(dateFilter) : 'Filter by due date'}
+            </Text>
+          </TouchableOpacity>
           {dateFilter.length > 0 && (
             <TouchableOpacity
               style={local.dateFilterClear}
               onPress={() => setDateFilter('')}>
-              <Text style={local.dateFilterClearText}>Clear</Text>
+              <Text style={local.dateFilterClearText}>✕ Clear</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -844,8 +800,8 @@ const InterestPayoutsScreen = ({navigation}: any) => {
         ) : groups.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Text style={styles.emptyText}>
-              {query.trim() || dateFilter.trim()
-                ? 'Not found'
+              {dateFilter.trim()
+                ? `No interest payments found for ${formatDate(dateFilter.trim())}.`
                 : 'No interest payments found.'}
             </Text>
           </View>
@@ -856,7 +812,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
                 <Text style={local.groupHeading}>
                   {group.date
                     ? formatGroupHeading(group.date, new Date())
-                    : group.key}
+                    : formatDate(group.key)}
                 </Text>
                 {group.isToday && (
                   <View style={local.dueTodayBadge}>
@@ -879,6 +835,98 @@ const InterestPayoutsScreen = ({navigation}: any) => {
           🛡 Security standard PCI-DSS Level 1 compliant
         </Text>
       </ScrollView>
+
+      {/* ======================================================
+          CALENDAR DATE PICKER MODAL (Matching Web)
+          ====================================================== */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={datePickerVisible}
+        onRequestClose={() => setDatePickerVisible(false)}>
+        <TouchableOpacity
+          style={local.calModalOverlay}
+          activeOpacity={1}
+          onPress={() => setDatePickerVisible(false)}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={local.calCard}
+            onPress={e => e.stopPropagation()}>
+            {/* Header: Month & Year + Controls */}
+            <View style={local.calHeader}>
+              <Text style={local.calMonthYearText}>
+                {CAL_MONTH_NAMES[calViewMonth]}, {calViewYear}
+              </Text>
+              <View style={local.calNavBtnRow}>
+                <TouchableOpacity
+                  style={local.calNavBtn}
+                  onPress={handlePrevMonth}>
+                  <Text style={local.calNavBtnText}>▲</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={local.calNavBtn}
+                  onPress={handleNextMonth}>
+                  <Text style={local.calNavBtnText}>▼</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Weekday Headers */}
+            <View style={local.calWeekRow}>
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                <View key={day} style={local.calWeekDayCol}>
+                  <Text style={local.calWeekDayText}>{day}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Days Grid */}
+            <View style={local.calDaysGrid}>
+              {calendarGridDays.map((cell, idx) => {
+                const isSelected = cell.iso === selectedIso;
+                const isToday = cell.iso === todayIso;
+
+                return (
+                  <TouchableOpacity
+                    key={`${cell.iso}-${idx}`}
+                    style={[
+                      local.calDayCell,
+                      isSelected && local.calDayCellSelected,
+                    ]}
+                    onPress={() => handleSelectCalendarDate(cell.iso)}>
+                    <Text
+                      style={[
+                        local.calDayText,
+                        !cell.isCurrentMonth && local.calDayTextDimmed,
+                        isToday && !isSelected && local.calDayTextToday,
+                        isSelected && local.calDayTextSelected,
+                      ]}>
+                      {cell.day}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Footer Actions */}
+            <View style={local.calFooter}>
+              <TouchableOpacity
+                style={local.calFooterBtn}
+                onPress={() => {
+                  setDateFilter('');
+                  setDatePickerVisible(false);
+                }}>
+                <Text style={local.calClearText}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={local.calFooterBtn}
+                onPress={() => handleSelectCalendarDate(todayIso)}>
+                <Text style={local.calTodayText}>Today</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* ======================================================
           CONFIRM SEND FOR APPROVAL MODAL
@@ -945,7 +993,7 @@ const InterestPayoutsScreen = ({navigation}: any) => {
                   <View style={local.confirmRow}>
                     <Text style={local.confirmLabel}>Due Date</Text>
                     <Text style={local.confirmValue}>
-                      {confirmingPayout.dueDate}
+                      {formatDate(confirmingPayout.dueDate)}
                     </Text>
                   </View>
 
@@ -1158,20 +1206,33 @@ const local = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
-  dateFilterInput: {
+  dateFilterBtn: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
+    gap: 8,
+  },
+  dateFilterIcon: {
+    fontSize: 16,
+  },
+  dateFilterText: {
     fontSize: 13.5,
+    fontWeight: '600',
     color: '#111827',
-    backgroundColor: '#FFFFFF',
+  },
+  dateFilterPlaceholder: {
+    fontWeight: '400',
+    color: '#9CA3AF',
   },
   dateFilterClear: {
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 11,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -1180,7 +1241,126 @@ const local = StyleSheet.create({
   dateFilterClearText: {
     fontSize: 12.5,
     fontWeight: '600',
-    color: '#374151',
+    color: '#DC2626',
+  },
+
+  /* Calendar Modal */
+  calModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  calCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 4},
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  calHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  calMonthYearText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  calNavBtnRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  calNavBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calNavBtnText: {
+    fontSize: 11,
+    color: '#4B5563',
+    fontWeight: '700',
+  },
+  calWeekRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  calWeekDayCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  calWeekDayText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  calDaysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calDayCell: {
+    width: `${100 / 7}%`,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    marginVertical: 2,
+  },
+  calDayCellSelected: {
+    backgroundColor: '#2563EB',
+  },
+  calDayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  calDayTextDimmed: {
+    color: '#D1D5DB',
+    fontWeight: '400',
+  },
+  calDayTextToday: {
+    color: '#2563EB',
+    fontWeight: '800',
+  },
+  calDayTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  calFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingHorizontal: 4,
+  },
+  calFooterBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+  },
+  calClearText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  calTodayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
   },
 
   loadingWrap: {

@@ -17,11 +17,12 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import AppHeader from '../../components/AppHeader';
 import {validation} from '../../utils/validation';
+import {ENV} from '../../config/env';
 
 /**
  * Backend API
  */
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 /**
  * Admin Profile API response type

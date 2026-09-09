@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {ENV} from '../../config/env';
 
 /* ============================================================
    CONFIG
    ============================================================ */
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const AUTH_TOKEN_KEYS = [
   'access_token',
@@ -12,8 +13,11 @@ const AUTH_TOKEN_KEYS = [
   'token',
   'authToken',
   'auth_token',
+  'admin_token',
   'jwt',
 ];
+
+const GST_RATE = 0.18;
 
 /* ============================================================
    TYPES
@@ -49,7 +53,7 @@ export interface SettlementRecord {
   netSettlementAmount: number;
   status: SettlementStatus;
   rawStatus: string;
-  type: 'TENURE_TIMEOUT' | 'PRECLOSE' | 'CLOSED';
+  type: 'TENURE_TIMEOUT' | 'PRECLOSE' | 'CLOSED' | 'Tenure Timeout' | 'Pre-Close';
   raw: any;
 }
 
@@ -59,7 +63,7 @@ export interface GetSettlementParams {
 }
 
 export interface ApiResponse<T = any> {
-  success: boolean;
+  success?: boolean;
   message?: string;
   data?: T;
   items?: T;
@@ -75,7 +79,7 @@ export const getAuthToken = async (): Promise<string | null> => {
   try {
     for (const key of AUTH_TOKEN_KEYS) {
       const val = await AsyncStorage.getItem(key);
-      if (val) {
+      if (val && val !== 'null' && val !== 'undefined') {
         return val.replace(/^Bearer\s+/i, '').trim();
       }
     }
@@ -109,6 +113,18 @@ export const getErrorMessage = (error: any): string => {
   return 'Operation failed. Please try again.';
 };
 
+export const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV?.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
+
 /* ============================================================
    CORE API REQUEST HELPER
    ============================================================ */
@@ -131,7 +147,8 @@ const apiRequest = async (
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = resolveEndpoint(endpoint);
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...headers,
@@ -149,7 +166,9 @@ const apiRequest = async (
   if (!response.ok) {
     let errorMessage = `Request failed with status ${response.status}`;
 
-    if (typeof responseBody === 'string') {
+    if (response.status === 401) {
+      errorMessage = 'Authentication failed. Please login again.';
+    } else if (typeof responseBody === 'string') {
       errorMessage = responseBody;
     } else if (responseBody?.detail) {
       if (typeof responseBody.detail === 'string') {
@@ -157,7 +176,7 @@ const apiRequest = async (
       } else if (Array.isArray(responseBody.detail)) {
         errorMessage = responseBody.detail
           .map((d: any) =>
-            typeof d === 'string' ? d : d.msg || d.message || JSON.stringify(d),
+            typeof d === 'string' ? d : d.msg || d.message || String(d),
           )
           .join(', ');
       } else if (typeof responseBody.detail === 'object') {
@@ -184,6 +203,32 @@ const apiRequest = async (
 };
 
 /* ============================================================
+   VALUE & NUMBER EXTRACTION HELPERS (Matching Web)
+   ============================================================ */
+
+const getValue = (row: any, keys: string[], fallback: any = null) => {
+  for (const key of keys) {
+    if (
+      row &&
+      row[key] !== undefined &&
+      row[key] !== null &&
+      row[key] !== ''
+    ) {
+      return row[key];
+    }
+  }
+  return fallback;
+};
+
+const toNumber = (value: any, fallback: number = 0): number => {
+  if (value === null || value === undefined || value === '') {
+    return fallback;
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+};
+
+/* ============================================================
    LIST EXTRACTION HELPER (Matching Web getList)
    ============================================================ */
 
@@ -192,7 +237,18 @@ export const getList = (response: any): any[] => {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response.items)) return response.items;
   if (Array.isArray(response.data)) return response.data;
+  if (Array.isArray(response.settlements)) return response.settlements;
+  if (Array.isArray(response.requests)) return response.requests;
   if (Array.isArray(response.results)) return response.results;
+  if (Array.isArray(response.tenure_timeout_settlements)) {
+    return response.tenure_timeout_settlements;
+  }
+  if (Array.isArray(response.preclose_requests)) {
+    return response.preclose_requests;
+  }
+  if (Array.isArray(response.closed_settlements)) {
+    return response.closed_settlements;
+  }
   return [];
 };
 
@@ -206,12 +262,13 @@ export const extractInvestorName = (raw: any): string => {
   const candidates = [
     raw.investor_name,
     raw.investorName,
-    raw.investor,
     raw.full_name,
     raw.fullName,
     raw.name,
+    raw.investor,
     raw.investor?.name,
     raw.investor?.investor_name,
+    raw.investor?.full_name,
     raw.user?.name,
   ];
 
@@ -220,7 +277,9 @@ export const extractInvestorName = (raw: any): string => {
       typeof c === 'string' &&
       c.trim() &&
       c.trim().toLowerCase() !== 'investor' &&
-      c.trim().toLowerCase() !== 'unknown'
+      c.trim().toLowerCase() !== 'unknown' &&
+      c.trim().toLowerCase() !== 'null' &&
+      c.trim().toLowerCase() !== 'undefined'
     ) {
       return c.trim();
     }
@@ -243,25 +302,47 @@ export const extractInvestorName = (raw: any): string => {
    STATUS NORMALIZATION (Matching Web)
    ============================================================ */
 
-export const normalizeSettlementStatus = (rawStatus?: string): SettlementStatus => {
-  const s = String(rawStatus || '').toLowerCase().trim();
+export const normalizeSettlementStatus = (
+  rawStatus?: string,
+  remarks?: string,
+): SettlementStatus => {
+  const rem = String(remarks || '').toLowerCase();
+  if (
+    rem.includes('sent to super admin') ||
+    rem.includes('waiting for super admin')
+  ) {
+    return 'Pending Super Admin';
+  }
 
-  if (s.includes('paid') || s.includes('settled') || s.includes('completed')) {
+  if (!rawStatus) {
+    return 'Pending';
+  }
+
+  const s = String(rawStatus).trim().toLowerCase();
+
+  if (s === 'paid') {
     return 'Paid';
   }
-  if (s.includes('reject') || s.includes('declined')) {
+  if (s === 'approved' || s === 'settled' || s === 'completed') {
+    return 'Approved';
+  }
+  if (s === 'rejected' || s === 'declined' || s === 'reject') {
     return 'Rejected';
   }
   if (
-    s.includes('pending super admin') ||
     s.includes('awaiting') ||
     s.includes('super admin') ||
     s.includes('waiting')
   ) {
     return 'Pending Super Admin';
   }
-  if (s.includes('approved') || s.includes('approve')) {
-    return 'Approved';
+  if (
+    s.includes('pending') ||
+    s.includes('requested') ||
+    s.includes('submitted') ||
+    s.includes('created')
+  ) {
+    return 'Pending';
   }
   return 'Pending';
 };
@@ -270,32 +351,108 @@ export const normalizeSettlementStatus = (rawStatus?: string): SettlementStatus 
    NORMALIZERS (Matching Web)
    ============================================================ */
 
-export const normalizeTenureItem = (row: any): SettlementRecord => {
-  const settlementId = Number(row?.settlement_id ?? row?.id ?? 0);
-  const investmentId = row?.investment_code ?? row?.investment_id ?? '—';
-  const investor = extractInvestorName(row);
-  const investorId = String(row?.investor_id ?? row?.investor_registration_id ?? '—');
-  const branch = String(row?.branch_name ?? row?.branch ?? '—');
-  const cityName = String(row?.city_name ?? row?.city ?? '');
-  const bondNumber = String(row?.bond_number ?? row?.bondId ?? row?.bond_id ?? '—');
+export const normalizeTenureItem = (
+  row: any,
+  index: number = 0,
+): SettlementRecord => {
+  const source = row?.settlement || row?.details || row || {};
 
-  const investmentDate = String(row?.investment_date ?? '—');
-  const maturedOn = String(row?.maturity_date ?? row?.maturedOn ?? '—');
+  const principal = toNumber(
+    getValue(
+      source,
+      [
+        'principal_amount',
+        'principal',
+        'investment_amount',
+        'amount',
+      ],
+      0,
+    ),
+  );
 
-  const principal = Number(row?.principal_amount ?? row?.investment_amount ?? row?.principal ?? 0) || 0;
-  const interestEarned = Number(row?.interest_amount ?? row?.expected_interest_amount ?? row?.interestEarned ?? 0) || 0;
-  const gstAmount = Number(row?.gst_amount ?? Math.round(interestEarned * 0.18)) || 0;
-  const penalty = Number(row?.penalty_amount ?? 0) || 0;
+  const interestEarned = toNumber(
+    getValue(
+      source,
+      [
+        'interest_amount',
+        'interest_earned',
+        'interestEarned',
+        'expected_interest_amount',
+        'total_interest',
+      ],
+      0,
+    ),
+  );
 
-  const rawNet = Number(row?.net_settlement_amount ?? row?.net_settlement ?? 0);
-  const netSettlementAmount = rawNet || (principal + interestEarned - gstAmount - penalty);
+  const gstAmount = toNumber(
+    getValue(
+      source,
+      ['gst_amount', 'gst', 'gstAmount'],
+      Number((interestEarned * GST_RATE).toFixed(2)),
+    ),
+  );
 
-  const rawStatus = String(row?.status_name ?? row?.status ?? 'Pending');
-  const status = normalizeSettlementStatus(rawStatus);
+  const penalty = toNumber(
+    getValue(source, ['penalty_amount', 'penalty'], 0),
+  );
+
+  const netSettlementAmount = toNumber(
+    getValue(
+      source,
+      [
+        'net_settlement_amount',
+        'netSettlementAmount',
+        'net_settlement',
+        'net_payable',
+      ],
+      Number((principal + interestEarned - gstAmount - penalty).toFixed(2)),
+    ),
+  );
+
+  const rawStatus = getValue(
+    source,
+    ['status_name', 'status', 'settlement_status'],
+    'Pending',
+  );
+  const remarks = String(getValue(source, ['remarks'], '') || '');
+  const status = normalizeSettlementStatus(rawStatus, remarks);
+
+  const rawSettlementId = getValue(source, ['settlement_id', 'id'], null);
+  const settlementId =
+    rawSettlementId !== null ? Number(rawSettlementId) || rawSettlementId : undefined;
+  const investmentId = String(
+    getValue(source, ['investment_id', 'investment_code'], '—'),
+  );
+  const investor = extractInvestorName(source);
+  const investorId = String(
+    getValue(
+      source,
+      ['investor_id', 'investorId', 'investor_registration_id'],
+      '—',
+    ),
+  );
+  const branch = String(
+    getValue(source, ['branch_name', 'branch', 'location_name'], '—'),
+  );
+  const cityName = String(getValue(source, ['city_name', 'city', 'location'], ''));
+  const bondNumber = String(
+    getValue(source, ['bond_number', 'bond_id', 'bondId'], '—'),
+  );
+  const investmentDate = String(getValue(source, ['investment_date'], '—'));
+  const maturedOn = String(
+    getValue(source, ['maturity_date', 'matured_on'], '—'),
+  );
+  const date = String(
+    getValue(
+      source,
+      ['approved_date', 'paid_date', 'created_date', 'maturity_date', 'matured_on'],
+      maturedOn,
+    ),
+  );
 
   return {
-    id: settlementId || investmentId,
-    settlementId: settlementId || undefined,
+    id: rawSettlementId ?? investmentId ?? index,
+    settlementId: typeof settlementId === 'number' ? settlementId : undefined,
     investmentId,
     investor,
     investorName: investor,
@@ -305,46 +462,122 @@ export const normalizeTenureItem = (row: any): SettlementRecord => {
     bondNumber,
     investmentDate,
     maturedOn,
-    date: maturedOn,
+    date,
     principal,
     interestEarned,
     gstAmount,
     penalty,
     netSettlementAmount,
     status,
-    rawStatus,
+    rawStatus: String(rawStatus),
     type: 'TENURE_TIMEOUT',
-    raw: row,
+    raw: source,
   };
 };
 
-export const normalizePrecloseItem = (row: any): SettlementRecord => {
-  const requestId = Number(row?.request_id ?? row?.preclose_request_id ?? row?.id ?? 0);
-  const investmentId = row?.investment_code ?? row?.investment_id ?? '—';
-  const investor = extractInvestorName(row);
-  const investorId = String(row?.investor_id ?? row?.investor_registration_id ?? '—');
-  const branch = String(row?.branch_name ?? row?.branch ?? '—');
-  const cityName = String(row?.city_name ?? row?.city ?? '');
-  const bondNumber = String(row?.bond_number ?? row?.bondId ?? row?.bond_id ?? '—');
+export const normalizePrecloseItem = (
+  row: any,
+  index: number = 0,
+): SettlementRecord => {
+  const source = row?.request || row?.preclose || row?.details || row || {};
 
-  const investmentDate = String(row?.investment_date ?? '—');
-  const requestedDate = String(row?.requested_date ?? row?.created_date ?? '—');
-  const reason = String(row?.preclose_reason ?? row?.reason ?? '—');
+  const principal = toNumber(
+    getValue(
+      source,
+      [
+        'principal_amount',
+        'investment_amount',
+        'principal',
+        'amount',
+      ],
+      0,
+    ),
+  );
 
-  const principal = Number(row?.principal_amount ?? row?.investment_amount ?? row?.principal ?? 0) || 0;
-  const interestEarned = Number(row?.interest_amount ?? row?.expected_interest_amount ?? row?.interestEarned ?? 0) || 0;
-  const gstAmount = Number(row?.gst_amount ?? Math.round(interestEarned * 0.18)) || 0;
-  const penalty = Number(row?.penalty_amount ?? 0) || 0;
+  const interestEarned = toNumber(
+    getValue(
+      source,
+      [
+        'interest_amount',
+        'interest_earned',
+        'expected_interest_amount',
+        'interestEarned',
+        'total_interest',
+      ],
+      0,
+    ),
+  );
 
-  const rawNet = Number(row?.net_settlement_amount ?? row?.net_settlement ?? 0);
-  const netSettlementAmount = rawNet || (principal + interestEarned - gstAmount - penalty);
+  const penalty = toNumber(
+    getValue(source, ['penalty_amount', 'penalty'], 0),
+  );
 
-  const rawStatus = String(row?.request_status ?? row?.status_name ?? row?.status ?? 'Pending');
-  const status = normalizeSettlementStatus(rawStatus);
+  const gstAmount = toNumber(
+    getValue(
+      source,
+      ['gst_amount', 'gst', 'gstAmount'],
+      Number((interestEarned * GST_RATE).toFixed(2)),
+    ),
+  );
+
+  const netSettlementAmount = toNumber(
+    getValue(
+      source,
+      [
+        'net_settlement_amount',
+        'net_payable',
+        'settlement_amount',
+        'netSettlementAmount',
+        'net_settlement',
+      ],
+      Number((principal + interestEarned - gstAmount - penalty).toFixed(2)),
+    ),
+  );
+
+  const rawStatus = getValue(
+    source,
+    ['request_status', 'status_name', 'status', 'settlement_status'],
+    'Pending',
+  );
+  const remarks = String(getValue(source, ['remarks'], '') || '');
+  const status = normalizeSettlementStatus(rawStatus, remarks);
+
+  const rawRequestId = getValue(
+    source,
+    ['request_id', 'preclose_request_id', 'id'],
+    null,
+  );
+  const requestId =
+    rawRequestId !== null ? Number(rawRequestId) || rawRequestId : undefined;
+  const investmentId = String(
+    getValue(source, ['investment_id', 'investment_code'], '—'),
+  );
+  const investor = extractInvestorName(source);
+  const investorId = String(
+    getValue(
+      source,
+      ['investor_id', 'investorId', 'investor_registration_id'],
+      '—',
+    ),
+  );
+  const branch = String(
+    getValue(source, ['branch_name', 'branch', 'location_name'], '—'),
+  );
+  const cityName = String(getValue(source, ['city_name', 'city'], ''));
+  const bondNumber = String(
+    getValue(source, ['bond_number', 'bond_id', 'bondId'], '—'),
+  );
+  const investmentDate = String(getValue(source, ['investment_date'], '—'));
+  const requestedDate = String(
+    getValue(source, ['requested_date', 'created_date', 'date'], '—'),
+  );
+  const reason = String(
+    getValue(source, ['preclose_reason', 'reason', 'remarks'], '—'),
+  );
 
   return {
-    id: requestId || investmentId,
-    requestId: requestId || undefined,
+    id: rawRequestId ?? investmentId ?? index,
+    requestId: typeof requestId === 'number' ? requestId : undefined,
     investmentId,
     investor,
     investorName: investor,
@@ -362,38 +595,133 @@ export const normalizePrecloseItem = (row: any): SettlementRecord => {
     penalty,
     netSettlementAmount,
     status,
-    rawStatus,
+    rawStatus: String(rawStatus),
     type: 'PRECLOSE',
-    raw: row,
+    raw: source,
   };
 };
 
-export const normalizeClosedItem = (row: any): SettlementRecord => {
-  const settlementId = Number(row?.settlement_id ?? row?.id ?? 0);
-  const investmentId = row?.investment_code ?? row?.investment_id ?? '—';
-  const investor = extractInvestorName(row);
-  const investorId = String(row?.investor_id ?? row?.investor_registration_id ?? '—');
-  const branch = String(row?.branch_name ?? row?.branch ?? '—');
-  const cityName = String(row?.city_name ?? row?.city ?? '');
-  const bondNumber = String(row?.bond_number ?? row?.bondId ?? row?.bond_id ?? '—');
+export const normalizeClosedItem = (
+  row: any,
+  index: number = 0,
+): SettlementRecord => {
+  const source = row?.settlement || row?.details || row || {};
 
-  const investmentDate = String(row?.investment_date ?? '—');
-  const date = String(row?.paid_date ?? row?.modified_date ?? row?.created_date ?? row?.maturity_date ?? '—');
+  const typeValue = String(
+    getValue(source, ['settlement_type', 'type', 'request_type'], ''),
+  )
+    .trim()
+    .toUpperCase();
 
-  const principal = Number(row?.principal_amount ?? row?.investment_amount ?? row?.principal ?? 0) || 0;
-  const interestEarned = Number(row?.interest_amount ?? row?.expected_interest_amount ?? row?.interestEarned ?? 0) || 0;
-  const gstAmount = Number(row?.gst_amount ?? Math.round(interestEarned * 0.18)) || 0;
-  const penalty = Number(row?.penalty_amount ?? 0) || 0;
+  const isPreClose =
+    typeValue === 'PRECLOSE' ||
+    typeValue === 'PRE_CLOSE' ||
+    typeValue === 'PRE-CLOSE';
 
-  const rawNet = Number(row?.net_settlement_amount ?? row?.net_settlement ?? 0);
-  const netSettlementAmount = rawNet || (principal + interestEarned - gstAmount - penalty);
+  const principal = toNumber(
+    getValue(
+      source,
+      [
+        'principal_amount',
+        'principal',
+        'investment_amount',
+        'amount',
+      ],
+      0,
+    ),
+  );
 
-  const rawStatus = String(row?.status_name ?? row?.status ?? 'Paid');
-  const status = normalizeSettlementStatus(rawStatus);
+  const interestEarned = toNumber(
+    getValue(
+      source,
+      [
+        'interest_amount',
+        'interest_earned',
+        'interestEarned',
+        'expected_interest_amount',
+        'total_interest',
+      ],
+      0,
+    ),
+  );
+
+  const gstAmount = toNumber(
+    getValue(
+      source,
+      ['gst_amount', 'gst', 'gstAmount'],
+      Number((interestEarned * GST_RATE).toFixed(2)),
+    ),
+  );
+
+  const penalty = toNumber(
+    getValue(source, ['penalty_amount', 'penalty'], 0),
+  );
+
+  const netSettlementAmount = toNumber(
+    getValue(
+      source,
+      [
+        'net_settlement_amount',
+        'net_settlement',
+        'net_payable',
+        'netSettlementAmount',
+      ],
+      Number((principal + interestEarned - gstAmount - penalty).toFixed(2)),
+    ),
+  );
+
+  const rawStatus = getValue(
+    source,
+    ['status_name', 'status', 'settlement_status'],
+    'Paid',
+  );
+  const remarks = String(getValue(source, ['remarks'], '') || '');
+  const status = normalizeSettlementStatus(rawStatus, remarks);
+
+  const rawSettlementId = getValue(
+    source,
+    ['settlement_id', 'id', 'request_id'],
+    null,
+  );
+  const settlementId =
+    rawSettlementId !== null ? Number(rawSettlementId) || rawSettlementId : undefined;
+  const investmentId = String(
+    getValue(source, ['investment_id', 'investment_code'], '—'),
+  );
+  const investor = extractInvestorName(source);
+  const investorId = String(
+    getValue(
+      source,
+      ['investor_id', 'investorId', 'investor_registration_id'],
+      '—',
+    ),
+  );
+  const branch = String(
+    getValue(source, ['branch_name', 'branch', 'location_name'], '—'),
+  );
+  const cityName = String(getValue(source, ['city_name', 'city'], ''));
+  const bondNumber = String(
+    getValue(source, ['bond_number', 'bond_id', 'bondId'], '—'),
+  );
+  const investmentDate = String(getValue(source, ['investment_date'], '—'));
+  const date = String(
+    getValue(
+      source,
+      [
+        'approved_date',
+        'paid_date',
+        'created_date',
+        'maturity_date',
+        'modified_date',
+        'settlement_date',
+      ],
+      '—',
+    ),
+  );
 
   return {
-    id: settlementId || investmentId,
-    settlementId: settlementId || undefined,
+    id: rawSettlementId ?? investmentId ?? index,
+    settlementId: typeof settlementId === 'number' ? settlementId : undefined,
     investmentId,
     investor,
     investorName: investor,
@@ -408,10 +736,13 @@ export const normalizeClosedItem = (row: any): SettlementRecord => {
     gstAmount,
     penalty,
     netSettlementAmount,
-    status,
-    rawStatus,
-    type: 'CLOSED',
-    raw: row,
+    status:
+      status === 'Pending' || status === 'Pending Super Admin'
+        ? 'Approved'
+        : status,
+    rawStatus: String(rawStatus),
+    type: isPreClose ? 'PRECLOSE' : 'TENURE_TIMEOUT',
+    raw: source,
   };
 };
 
@@ -435,13 +766,35 @@ export const getTenureTimeoutSettlements = async (
   });
 
   const rawList = getList(response);
-  const items = rawList.map(normalizeTenureItem);
+  const items = rawList.map((row, idx) => normalizeTenureItem(row, idx));
 
   return { items, raw: response };
 };
 
 /**
- * 2. GET /admin/settlements/preclose
+ * 2. GET /admin/settlements/tenure-timeout/{settlement_id}
+ */
+export const getTenureTimeoutSettlementDetails = async (
+  settlementId: number | string,
+): Promise<any> => {
+  if (
+    settlementId === undefined ||
+    settlementId === null ||
+    settlementId === ''
+  ) {
+    throw new Error('Settlement ID is required');
+  }
+
+  return apiRequest(
+    `/admin/settlements/tenure-timeout/${encodeURIComponent(String(settlementId))}`,
+    {
+      method: 'GET',
+    },
+  );
+};
+
+/**
+ * 3. GET /admin/settlements/preclose
  */
 export const getPrecloseRequests = async (
   params: GetSettlementParams = {},
@@ -456,13 +809,35 @@ export const getPrecloseRequests = async (
   });
 
   const rawList = getList(response);
-  const items = rawList.map(normalizePrecloseItem);
+  const items = rawList.map((row, idx) => normalizePrecloseItem(row, idx));
 
   return { items, raw: response };
 };
 
 /**
- * 3. GET /admin/settlements/closed
+ * 4. GET /admin/settlements/preclose/{request_id}
+ */
+export const getPrecloseRequestDetails = async (
+  requestId: number | string,
+): Promise<any> => {
+  if (
+    requestId === undefined ||
+    requestId === null ||
+    requestId === ''
+  ) {
+    throw new Error('Pre-close request ID is required');
+  }
+
+  return apiRequest(
+    `/admin/settlements/preclose/${encodeURIComponent(String(requestId))}`,
+    {
+      method: 'GET',
+    },
+  );
+};
+
+/**
+ * 5. GET /admin/settlements/closed
  */
 export const getClosedSettlements = async (
   params: GetSettlementParams = {},
@@ -477,83 +852,115 @@ export const getClosedSettlements = async (
   });
 
   const rawList = getList(response);
-  const items = rawList.map(normalizeClosedItem);
+  const items = rawList.map((row, idx) => normalizeClosedItem(row, idx));
 
   return { items, raw: response };
 };
 
 /**
- * 4. PUT /admin/settlements/tenure-timeout/{settlement_id}/approve
+ * 6. PUT /admin/settlements/tenure-timeout/{settlement_id}/approve
  */
 export const approveTenureTimeoutSettlement = async (
   settlementId: number | string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(settlementId);
-  if (!idNum) {
+  if (
+    settlementId === undefined ||
+    settlementId === null ||
+    settlementId === ''
+  ) {
     throw new Error('Valid Settlement ID is required.');
   }
 
   return await apiRequest(
-    `/admin/settlements/tenure-timeout/${idNum}/approve`,
+    `/admin/settlements/tenure-timeout/${encodeURIComponent(String(settlementId))}/approve`,
     {
       method: 'PUT',
+      body: JSON.stringify({}),
     },
   );
 };
 
 /**
- * 5. PUT /admin/settlements/tenure-timeout/{settlement_id}/reject
+ * 7. PUT /admin/settlements/tenure-timeout/{settlement_id}/reject
  */
 export const rejectTenureTimeoutSettlement = async (
   settlementId: number | string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(settlementId);
-  if (!idNum) {
+  if (
+    settlementId === undefined ||
+    settlementId === null ||
+    settlementId === ''
+  ) {
     throw new Error('Valid Settlement ID is required.');
   }
 
   return await apiRequest(
-    `/admin/settlements/tenure-timeout/${idNum}/reject`,
+    `/admin/settlements/tenure-timeout/${encodeURIComponent(String(settlementId))}/reject`,
     {
       method: 'PUT',
+      body: JSON.stringify({}),
     },
   );
 };
 
 /**
- * 6. PUT /admin/settlements/preclose/{request_id}/approve
+ * 8. PUT /admin/settlements/preclose/{request_id}/approve
  */
 export const approvePrecloseRequest = async (
   requestId: number | string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(requestId);
-  if (!idNum) {
+  if (
+    requestId === undefined ||
+    requestId === null ||
+    requestId === ''
+  ) {
     throw new Error('Valid Request ID is required.');
   }
 
   return await apiRequest(
-    `/admin/settlements/preclose/${idNum}/approve`,
+    `/admin/settlements/preclose/${encodeURIComponent(String(requestId))}/approve`,
     {
       method: 'PUT',
+      body: JSON.stringify({}),
     },
   );
 };
 
 /**
- * 7. PUT /admin/settlements/preclose/{request_id}/reject
+ * 9. PUT /admin/settlements/preclose/{request_id}/reject
  */
 export const rejectPrecloseRequest = async (
   requestId: number | string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(requestId);
-  if (!idNum) {
+  if (
+    requestId === undefined ||
+    requestId === null ||
+    requestId === ''
+  ) {
     throw new Error('Valid Request ID is required.');
   }
 
   return await apiRequest(
-    `/admin/settlements/preclose/${idNum}/reject`,
+    `/admin/settlements/preclose/${encodeURIComponent(String(requestId))}/reject`,
     {
       method: 'PUT',
+      body: JSON.stringify({}),
     },
   );
 };
+
+export { API_BASE_URL };
+
+export default {
+  getTenureTimeoutSettlements,
+  getTenureTimeoutSettlementDetails,
+  approveTenureTimeoutSettlement,
+  rejectTenureTimeoutSettlement,
+  getPrecloseRequests,
+  getPrecloseRequestDetails,
+  approvePrecloseRequest,
+  rejectPrecloseRequest,
+  getClosedSettlements,
+  getList,
+};
+

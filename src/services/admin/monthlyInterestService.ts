@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ENV } from '../../config/env';
 
 /* ============================================================
    CONFIG & AUTH CONSTANTS
    ============================================================ */
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const AUTH_TOKEN_KEYS = [
   'access_token',
@@ -12,24 +13,25 @@ const AUTH_TOKEN_KEYS = [
   'token',
   'authToken',
   'auth_token',
+  'admin_token',
   'jwt',
 ];
 
+const GST_RATE = 0.18;
+
 /* ============================================================
-   TYPES & INTERFACES (Matching Swagger OpenAPI Spec)
+   TYPES & INTERFACES (Matching Web & Backend)
    ============================================================ */
 
 export type PayoutStatus =
-  | 'pending'
-  | 'pending_approval'
-  | 'approved'
-  | 'rejected'
-  | 'paid'
-  | 'overdue'
-  | 'upcoming';
+  | 'Pending'
+  | 'Awaiting Approval'
+  | 'Approved'
+  | 'Rejected'
+  | 'Paid';
 
 export interface MonthlyInterestRecord {
-  id: string;
+  id: string | number;
   interestScheduleId: number;
   scheduleId?: number;
   investor: string;
@@ -39,6 +41,7 @@ export interface MonthlyInterestRecord {
   gstAmount: number;
   netPayable: number;
   dueDate: string;
+  dueLabel: string;
   status: PayoutStatus;
   rawStatus: string;
   actions?: string;
@@ -73,9 +76,10 @@ export interface GetMonthlyInterestParams {
 }
 
 export interface ApiResponse<T = any> {
-  success: boolean;
+  success?: boolean;
   message?: string;
   data?: T;
+  items?: T;
   total?: number;
   detail?: any;
 }
@@ -88,7 +92,7 @@ export const getAuthToken = async (): Promise<string | null> => {
   try {
     for (const key of AUTH_TOKEN_KEYS) {
       const val = await AsyncStorage.getItem(key);
-      if (val) {
+      if (val && val !== 'null' && val !== 'undefined') {
         return val.replace(/^Bearer\s+/i, '').trim();
       }
     }
@@ -122,6 +126,18 @@ export const getErrorMessage = (error: any): string => {
   return 'Operation failed. Please try again.';
 };
 
+export const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV?.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
+
 /* ============================================================
    CORE API REQUEST HELPER
    ============================================================ */
@@ -144,7 +160,8 @@ const apiRequest = async (
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = resolveEndpoint(endpoint);
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...headers,
@@ -162,7 +179,9 @@ const apiRequest = async (
   if (!response.ok) {
     let errorMessage = `Request failed with status ${response.status}`;
 
-    if (typeof responseBody === 'string') {
+    if (response.status === 401) {
+      errorMessage = 'Authentication failed. Please login again.';
+    } else if (typeof responseBody === 'string') {
       errorMessage = responseBody;
     } else if (responseBody?.detail) {
       if (typeof responseBody.detail === 'string') {
@@ -170,7 +189,7 @@ const apiRequest = async (
       } else if (Array.isArray(responseBody.detail)) {
         errorMessage = responseBody.detail
           .map((d: any) =>
-            typeof d === 'string' ? d : d.msg || d.message || JSON.stringify(d),
+            typeof d === 'string' ? d : d.msg || d.message || String(d),
           )
           .join(', ');
       } else if (typeof responseBody.detail === 'object') {
@@ -197,45 +216,128 @@ const apiRequest = async (
 };
 
 /* ============================================================
-   STATUS NORMALIZATION HELPER
+   VALUE & DATE HELPERS (Matching Web)
    ============================================================ */
 
-export const normalizePayoutStatus = (status?: string, actions?: string): PayoutStatus => {
-  const s = String(status || '').toLowerCase().trim();
-  const a = String(actions || '').toLowerCase().trim();
-
-  if (s.includes('paid') || a.includes('paid')) return 'paid';
-  if (s.includes('approved') || a.includes('approved')) return 'approved';
-  if (s.includes('reject') || a.includes('reject')) return 'rejected';
-  if (
-    s.includes('awaiting') ||
-    s.includes('pending_approval') ||
-    s.includes('waiting') ||
-    a.includes('waiting') ||
-    a.includes('super admin')
-  ) {
-    return 'pending_approval';
+const getValue = (row: any, keys: string[], fallback: any = null) => {
+  for (const key of keys) {
+    if (
+      row &&
+      row[key] !== undefined &&
+      row[key] !== null &&
+      row[key] !== ''
+    ) {
+      return row[key];
+    }
   }
-  if (s.includes('overdue')) return 'overdue';
-  if (s.includes('upcoming')) return 'upcoming';
-  return 'pending';
+  return fallback;
+};
+
+export const formatDate = (value: any): string => {
+  if (!value || value === '—' || value === '-') return '—';
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+    });
+  }
+  const parts = String(value).trim().split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+    } else {
+      const d = new Date(Number(parts[2]), Number(parts[1]) - 1, Number(parts[0]));
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString('en-GB', {
+          day: '2-digit',
+          month: 'short',
+          year: 'numeric',
+        });
+      }
+    }
+  }
+  return String(value);
+};
+
+export const toISODate = (value: any): string => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (!Number.isNaN(date.getTime())) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+  const parts = String(value).trim().split(/[-/]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    }
+    return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+  }
+  return '';
 };
 
 /* ============================================================
-   INVESTOR NAME EXTRACTION (Matching Swagger & Web Priority)
+   STATUS NORMALIZATION HELPER (Matching Web Exactly)
+   ============================================================ */
+
+export const normalizePayoutStatus = (value?: any): PayoutStatus => {
+  if (!value) return 'Pending';
+
+  const status = String(value).trim().toLowerCase();
+
+  if (
+    status === 'approved' ||
+    status === 'active' ||
+    status === 'paid'
+  ) {
+    return status === 'paid' ? 'Paid' : 'Approved';
+  }
+
+  if (
+    status.includes('awaiting') ||
+    status.includes('super admin') ||
+    status.includes('submitted') ||
+    status.includes('sent for approval') ||
+    status.includes('pending_approval')
+  ) {
+    return 'Awaiting Approval';
+  }
+
+  if (
+    status === 'rejected' ||
+    status === 'reject'
+  ) {
+    return 'Rejected';
+  }
+
+  return 'Pending';
+};
+
+/* ============================================================
+   INVESTOR NAME EXTRACTION
    ============================================================ */
 
 export const extractInvestorName = (raw: any): string => {
   if (!raw || typeof raw !== 'object') return '—';
 
-  // Swagger and Backend prioritize "investor", "investor_name", "investorName", "full_name", "name"
   const candidates = [
-    raw.investor,
     raw.investor_name,
     raw.investorName,
     raw.full_name,
     raw.fullName,
     raw.name,
+    raw.investor,
     raw.user_name,
     raw.userName,
     raw.investor?.name,
@@ -250,7 +352,9 @@ export const extractInvestorName = (raw: any): string => {
       typeof c === 'string' &&
       c.trim() &&
       c.trim().toLowerCase() !== 'investor' &&
-      c.trim().toLowerCase() !== 'unknown'
+      c.trim().toLowerCase() !== 'unknown' &&
+      c.trim().toLowerCase() !== 'null' &&
+      c.trim().toLowerCase() !== 'undefined'
     ) {
       return c.trim();
     }
@@ -270,65 +374,127 @@ export const extractInvestorName = (raw: any): string => {
 };
 
 /* ============================================================
-   SWAGGER RESPONSE RECORD MAPPER
+   SWAGGER / WEB RESPONSE RECORD MAPPER (Matching Web normalizeRow)
    ============================================================ */
 
-export const mapMonthlyInterestRecord = (raw: any): MonthlyInterestRecord => {
-  const scheduleId = Number(
-    raw?.interest_schedule_id ??
-    raw?.interestScheduleId ??
-    raw?.id ??
-    0,
+export const mapMonthlyInterestRecord = (
+  row: any,
+  index: number = 0,
+): MonthlyInterestRecord => {
+  const amount = Number(
+    getValue(
+      row,
+      [
+        'interest_amount',
+        'interestAmount',
+        'interest',
+        'amount',
+        'interest_due',
+        'interest_due_amount',
+      ],
+      0,
+    ),
   );
 
-  const id = scheduleId ? String(scheduleId) : '';
-  const investorName = extractInvestorName(raw);
+  const dueDate = getValue(
+    row,
+    [
+      'interest_due_date',
+      'interestDueDate',
+      'due_date',
+      'dueDate',
+      'payment_due_date',
+    ],
+    null,
+  );
 
-  const bondId =
-    raw?.bond_number ??
-    raw?.bondNumber ??
-    raw?.bond_id ??
-    raw?.bondId ??
-    '—';
+  const investor = getValue(
+    row,
+    [
+      'investor_name',
+      'investorName',
+      'full_name',
+      'name',
+      'investor',
+    ],
+    extractInvestorName(row),
+  );
 
-  const amount = Number(raw?.interest_amount ?? raw?.amount ?? 0) || 0;
-  const gstAmount = Number(raw?.gst_amount ?? raw?.gst ?? Math.round(amount * 0.18)) || 0;
-  const netPayable =
-    Number(raw?.net_interest_amount ?? raw?.net_payable ?? raw?.netAmount ?? amount - gstAmount) ||
-    amount - gstAmount;
+  const bond = getValue(
+    row,
+    [
+      'bond_number',
+      'bondNumber',
+      'bond_id',
+      'bond',
+    ],
+    '—',
+  );
 
-  const dueDate =
-    raw?.due_date ??
-    raw?.dueDate ??
-    raw?.interest_due_date ??
-    raw?.interestDueDate ??
-    '—';
+  const rawId = getValue(
+    row,
+    [
+      'interest_schedule_id',
+      'interestScheduleId',
+      'id',
+      'schedule_id',
+    ],
+    null,
+  );
 
-  const rawStatus = String(raw?.status ?? 'Pending');
-  const actions = raw?.actions ? String(raw.actions) : undefined;
-  const status = normalizePayoutStatus(rawStatus, actions);
+  const id = rawId !== null ? rawId : index;
+  const scheduleId = rawId !== null ? Number(rawId) || undefined : undefined;
+
+  const rawStatus = getValue(
+    row,
+    [
+      'status',
+      'status_name',
+      'interest_status',
+      'approval_status',
+    ],
+    'Pending',
+  );
+
+  const status = normalizePayoutStatus(rawStatus);
+
+  const gstAmount = Math.round(amount * GST_RATE);
+  const netPayable = amount - gstAmount;
 
   return {
     id,
-    interestScheduleId: scheduleId,
-    investor: investorName,
-    investorName,
-    bondId,
+    interestScheduleId: scheduleId || Number(id) || 0,
+    scheduleId,
+    investor: investor || '—',
+    investorName: investor || '—',
+    bondId: bond || '—',
     amount,
     gstAmount,
     netPayable,
-    dueDate,
+    dueDate: dueDate ? String(dueDate) : '—',
+    dueLabel: formatDate(dueDate),
     status,
-    rawStatus,
-    actions,
-    reference: raw?.reference ?? raw?.transaction_ref ?? '–',
-    overdueDays: raw?.overdue_days,
-    raw,
+    rawStatus: String(rawStatus),
+    actions: row?.actions ? String(row.actions) : undefined,
+    reference:
+      getValue(
+        row,
+        [
+          'payment_reference',
+          'paymentReference',
+          'reference',
+          'utr',
+          'transaction_ref',
+        ],
+        '–',
+      ) || '–',
+    overdueDays: row?.overdue_days,
+    raw: row,
   };
 };
 
 /* ============================================================
-   REAL SWAGGER APIS (Tested & Verified with Backend)
+   APIS (Matching Web & Backend)
    ============================================================ */
 
 /**
@@ -343,22 +509,13 @@ export const getMonthlyInterest = async (
 ): Promise<{ records: MonthlyInterestRecord[]; total: number; raw: any }> => {
   const queryParams = new URLSearchParams();
 
-  const dateVal = params.interestDueDate || params.dueDate;
-  if (dateVal?.trim()) {
-    // If date format is DD-MM-YYYY, convert to YYYY-MM-DD for backend
-    const parts = dateVal.trim().split(/[-/]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        queryParams.append('interest_due_date', dateVal.trim());
-      } else {
-        const [d, m, y] = parts;
-        queryParams.append(
-          'interest_due_date',
-          `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`,
-        );
-      }
+  const rawDate = params.interestDueDate || params.dueDate;
+  if (rawDate?.trim()) {
+    const iso = toISODate(rawDate.trim());
+    if (iso) {
+      queryParams.append('interest_due_date', iso);
     } else {
-      queryParams.append('interest_due_date', dateVal.trim());
+      queryParams.append('interest_due_date', rawDate.trim());
     }
   }
 
@@ -370,13 +527,15 @@ export const getMonthlyInterest = async (
     method: 'GET',
   });
 
-  const rawList: any[] = Array.isArray(response?.data)
-    ? response.data
-    : Array.isArray(response)
+  const rawList: any[] = Array.isArray(response)
     ? response
-    : [];
+    : Array.isArray(response?.data)
+      ? response.data
+      : Array.isArray(response?.items)
+        ? response.items
+        : [];
 
-  const records = rawList.map(mapMonthlyInterestRecord);
+  const records = rawList.map((row, idx) => mapMonthlyInterestRecord(row, idx));
   const total = Number(response?.total ?? records.length);
 
   return {
@@ -392,33 +551,37 @@ export const getMonthlyInterest = async (
 export const getMonthlyInterestDetails = async (
   scheduleId: number | string,
 ): Promise<MonthlyInterestDetails> => {
-  const idNum = Number(scheduleId);
-  if (!idNum) {
+  if (scheduleId === undefined || scheduleId === null || scheduleId === '') {
     throw new Error('Valid Interest Schedule ID is required.');
   }
 
-  const response = await apiRequest(`/admin/monthly-interest/${idNum}`, {
-    method: 'GET',
-  });
+  const response = await apiRequest(
+    `/admin/monthly-interest/${encodeURIComponent(String(scheduleId))}`,
+    {
+      method: 'GET',
+    },
+  );
 
-  const d = response?.data || {};
-  const amount = Number(d.interest_amount || 0);
-  const gstAmount = Number(d.gst_amount || 0);
+  const d = response?.data || response || {};
+  const amount = Number(
+    d.interest_amount || d.amount || d.interest || 0,
+  );
+  const gstAmount = Number(d.gst_amount || Math.round(amount * GST_RATE));
   const netPayable = Number(d.net_interest_amount || amount - gstAmount);
 
   return {
-    interestScheduleId: Number(d.interest_schedule_id || idNum),
+    interestScheduleId: Number(d.interest_schedule_id || scheduleId),
     investorId: String(d.investor_id || ''),
     investorName: extractInvestorName(d),
     mobile: String(d.mobile || ''),
-    bondId: String(d.bond_id || ''),
+    bondId: String(d.bond_id || d.bond_number || ''),
     investmentId: String(d.investment_id || ''),
     interestMonth: Number(d.interest_month || 0),
-    dueDate: String(d.interest_due_date || ''),
+    dueDate: String(d.interest_due_date || d.due_date || ''),
     amount,
     gstAmount,
     netPayable,
-    paymentStatus: String(d.payment_status || ''),
+    paymentStatus: String(d.payment_status || d.status || ''),
     raw: d,
   };
 };
@@ -430,15 +593,15 @@ export const getMonthlyInterestDetails = async (
 export const sendMonthlyInterestForApproval = async (
   scheduleId: number | string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(scheduleId);
-  if (!idNum) {
+  if (scheduleId === undefined || scheduleId === null || scheduleId === '') {
     throw new Error('Valid Interest Schedule ID is required.');
   }
 
   return await apiRequest(
-    `/admin/monthly-interest/${idNum}/send-for-approval`,
+    `/admin/monthly-interest/${encodeURIComponent(String(scheduleId))}/send-for-approval`,
     {
       method: 'PUT',
+      body: JSON.stringify({}),
     },
   );
 };
@@ -450,31 +613,17 @@ export const sendMonthlyInterestForApproval = async (
 export const sendAllMonthlyInterestForApproval = async (
   interestDueDate?: string,
 ): Promise<ApiResponse> => {
-  let formattedDate: string | undefined = undefined;
-
-  if (interestDueDate?.trim()) {
-    const parts = interestDueDate.trim().split(/[-/]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        formattedDate = interestDueDate.trim();
-      } else {
-        const [d, m, y] = parts;
-        formattedDate = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
-      }
-    } else {
-      formattedDate = interestDueDate.trim();
-    }
-  }
-
-  const bodyData = formattedDate
-    ? JSON.stringify({interest_due_date: formattedDate})
-    : JSON.stringify({interest_due_date: new Date().toISOString().slice(0, 10)});
+  const formattedDate = interestDueDate?.trim()
+    ? toISODate(interestDueDate.trim()) || interestDueDate.trim()
+    : new Date().toISOString().slice(0, 10);
 
   return await apiRequest(
     '/admin/monthly-interest/send-all-for-approval',
     {
       method: 'PUT',
-      body: bodyData,
+      body: JSON.stringify({
+        interest_due_date: formattedDate,
+      }),
     },
   );
 };
@@ -485,14 +634,17 @@ export const sendAllMonthlyInterestForApproval = async (
 export const approveMonthlyInterest = async (
   scheduleId: number | string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(scheduleId);
-  if (!idNum) {
+  if (scheduleId === undefined || scheduleId === null || scheduleId === '') {
     throw new Error('Valid Interest Schedule ID is required.');
   }
 
-  return await apiRequest(`/admin/monthly-interest/${idNum}/approve`, {
-    method: 'PUT',
-  });
+  return await apiRequest(
+    `/admin/monthly-interest/${encodeURIComponent(String(scheduleId))}/approve`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({}),
+    },
+  );
 };
 
 /**
@@ -500,23 +652,42 @@ export const approveMonthlyInterest = async (
  */
 export const rejectMonthlyInterest = async (
   scheduleId: number | string,
-  rejectionReason: string,
+  rejectionReason?: string,
   remarks?: string,
 ): Promise<ApiResponse> => {
-  const idNum = Number(scheduleId);
-  if (!idNum) {
+  if (scheduleId === undefined || scheduleId === null || scheduleId === '') {
     throw new Error('Valid Interest Schedule ID is required.');
   }
 
-  return await apiRequest(`/admin/monthly-interest/${idNum}/reject`, {
-    method: 'PUT',
-    body: JSON.stringify({
-      rejection_reason: rejectionReason,
-      remarks: remarks || null,
-    }),
-  });
+  return await apiRequest(
+    `/admin/monthly-interest/${encodeURIComponent(String(scheduleId))}/reject`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        rejection_reason: rejectionReason || 'Rejected by admin',
+        remarks: remarks || null,
+      }),
+    },
+  );
 };
 
 export const markMonthlyInterestPaid = approveMonthlyInterest;
+
+export { API_BASE_URL };
+
+export default {
+  getMonthlyInterest,
+  getMonthlyInterestDetails,
+  sendMonthlyInterestForApproval,
+  sendAllMonthlyInterestForApproval,
+  approveMonthlyInterest,
+  rejectMonthlyInterest,
+  markMonthlyInterestPaid,
+  mapMonthlyInterestRecord,
+  normalizePayoutStatus,
+  formatDate,
+  toISODate,
+};
+
 
 

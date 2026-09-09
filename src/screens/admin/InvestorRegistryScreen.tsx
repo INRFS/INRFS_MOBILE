@@ -22,12 +22,13 @@ import RNShare from 'react-native-share';
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import AppHeader from '../../components/AppHeader';
+import {ENV} from '../../config/env';
 
 /* ============================================================
    API CONFIG
    ============================================================ */
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 /*
  * Change this ONLY if your login code uses another AsyncStorage key.

@@ -1,6 +1,7 @@
 import {getAuthToken, getErrorMessage} from './superAdminDashboardService';
+import {ENV} from '../../config/env';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 export interface SuperAdminProfile {
   id: number;
@@ -16,7 +17,8 @@ export interface SuperAdminProfile {
 }
 
 export interface UpdateSuperAdminProfilePayload {
-  full_name: string;
+  full_name?: string;
+  fullName?: string;
   email: string;
   mobile: string;
 }
@@ -228,23 +230,27 @@ export const getSuperAdminProfile = async (): Promise<SuperAdminProfile> => {
 export const updateSuperAdminProfile = async (
   payload: UpdateSuperAdminProfilePayload,
 ): Promise<any> => {
+  const fullName = String(payload.full_name || payload.fullName || '').trim();
+  const email = String(payload.email || '').trim();
+  const mobile = String(payload.mobile || '').trim();
+
   let response: any = null;
   try {
     response = await apiRequest('/superadmin/profile', {
       method: 'PUT',
       body: JSON.stringify({
-        full_name: payload.full_name,
-        email: payload.email,
-        mobile: payload.mobile,
+        full_name: fullName,
+        email,
+        mobile,
       }),
     });
   } catch (err: any) {
     response = await apiRequest('/api/superadmin/profile', {
       method: 'PUT',
       body: JSON.stringify({
-        full_name: payload.full_name,
-        email: payload.email,
-        mobile: payload.mobile,
+        full_name: fullName,
+        email,
+        mobile,
       }),
     });
   }

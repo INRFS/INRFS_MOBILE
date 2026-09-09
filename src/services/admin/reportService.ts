@@ -8,7 +8,7 @@ import {ENV} from '../../config/env';
    CONFIG & AUTH HELPERS
    ============================================================ */
 
-export const API_BASE_URL = ENV?.API_BASE_URL || 'http://187.52.115.32:8000';
+export const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const AUTH_TOKEN_KEYS = [
   'access_token',
@@ -16,6 +16,7 @@ const AUTH_TOKEN_KEYS = [
   'token',
   'authToken',
   'auth_token',
+  'admin_token',
   'jwt',
 ];
 
@@ -73,8 +74,20 @@ const handleResponse = async (response: Response): Promise<any> => {
   return data;
 };
 
+export const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV?.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
+
 const request = async (endpoint: string, options: RequestInit = {}): Promise<any> => {
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  const url = endpoint.startsWith('http') ? endpoint : resolveEndpoint(endpoint);
   const headers = await getHeaders();
 
   const response = await fetch(url, {

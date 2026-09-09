@@ -181,6 +181,16 @@ export const styles = StyleSheet.create({
   chartBadgeGreen: {
     backgroundColor: '#ECFDF5',
   },
+  chartBadgeActive: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#93C5FD',
+  },
+  chartBadgeActiveGreen: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
   chartBadgeTextBlue: {
     fontSize: 11,
     fontWeight: '700',
@@ -192,10 +202,44 @@ export const styles = StyleSheet.create({
     color: '#059669',
   },
   chartStyle: {
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 4,
     alignSelf: 'center',
-    marginLeft: -10,
+  },
+  chartFooterStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#EEF2F6',
+  },
+  chartFooterItem: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  chartFooterDivider: {
+    width: 1,
+    height: 22,
+    backgroundColor: '#E2E8F0',
+    marginHorizontal: 4,
+  },
+  chartFooterLabel: {
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  chartFooterValue: {
+    fontSize: 12.5,
+    fontWeight: '800',
+    color: '#0F172A',
   },
 
   // ============================================================

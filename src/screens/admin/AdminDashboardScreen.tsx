@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   View,
@@ -12,7 +12,9 @@ import {
   Platform,
   ActivityIndicator,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
+import {LineChart} from 'react-native-chart-kit';
 
 import {useAppData, Investor} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminDashboardScreen.styles';
@@ -20,8 +22,79 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import AppHeader from '../../components/AppHeader';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import {validation} from '../../utils/validation';
+import {ENV} from '../../config/env';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const screenWidth = Dimensions.get('window').width;
+const chartWidth = Math.max(screenWidth - 56, 280);
+
+const formatShortMonth = (val: string): string => {
+  if (!val || val === '—') return '—';
+  const trimmed = String(val).trim();
+  if (trimmed.length <= 3) return trimmed;
+  const dateAttempt = new Date(trimmed.includes('-') ? trimmed : `${trimmed} 1, 2025`);
+  if (!Number.isNaN(dateAttempt.getTime())) {
+    return dateAttempt.toLocaleDateString('en-IN', {month: 'short'});
+  }
+  return trimmed.slice(0, 3);
+};
+
+const chartConfigInvestment = {
+  backgroundGradientFrom: '#FFFFFF',
+  backgroundGradientTo: '#FFFFFF',
+  decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+  propsForDots: {
+    r: '4',
+    strokeWidth: '2',
+    stroke: '#2563EB',
+    fill: '#FFFFFF',
+  },
+  propsForLabels: {
+    fontSize: 10,
+    fontWeight: '600',
+    fill: '#64748B',
+  },
+  propsForBackgroundLines: {
+    strokeDasharray: '4, 4',
+    stroke: '#F1F5F9',
+    strokeWidth: 1,
+  },
+  fillShadowGradientFrom: '#2563EB',
+  fillShadowGradientFromOpacity: 0.18,
+  fillShadowGradientTo: '#2563EB',
+  fillShadowGradientToOpacity: 0.02,
+};
+
+const chartConfigGrowth = {
+  backgroundGradientFrom: '#FFFFFF',
+  backgroundGradientTo: '#FFFFFF',
+  decimalPlaces: 0,
+  color: (opacity = 1) => `rgba(5, 150, 105, ${opacity})`,
+  labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
+  propsForDots: {
+    r: '4',
+    strokeWidth: '2',
+    stroke: '#059669',
+    fill: '#FFFFFF',
+  },
+  propsForLabels: {
+    fontSize: 10,
+    fontWeight: '600',
+    fill: '#64748B',
+  },
+  propsForBackgroundLines: {
+    strokeDasharray: '4, 4',
+    stroke: '#F1F5F9',
+    strokeWidth: 1,
+  },
+  fillShadowGradientFrom: '#059669',
+  fillShadowGradientFromOpacity: 0.18,
+  fillShadowGradientTo: '#059669',
+  fillShadowGradientToOpacity: 0.02,
+};
+
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const TENURE_OPTIONS = [
   {months: 6, rate: 11},
@@ -207,30 +280,6 @@ const formatNumber = (
 };
 
 /* =========================================================
-   CHART BAR HEIGHT
-========================================================= */
-
-const getBarHeight = (
-  value: number,
-  maxValue: number,
-) => {
-  if (!value || !maxValue) {
-    return 5;
-  }
-
-  const MIN_HEIGHT = 8;
-  const MAX_HEIGHT = 120;
-
-  const height =
-    (value / maxValue) * MAX_HEIGHT;
-
-  return Math.max(
-    MIN_HEIGHT,
-    Math.min(MAX_HEIGHT, height),
-  );
-};
-
-/* =========================================================
    ADMIN DASHBOARD
 ========================================================= */
 
@@ -265,6 +314,16 @@ const AdminDashboardScreen = ({
 
   const [selectedInvestment, setSelectedInvestment] =
     useState<any | null>(null);
+
+  const [selectedTrendPoint, setSelectedTrendPoint] = useState<{
+    month: string;
+    value: number;
+  } | null>(null);
+
+  const [selectedGrowthPoint, setSelectedGrowthPoint] = useState<{
+    month: string;
+    value: number;
+  } | null>(null);
 
   const [rejectingInvestment, setRejectingInvestment] =
     useState<any | null>(null);
@@ -765,6 +824,54 @@ const AdminDashboardScreen = ({
         )
       : 0;
 
+  const investmentTrendData = useMemo(() => {
+    const labels =
+      monthlyTrend.length > 0
+        ? monthlyTrend.map(item => formatShortMonth(item.month_name))
+        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+
+    const data =
+      monthlyTrend.length > 0
+        ? monthlyTrend.map(item =>
+            Math.max(Number(item.investment_amount || 0) / 100000, 0),
+          )
+        : [0, 0, 0, 0, 0, 0];
+
+    return {
+      labels,
+      datasets: [
+        {
+          data,
+          color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
+          strokeWidth: 2.5,
+        },
+      ],
+    };
+  }, [monthlyTrend]);
+
+  const investorGrowthData = useMemo(() => {
+    const labels =
+      investorGrowth.length > 0
+        ? investorGrowth.map(item => formatShortMonth(item.month_name))
+        : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+
+    const data =
+      investorGrowth.length > 0
+        ? investorGrowth.map(item => Math.max(Number(item.investor_count || 0), 0))
+        : [0, 0, 0, 0, 0, 0];
+
+    return {
+      labels,
+      datasets: [
+        {
+          data,
+          color: (opacity = 1) => `rgba(5, 150, 105, ${opacity})`,
+          strokeWidth: 2.5,
+        },
+      ],
+    };
+  }, [investorGrowth]);
+
   /* =======================================================
      LOADING SCREEN
   ======================================================= */
@@ -1257,112 +1364,68 @@ const AdminDashboardScreen = ({
             MONTHLY INVESTMENT TREND
         ================================================== */}
 
-        <View
-          style={
-            styles.chartCard
-          }>
+        <View style={styles.chartCard}>
+          <View style={styles.chartHeaderRow}>
+            <View style={styles.chartTitleWrap}>
+              <Text style={styles.chartTitle}>
+                Monthly Investment Trend
+              </Text>
+              <Text style={styles.chartSubtitle}>
+                Monthly investment value (in ₹ Lakhs)
+              </Text>
+            </View>
 
-          <View
-            style={
-              styles.chartHeaderRow
-            }>
-            <Text
-              style={
-                styles.chartTitle
-              }>
-              Monthly Investment Trend
-            </Text>
-
-            <Text
-              style={
-                styles.chartMenu
-              }>
-              •••
-            </Text>
+            <TouchableOpacity
+              style={[
+                styles.chartBadge,
+                selectedTrendPoint && styles.chartBadgeActive,
+              ]}
+              onPress={() => setSelectedTrendPoint(null)}>
+              <Text
+                style={[
+                  styles.chartBadgeText,
+                  selectedTrendPoint && styles.chartBadgeTextActive,
+                ]}>
+                {selectedTrendPoint
+                  ? `${selectedTrendPoint.month}: ₹${selectedTrendPoint.value.toFixed(1)}L`
+                  : '₹ in Lakhs'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {monthlyTrend.length ===
-          0 ? (
-            <View
-              style={{
-                height: 150,
-                alignItems:
-                  'center',
-                justifyContent:
-                  'center',
-              }}>
-              <Text
-                style={{
-                  color:
-                    '#9CA3AF',
-                }}>
-                No investment data
-                available
+          {monthlyTrend.length === 0 ? (
+            <View style={styles.chartEmptyWrap}>
+              <Text style={styles.chartEmptyText}>
+                No investment data available
               </Text>
             </View>
           ) : (
-            <>
-              <View
-                style={
-                  styles.chartBarsRow
-                }>
-
-                {monthlyTrend.map(
-                  (item, index) => {
-                    const value =
-                      Number(
-                        item.investment_amount ||
-                          0,
-                      );
-
-                    const height =
-                      getBarHeight(
-                        value,
-                        maxMonthlyInvestment,
-                      );
-
-                    return (
-                      <View
-                        key={`${item.month_name}-${index}`}
-                        style={
-                          styles.chartBarCol
-                        }>
-
-                        <View
-                          style={[
-                            styles.chartBar,
-                            {
-                              height,
-                            },
-                          ]}
-                        />
-                      </View>
-                    );
-                  },
-                )}
-              </View>
-
-              <View
-                style={
-                  styles.chartLabelsRow
-                }>
-
-                {monthlyTrend.map(
-                  (
-                    item,
-                    index,
-                  ) => (
-                    <Text
-                      key={`${item.month_name}-label-${index}`}
-                      style={
-                        styles.chartLabel
-                      }>
-                      {item.month_name}
-                    </Text>
-                  ),
-                )}
-              </View>
-            </>
+            <LineChart
+              data={investmentTrendData}
+              width={chartWidth}
+              height={185}
+              chartConfig={chartConfigInvestment}
+              bezier
+              fromZero
+              segments={4}
+              withInnerLines={true}
+              withOuterLines={false}
+              withVerticalLines={false}
+              withHorizontalLines={true}
+              withDots={true}
+              withShadow={true}
+              yAxisInterval={1}
+              formatYLabel={y => `${Math.round(Number(y))}L`}
+              onDataPointClick={({index, value}) => {
+                const mName =
+                  monthlyTrend[index]?.month_name ||
+                  investmentTrendData.labels[index];
+                setSelectedTrendPoint(prev =>
+                  prev && prev.month === mName ? null : {month: mName, value},
+                );
+              }}
+              style={styles.chartStyle}
+            />
           )}
         </View>
 
@@ -1370,114 +1433,69 @@ const AdminDashboardScreen = ({
             INVESTOR GROWTH
         ================================================== */}
 
-        <View
-          style={
-            styles.chartCard
-          }>
+        <View style={styles.chartCard}>
+          <View style={styles.chartHeaderRow}>
+            <View style={styles.chartTitleWrap}>
+              <Text style={styles.chartTitle}>
+                Investor Growth
+              </Text>
+              <Text style={styles.chartSubtitle}>
+                Registered investors over time
+              </Text>
+            </View>
 
-          <View
-            style={
-              styles.chartHeaderRow
-            }>
-            <Text
-              style={
-                styles.chartTitle
-              }>
-              Investor Growth
-            </Text>
-
-            <Text
-              style={
-                styles.chartMenu
-              }>
-              •••
-            </Text>
+            <TouchableOpacity
+              style={[
+                styles.chartBadge,
+                styles.chartBadgeGreen,
+                selectedGrowthPoint && styles.chartBadgeActiveGreen,
+              ]}
+              onPress={() => setSelectedGrowthPoint(null)}>
+              <Text
+                style={[
+                  styles.chartBadgeTextGreen,
+                  selectedGrowthPoint && styles.chartBadgeTextActiveGreen,
+                ]}>
+                {selectedGrowthPoint
+                  ? `${selectedGrowthPoint.month}: ${formatNumber(selectedGrowthPoint.value)}`
+                  : 'Total Count'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          {investorGrowth.length ===
-          0 ? (
-            <View
-              style={{
-                height: 150,
-                alignItems:
-                  'center',
-                justifyContent:
-                  'center',
-              }}>
-              <Text
-                style={{
-                  color:
-                    '#9CA3AF',
-                }}>
-                No investor growth
-                data available
+          {investorGrowth.length === 0 ? (
+            <View style={styles.chartEmptyWrap}>
+              <Text style={styles.chartEmptyText}>
+                No investor growth data available
               </Text>
             </View>
           ) : (
-            <>
-              <View
-                style={
-                  styles.chartBarsRow
-                }>
-
-                {investorGrowth.map(
-                  (item, index) => {
-                    const value =
-                      Number(
-                        item.investor_count ||
-                          0,
-                      );
-
-                    const height =
-                      getBarHeight(
-                        value,
-                        maxInvestorGrowth,
-                      );
-
-                    return (
-                      <View
-                        key={`${item.month_name}-${index}`}
-                        style={
-                          styles.chartBarCol
-                        }>
-
-                        <View
-                          style={[
-                            styles.chartBar,
-                            {
-                              height,
-                              backgroundColor:
-                                '#16A34A',
-                            },
-                          ]}
-                        />
-                      </View>
-                    );
-                  },
-                )}
-              </View>
-
-              <View
-                style={
-                  styles.chartLabelsRow
-                }>
-
-                {investorGrowth.map(
-                  (
-                    item,
-                    index,
-                  ) => (
-                    <Text
-                      key={`${item.month_name}-growth-label-${index}`}
-                      style={
-                        styles.chartLabel
-                      }>
-                      {item.month_name}
-                    </Text>
-                  ),
-                )}
-              </View>
-            </>
+            <LineChart
+              data={investorGrowthData}
+              width={chartWidth}
+              height={185}
+              chartConfig={chartConfigGrowth}
+              bezier
+              fromZero
+              segments={4}
+              withInnerLines={true}
+              withOuterLines={false}
+              withVerticalLines={false}
+              withHorizontalLines={true}
+              withDots={true}
+              withShadow={true}
+              yAxisInterval={1}
+              formatYLabel={y => `${Math.round(Number(y))}`}
+              onDataPointClick={({index, value}) => {
+                const mName =
+                  investorGrowth[index]?.month_name ||
+                  investorGrowthData.labels[index];
+                setSelectedGrowthPoint(prev =>
+                  prev && prev.month === mName ? null : {month: mName, value},
+                );
+              }}
+              style={styles.chartStyle}
+            />
           )}
         </View>
 

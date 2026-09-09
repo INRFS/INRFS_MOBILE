@@ -86,9 +86,26 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
         getClosedSettlements({limit: 100, offset: 0}),
       ]);
 
-      setTimeoutRows(timeoutRes.items || []);
-      setPreCloseRows(preCloseRes.items || []);
-      setClosedRows(closedRes.items || []);
+      const tenureList = (timeoutRes.items || []).filter(
+        (item: SettlementRecord) =>
+          item.status === 'Pending' || item.status === 'Pending Super Admin',
+      );
+
+      const precloseList = (preCloseRes.items || []).filter(
+        (item: SettlementRecord) =>
+          item.status === 'Pending' || item.status === 'Pending Super Admin',
+      );
+
+      const closedList = (closedRes.items || []).filter(
+        (item: SettlementRecord) =>
+          item.status === 'Approved' ||
+          item.status === 'Rejected' ||
+          item.status === 'Paid',
+      );
+
+      setTimeoutRows(tenureList);
+      setPreCloseRows(precloseList);
+      setClosedRows(closedList);
     } catch (err: any) {
       console.error('Settlement API error:', err);
       setError(getErrorMessage(err) || 'Unable to load settlement data.');
@@ -661,7 +678,7 @@ const SettlementCalculatorScreen = ({navigation}: any) => {
                   <View style={local.cardTopLeft}>
                     <Text style={local.bondId}>{row.bondNumber}</Text>
                     {renderStatusBadge(row.status)}
-                    {row.type === 'PRECLOSE' && (
+                    {(row.type === 'PRECLOSE' || row.type === 'Pre-Close') && (
                       <View style={local.precloseBadge}>
                         <Text style={local.precloseBadgeText}>Pre-Close</Text>
                       </View>

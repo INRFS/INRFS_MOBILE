@@ -137,7 +137,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
           offset,
         });
       } else {
-        // 'All' category
+        // 'All' category: Fetch the generic payment queue matching Web service logic
         res = await getPaymentQueue({
           payment_type: 'All',
           limit: PAGE_SIZE,
@@ -145,14 +145,6 @@ const PaymentQueueScreen = ({navigation}: any) => {
           search: searchParam,
           status: statusParam,
         });
-
-        // Fallback: if All queue returned 0 records, query Monthly Interest
-        if (!res.records || res.records.length === 0) {
-          const miRes = await getMonthlyInterestPaymentQueue({limit: PAGE_SIZE, offset});
-          if (miRes.records && miRes.records.length > 0) {
-            res = miRes;
-          }
-        }
       }
 
       let records = res.records || [];
@@ -267,8 +259,10 @@ const PaymentQueueScreen = ({navigation}: any) => {
         detailed = await getTenureTimeoutSettlementDetails(sourceId);
       } else if (item.paymentType === 'Pre-Close Settlement') {
         detailed = await getPrecloseSettlementDetails(sourceId);
-      } else {
+      } else if (item.paymentType === 'Monthly Interest') {
         detailed = await getPaymentDetails(sourceId, 'MONTHLY_INTEREST');
+      } else {
+        detailed = await getPaymentDetails(sourceId, item.paymentType || 'MONTHLY_INTEREST');
       }
 
       if (detailed) setSelectedPayment(detailed);
@@ -691,6 +685,76 @@ const PaymentQueueScreen = ({navigation}: any) => {
                       </View>
                     </View>
                   </>
+                ) : payment.paymentType === 'Tenure Settlement' || payment.paymentType === 'Pre-Close Settlement' ? (
+                  <>
+                    {/* INFO GRID ROW 1: PRINCIPAL & INTEREST */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>PRINCIPAL</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.principalAmount || 0)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>INTEREST</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.interestAmount || 0)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 2: GST & PENALTY */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>GST</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.gstAmount || 0)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>PENALTY</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.penaltyAmount && payment.penaltyAmount > 0
+                            ? `-₹${formatIndianNumber(payment.penaltyAmount)}`
+                            : '₹0'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 3: NET SETTLEMENT & REQUESTED BY */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>NET SETTLEMENT</Text>
+                        <Text style={styles.netAmountValue} numberOfLines={1}>
+                          ₹{formatIndianNumber(payment.netAmount || 0)}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>REQUESTED BY</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.requestedBy}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* INFO GRID ROW 4: APPROVED BY & DATE */}
+                    <View style={styles.infoGrid}>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>APPROVED BY ADMIN</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.approvedBy}
+                        </Text>
+                      </View>
+                      <View style={styles.infoItem}>
+                        <Text style={styles.infoLabel}>DATE</Text>
+                        <Text style={styles.infoValue} numberOfLines={1}>
+                          {payment.createdDate !== '—'
+                            ? formatSuperAdminDate(payment.createdDate)
+                            : '—'}
+                        </Text>
+                      </View>
+                    </View>
+                  </>
                 ) : (
                   <>
                     {/* INFO GRID ROW 1: AMOUNT & GST */}
@@ -698,7 +762,7 @@ const PaymentQueueScreen = ({navigation}: any) => {
                       <View style={styles.infoItem}>
                         <Text style={styles.infoLabel}>AMOUNT</Text>
                         <Text style={styles.infoValue} numberOfLines={1}>
-                          ₹{formatIndianNumber(payment.amount || 0)}
+                          ₹{formatIndianNumber(payment.amount || payment.interestAmount || 0)}
                         </Text>
                       </View>
                       <View style={styles.infoItem}>
@@ -982,12 +1046,61 @@ const PaymentQueueScreen = ({navigation}: any) => {
                           </Text>
                         </View>
                       </>
+                    ) : selectedPayment.paymentType === 'Tenure Settlement' || selectedPayment.paymentType === 'Pre-Close Settlement' ? (
+                      <>
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>PRINCIPAL AMOUNT</Text>
+                          <Text style={styles.detailVal}>
+                            ₹{formatIndianNumber(selectedPayment.principalAmount || 0)}
+                          </Text>
+                        </View>
+
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>INTEREST AMOUNT</Text>
+                          <Text style={styles.detailVal}>
+                            ₹{formatIndianNumber(selectedPayment.interestAmount || 0)}
+                          </Text>
+                        </View>
+
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>GST AMOUNT</Text>
+                          <Text style={styles.detailVal}>
+                            ₹{formatIndianNumber(selectedPayment.gstAmount || 0)}
+                          </Text>
+                        </View>
+
+                        <View style={styles.detailField}>
+                          <Text style={styles.detailLabel}>PENALTY</Text>
+                          <Text style={styles.detailVal}>
+                            {selectedPayment.penaltyAmount && selectedPayment.penaltyAmount > 0
+                              ? `-₹${formatIndianNumber(selectedPayment.penaltyAmount)}`
+                              : '₹0'}
+                          </Text>
+                        </View>
+
+                        {/* NET SETTLEMENT HIGHLIGHT BOX */}
+                        <View style={styles.amountBox}>
+                          <Text style={styles.amountBoxLabel}>NET SETTLEMENT</Text>
+                          <Text style={styles.amountBoxValue}>
+                            ₹{formatIndianNumber(selectedPayment.netAmount || 0)}
+                          </Text>
+                        </View>
+
+                        {selectedPayment.bankName !== '—' && (
+                          <View style={styles.detailField}>
+                            <Text style={styles.detailLabel}>BANK / ACCOUNT</Text>
+                            <Text style={styles.detailVal}>
+                              {selectedPayment.bankName} • {selectedPayment.accountNumber} ({selectedPayment.ifscCode})
+                            </Text>
+                          </View>
+                        )}
+                      </>
                     ) : (
                       <>
                         <View style={styles.detailField}>
                           <Text style={styles.detailLabel}>AMOUNT</Text>
                           <Text style={styles.detailVal}>
-                            ₹{formatIndianNumber(selectedPayment.amount || 0)}
+                            ₹{formatIndianNumber(selectedPayment.amount || selectedPayment.interestAmount || 0)}
                           </Text>
                         </View>
 
