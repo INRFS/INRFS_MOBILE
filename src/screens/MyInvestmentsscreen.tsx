@@ -19,6 +19,7 @@ import RNShare from 'react-native-share';
 import BottomTabBar from '../components/BottomTabBar';
 import AppHeader from '../components/AppHeader';
 import { styles } from '../styles/MyInvestmentsScreen.styles';
+import { exportToExcel } from '../utils/excelExport';
 import {
   investorService,
   ApiInvestment,
@@ -707,6 +708,11 @@ const MyInvestmentsScreen = ({ navigation, route }: any) => {
 
   const exportExcel = async () => {
     try {
+      if (!filtered.length) {
+        Alert.alert('No data', 'There are no investment records to export.');
+        return;
+      }
+
       const exportData = filtered.map(x => ({
         'Investment ID': x.id,
         'Bond Number': x.bondNumber || '—',
@@ -720,45 +726,15 @@ const MyInvestmentsScreen = ({ navigation, route }: any) => {
         Status: getItemEffectiveStatus(x),
       }));
 
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(exportData);
-      XLSX.utils.book_append_sheet(wb, ws, 'My Investments');
-
-      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const cleanFilename = `INRFS_My_Investments_${Date.now()}.xlsx`;
-      const dir = RNFS.CachesDirectoryPath || RNFS.DocumentDirectoryPath;
-      const path = `${dir}/${cleanFilename}`;
-
-      await RNFS.writeFile(path, wbout, 'base64');
-
-      const exists = await RNFS.exists(path);
-      if (!exists) {
-        Alert.alert('Export Error', 'Export file could not be created on the device.');
-        return;
-      }
-
-      const fileUrl = `file://${path}`;
-      if (!fileUrl) {
-        Alert.alert('Export Error', 'Generated file URI is null or invalid.');
-        return;
-      }
-
-      await RNShare.open({
-        url: fileUrl,
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        title: 'Share My Investments Report',
-        subject: cleanFilename,
-        useInternalStorage: true,
-        failOnCancel: false,
+      await exportToExcel({
+        filename: `INRFS_My_Investments_${Date.now()}.xlsx`,
+        sheetName: 'My Investments',
+        data: exportData,
+        title: 'Export My Investments',
       });
     } catch (e: any) {
-      if (
-        e?.message !== 'User did not share' &&
-        !e?.message?.includes('DISMISSED') &&
-        !e?.message?.includes('cancel')
-      ) {
-        Alert.alert('Export Error', e?.message || 'Unable to export report.');
-      }
+      console.warn('Export error:', e);
+      Alert.alert('Export Error', e?.message || 'Unable to export report.');
     }
   };
 

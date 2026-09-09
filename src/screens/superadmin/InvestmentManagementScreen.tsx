@@ -26,6 +26,7 @@ import {
   InvestmentFilterOption,
 } from '../../services/superadmin/superAdminInvestmentService';
 import {formatSuperAdminDate} from '../../services/superadmin/superAdminDashboardService';
+import {exportToExcel} from '../../utils/excelExport';
 
 const PAGE_SIZE = 10;
 
@@ -255,12 +256,39 @@ const InvestmentManagementScreen = ({navigation}: any) => {
     }
   };
 
-  const handleExport = () => {
-    Alert.alert(
-      'Export Investments',
-      `Exporting ${filtered.length} investment records. The download will begin shortly.`,
-      [{text: 'OK'}],
-    );
+  const handleExport = async () => {
+    try {
+      const recordsToExport = filtered.length > 0 ? filtered : investments;
+      if (!recordsToExport.length) {
+        Alert.alert('No data', 'There are no investment records to export.');
+        return;
+      }
+
+      const rows = recordsToExport.map(inv => ({
+        'Investment ID': inv.investmentId,
+        'Investor Name': inv.investorName,
+        'Investor ID': inv.investorId,
+        'Bond ID': inv.bondId || '—',
+        'Amount (₹)': inv.amount,
+        'Tenure (Months)': inv.tenureMonths,
+        'Interest Rate (%)': inv.interestRate,
+        'Expected Monthly Interest (₹)': inv.monthlyInterest || 0,
+        'Investment Date': inv.investmentDate ? formatSuperAdminDate(inv.investmentDate) : '—',
+        'Maturity Date': inv.maturityDate ? formatSuperAdminDate(inv.maturityDate) : '—',
+        Status: inv.status,
+        Branch: inv.branchName || '—',
+      }));
+
+      await exportToExcel({
+        filename: `SuperAdmin_Investments_${Date.now()}.xlsx`,
+        sheetName: 'Investments',
+        data: rows,
+        title: 'Export Investments',
+      });
+    } catch (err: any) {
+      console.warn('Export investments error:', err);
+      Alert.alert('Export Failed', err?.message || 'Could not export investments.');
+    }
   };
 
   const getStatusBadgeStyle = (status: string) => {

@@ -28,6 +28,7 @@ import {
   InvestorFilterOption,
 } from '../../services/superadmin/superAdminInvestorService';
 import {formatSuperAdminDate, formatIndianNumber} from '../../services/superadmin/superAdminDashboardService';
+import {exportToExcel} from '../../utils/excelExport';
 
 const PAGE_SIZE = 10;
 
@@ -199,14 +200,32 @@ const InvestorManagementScreen = ({navigation}: any) => {
 
   const handleExport = async () => {
     try {
-      await exportInvestorsCSV();
-      Alert.alert(
-        'Export Investors',
-        `Exporting ${totalCount} investor records. The CSV download will begin shortly.`,
-        [{text: 'OK'}],
-      );
-    } catch (err) {
-      Alert.alert('Export Failed', 'Could not export investors.');
+      if (!investors.length) {
+        Alert.alert('No data', 'There are no investor records to export.');
+        return;
+      }
+
+      const rows = investors.map(inv => ({
+        'Investor ID': inv.investorId || `INV-${inv.id}`,
+        Name: inv.name,
+        Mobile: inv.mobile || '—',
+        Email: inv.email || '—',
+        Branch: inv.branchName || '—',
+        'KYC Status': inv.kycStatus || '—',
+        'Account Status': inv.status || 'Active',
+        'Total Invested (₹)': inv.totalInvested || 0,
+        'Registered Date': inv.registeredDate ? formatSuperAdminDate(inv.registeredDate) : '—',
+      }));
+
+      await exportToExcel({
+        filename: `SuperAdmin_Investors_${Date.now()}.xlsx`,
+        sheetName: 'Investors',
+        data: rows,
+        title: 'Export Investors',
+      });
+    } catch (err: any) {
+      console.warn('Export investors error:', err);
+      Alert.alert('Export Failed', err?.message || 'Could not export investors.');
     }
   };
 

@@ -30,6 +30,7 @@ import {
   TenureExtensionRecord,
   InvestmentDetails,
 } from '../../services/admin/investmentManagementService';
+import {exportToExcel} from '../../utils/excelExport';
 
 type TabKey = 'pending' | 'tenure' | 'all';
 
@@ -301,8 +302,65 @@ const BondTrackingScreen = ({navigation}: any) => {
   };
 
   // EXPORT
-  const handleExport = () => {
-    Alert.alert('Export', 'Investment records exported successfully.');
+  const handleExport = async () => {
+    try {
+      if (activeTab === 'tenure') {
+        if (!filteredTenureRequests.length) {
+          Alert.alert('No data', 'There are no tenure extension requests to export.');
+          return;
+        }
+
+        const rows = filteredTenureRequests.map(req => ({
+          'Request ID': req.requestId,
+          'Investor Name': req.investorName,
+          'Investor ID': req.investorId,
+          'Bond ID': req.bondId || '—',
+          'Current Maturity Date': formatDate(req.currentMaturityDate),
+          'Current Interest Rate (%)': req.currentInterestRate,
+          'Requested Extension': req.requestedExtension,
+          'Submitted Date': formatDate(req.submittedDate),
+          Status: req.status,
+          Remarks: req.remarks || '—',
+        }));
+
+        await exportToExcel({
+          filename: `Admin_Tenure_Extensions_${Date.now()}.xlsx`,
+          sheetName: 'Tenure Extensions',
+          data: rows,
+          title: 'Export Tenure Extensions',
+        });
+      } else {
+        if (!filteredInvestments.length) {
+          Alert.alert('No data', 'There are no investment records to export.');
+          return;
+        }
+
+        const rows = filteredInvestments.map(inv => ({
+          'Investment ID': inv.investmentId,
+          'Investor Name': inv.investorName,
+          'Investor ID': inv.investorId,
+          'Bond ID': inv.bondId || '—',
+          'Principal Amount (₹)': inv.amount,
+          'Interest Rate (%)': inv.interestRate,
+          'Tenure (Months)': inv.tenureMonths,
+          'Investment Date': formatDate(inv.investmentDate),
+          'Maturity Date': formatDate(inv.maturityDate),
+          Status: inv.status,
+          Remarks: inv.remarks || '—',
+        }));
+
+        const sheetTitle = activeTab === 'pending' ? 'Pending Investments' : 'All Investments';
+        await exportToExcel({
+          filename: `Admin_Investments_${activeTab}_${Date.now()}.xlsx`,
+          sheetName: sheetTitle,
+          data: rows,
+          title: `Export ${sheetTitle}`,
+        });
+      }
+    } catch (err: any) {
+      console.warn('Export error:', err);
+      Alert.alert('Export Failed', err?.message || 'Unable to generate Excel file.');
+    }
   };
 
   /* ==========================================================
