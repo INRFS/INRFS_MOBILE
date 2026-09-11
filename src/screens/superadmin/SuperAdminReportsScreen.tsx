@@ -19,6 +19,7 @@ import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {styles} from '../../styles/superadmin/SuperAdminReportsScreen.styles';
 import {validation} from '../../utils/validation';
+import {exportToExcel} from '../../utils/excelExport';
 import {
   formatCurrencyAUM,
   formatIndianNumber,
@@ -832,45 +833,15 @@ const SuperAdminReportsScreen = ({navigation}: any) => {
         return;
       }
 
-      const wb = XLSX.utils.book_new();
-      const ws = XLSX.utils.json_to_sheet(exportRows);
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-
-      const wbout = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-      const cleanFilename = `INRFS_${sheetName || 'Report'}_Report_${Date.now()}.xlsx`;
-      const dir = RNFS.CachesDirectoryPath || RNFS.DocumentDirectoryPath;
-      const path = `${dir}/${cleanFilename}`;
-
-      await RNFS.writeFile(path, wbout, 'base64');
-
-      const exists = await RNFS.exists(path);
-      if (!exists) {
-        Alert.alert('Export Failed', 'Export file could not be created on the device.');
-        return;
-      }
-
-      const fileUrl = `file://${path}`;
-      if (!fileUrl) {
-        Alert.alert('Export Failed', 'Generated file URI is null or invalid.');
-        return;
-      }
-
-      await RNShare.open({
-        url: fileUrl,
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        title: `Share ${sheetName} Report`,
-        subject: cleanFilename,
-        useInternalStorage: true,
-        failOnCancel: false,
+      await exportToExcel({
+        filename: `INRFS_${sheetName || 'Report'}_Report_${Date.now()}.xlsx`,
+        sheetName: sheetName || 'Report',
+        data: exportRows,
+        title: `Export ${sheetName} Report`,
       });
     } catch (e: any) {
-      if (
-        e?.message !== 'User did not share' &&
-        !e?.message?.includes('DISMISSED') &&
-        !e?.message?.includes('cancel')
-      ) {
-        Alert.alert('Export Notice', e?.message || 'Unable to complete report export.');
-      }
+      console.warn('Export report error:', e);
+      Alert.alert('Export Notice', e?.message || 'Unable to complete report export.');
     }
   };
 

@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -26,6 +26,7 @@ import {
   InvestmentFilterOption,
 } from '../../services/superadmin/superAdminInvestmentService';
 import {formatSuperAdminDate} from '../../services/superadmin/superAdminDashboardService';
+import {exportToExcel} from '../../utils/excelExport';
 
 const PAGE_SIZE = 10;
 
@@ -56,7 +57,6 @@ const InvestmentManagementScreen = ({navigation}: any) => {
 
   // Pagination & Search & Filters
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
   const [search, setSearch] = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<string>('All Status');
@@ -77,54 +77,22 @@ const InvestmentManagementScreen = ({navigation}: any) => {
       else setRefreshing(true);
       setError('');
 
-      const offset = (page - 1) * PAGE_SIZE;
-
       const [invRes, summaryRes, branchesRes] = await Promise.all([
         getSuperAdminInvestments({
-          limit: PAGE_SIZE,
-          offset,
-          search: search.trim() || undefined,
-          branch_id: selectedBranchId || undefined,
-          status: selectedStatus !== 'All Status' ? selectedStatus : undefined,
+          limit: 100,
+          offset: 0,
         }),
         getSuperAdminInvestmentSummary(),
         getSuperAdminBranchesFilter(),
       ]);
 
-      let records = invRes.records || [];
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        records = records.filter(
-          i =>
-            (i.investorName && i.investorName.toLowerCase().includes(q)) ||
-            (i.bondId && i.bondId.toLowerCase().includes(q)) ||
-            (i.investmentId && i.investmentId.toLowerCase().includes(q)) ||
-            (i.branchName && i.branchName.toLowerCase().includes(q)) ||
-            (i.status && i.status.toLowerCase().includes(q)) ||
-            String(i.amount || '').includes(q),
-        );
-      }
+      const records = invRes.records || [];
       setInvestments(records);
-      const total = records.length > 0 ? invRes.total || records.length : 0;
-      setTotalCount(total);
 
       if (invRes.summary) {
         setSummary(invRes.summary);
       } else if (summaryRes && summaryRes.totalInvestments > 0) {
         setSummary(summaryRes);
-      } else {
-        // Fallback summary from loaded data if summary API returns 0
-        const activeCount = (invRes.records || []).filter(i => i.status.toLowerCase() === 'active').length;
-        const pendingCount = (invRes.records || []).filter(i => i.status.toLowerCase() === 'pending').length;
-        const maturedCount = (invRes.records || []).filter(i => i.status.toLowerCase() === 'matured').length;
-        const totalInvestedSum = (invRes.records || []).reduce((sum, i) => sum + (i.amount || 0), 0);
-        setSummary({
-          totalInvestments: total,
-          activeInvestments: summaryRes.activeInvestments || activeCount,
-          pendingApproval: summaryRes.pendingApproval || pendingCount,
-          matured: summaryRes.matured || maturedCount,
-          totalInvested: summaryRes.totalInvested || totalInvestedSum,
-        });
       }
 
       if (branchesRes && branchesRes.length > 0) {
@@ -137,24 +105,118 @@ const InvestmentManagementScreen = ({navigation}: any) => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page, search, selectedBranchId, selectedStatus]);
+  }, []);
 
   useEffect(() => {
     loadData(true);
   }, [loadData]);
 
-  // Total pages
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  // Derived Branches (matching Web)
+  const branchOptions = useMemo(() => {
+    if (branches.length > 0) return branches;
+    const unique = Array.from(
+      new Set(
+        investments
+          .map(item => item.branchName)
+          .filter(v => v && v !== '—' && v !== 'Branch'),
+      ),
+    ).sort();
+    return unique.map((name, idx) => ({ id: idx + 1, name }));
+  }, [branches, investments]);
+
+  // Client Filtered (matching Web useMemo)
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return investments.filter(i => {
+      const matchesSearch =
+        !q ||
+        (i.investorName && i.investorName.toLowerCase().includes(q)) ||
+        (i.bondId && i.bondId.toLowerCase().includes(q)) ||
+        (i.investmentId && i.investmentId.toLowerCase().includes(q)) ||
+        (i.branchName && i.branchName.toLowerCase().includes(q)) ||
+        (i.status && i.status.toLowerCase().includes(q)) ||
+        String(i.amount || '').includes(q);
+
+      const matchesBranch =
+        selectedBranchId === null ||
+        i.branchId === selectedBranchId ||
+        (i.branchName &&
+          branchOptions.find((b: InvestmentFilterOption) => b.id === selectedBranchId)?.name === i.branchName);
+
+      const matchesStatus =
+        selectedStatus === 'All Status' ||
+        (i.status || '').toLowerCase() === selectedStatus.toLowerCase() ||
+        (selectedStatus.toLowerCase() === 'pending' &&
+          (i.status || '').toLowerCase().includes('pending')) ||
+        (selectedStatus.toLowerCase() === 'active' &&
+          ((i.status || '').toLowerCase().includes('active') ||
+            (i.status || '').toLowerCase().includes('approved')));
+
+      return matchesSearch && matchesBranch && matchesStatus;
+    });
+  }, [investments, search, selectedBranchId, selectedStatus, branchOptions]);
+
+  // Overall Statistics (Matches Web stats useMemo from full dataset)
+  const stats = useMemo(() => {
+    const total =
+      summary.totalInvestments > 0
+        ? summary.totalInvestments
+        : investments.length;
+
+    const active =
+      summary.activeInvestments > 0
+        ? summary.activeInvestments
+        : investments.filter(
+            item =>
+              String(item.status).toLowerCase().includes('active') ||
+              String(item.status).toLowerCase().includes('approved'),
+          ).length;
+
+    const pending =
+      summary.pendingApproval > 0
+        ? summary.pendingApproval
+        : investments.filter(item =>
+            String(item.status).toLowerCase().includes('pending'),
+          ).length;
+
+    const matured =
+      summary.matured > 0
+        ? summary.matured
+        : investments.filter(item =>
+            String(item.status).toLowerCase().includes('mature'),
+          ).length;
+
+    const totalInvested =
+      summary.totalInvested > 0
+        ? summary.totalInvested
+        : investments.reduce((sum, item) => sum + (item.amount || 0), 0);
+
+    return {
+      total,
+      active,
+      pending,
+      matured,
+      totalInvested,
+    };
+  }, [investments, summary]);
+
+  // Total pages and Paginated Slice (Matches Web exactly)
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageSafe = Math.min(Math.max(1, page), totalPages);
+
+  const paginated = useMemo(() => {
+    return filtered.slice((pageSafe - 1) * PAGE_SIZE, pageSafe * PAGE_SIZE);
+  }, [filtered, pageSafe]);
 
   const handlePrevPage = () => {
-    if (page > 1) {
-      setPage(p => p - 1);
+    if (pageSafe > 1) {
+      setPage(pageSafe - 1);
     }
   };
 
   const handleNextPage = () => {
-    if (page < totalPages) {
-      setPage(p => p + 1);
+    if (pageSafe < totalPages) {
+      setPage(pageSafe + 1);
     }
   };
 
@@ -194,12 +256,39 @@ const InvestmentManagementScreen = ({navigation}: any) => {
     }
   };
 
-  const handleExport = () => {
-    Alert.alert(
-      'Export Investments',
-      `Exporting ${totalCount} investment records. The download will begin shortly.`,
-      [{text: 'OK'}],
-    );
+  const handleExport = async () => {
+    try {
+      const recordsToExport = filtered.length > 0 ? filtered : investments;
+      if (!recordsToExport.length) {
+        Alert.alert('No data', 'There are no investment records to export.');
+        return;
+      }
+
+      const rows = recordsToExport.map(inv => ({
+        'Investment ID': inv.investmentId,
+        'Investor Name': inv.investorName,
+        'Investor ID': inv.investorId,
+        'Bond ID': inv.bondId || '—',
+        'Amount (₹)': inv.amount,
+        'Tenure (Months)': inv.tenureMonths,
+        'Interest Rate (%)': inv.interestRate,
+        'Expected Monthly Interest (₹)': inv.monthlyInterest || 0,
+        'Investment Date': inv.investmentDate ? formatSuperAdminDate(inv.investmentDate) : '—',
+        'Maturity Date': inv.maturityDate ? formatSuperAdminDate(inv.maturityDate) : '—',
+        Status: inv.status,
+        Branch: inv.branchName || '—',
+      }));
+
+      await exportToExcel({
+        filename: `SuperAdmin_Investments_${Date.now()}.xlsx`,
+        sheetName: 'Investments',
+        data: rows,
+        title: 'Export Investments',
+      });
+    } catch (err: any) {
+      console.warn('Export investments error:', err);
+      Alert.alert('Export Failed', err?.message || 'Could not export investments.');
+    }
   };
 
   const getStatusBadgeStyle = (status: string) => {
@@ -247,7 +336,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
       <View style={styles.headerSection}>
         <Text style={styles.headerTitle}>Investment Management</Text>
         <Text style={styles.headerSubtitle}>
-          All investments across all branches — {totalCount} {totalCount === 1 ? 'record' : 'records'}
+          All investments across all branches — {stats.total} {stats.total === 1 ? 'record' : 'records'}
         </Text>
       </View>
 
@@ -265,7 +354,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
                 <Text style={styles.statIconText}>📈</Text>
               </View>
             </View>
-            <Text style={styles.statValue}>{summary.totalInvestments || totalCount}</Text>
+            <Text style={styles.statValue}>{stats.total}</Text>
           </View>
 
           {/* ACTIVE INVESTMENTS */}
@@ -276,7 +365,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
                 <Text style={styles.statIconText}>✅</Text>
               </View>
             </View>
-            <Text style={styles.statValue}>{summary.activeInvestments}</Text>
+            <Text style={styles.statValue}>{stats.active}</Text>
           </View>
 
           {/* PENDING APPROVAL */}
@@ -287,7 +376,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
                 <Text style={styles.statIconText}>⏳</Text>
               </View>
             </View>
-            <Text style={styles.statValue}>{summary.pendingApproval}</Text>
+            <Text style={styles.statValue}>{stats.pending}</Text>
           </View>
 
           {/* MATURED */}
@@ -298,7 +387,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
                 <Text style={styles.statIconText}>🛡️</Text>
               </View>
             </View>
-            <Text style={styles.statValue}>{summary.matured}</Text>
+            <Text style={styles.statValue}>{stats.matured}</Text>
           </View>
 
           {/* TOTAL INVESTED */}
@@ -309,7 +398,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
                 <Text style={styles.statIconText}>₹</Text>
               </View>
             </View>
-            <Text style={styles.statValueAmount}>{formatFullINR(summary.totalInvested)}</Text>
+            <Text style={styles.statValueAmount}>{formatFullINR(stats.totalInvested)}</Text>
           </View>
         </ScrollView>
       </View>
@@ -358,7 +447,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
           {selectedBranchId ? (
             <View style={styles.activeChip}>
               <Text style={styles.activeChipText}>
-                Branch: {branches.find(b => b.id === selectedBranchId)?.name || selectedBranchId}
+                Branch: {branchOptions.find((b: InvestmentFilterOption) => b.id === selectedBranchId)?.name || selectedBranchId}
               </Text>
               <TouchableOpacity
                 onPress={() => {
@@ -414,7 +503,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
             <ActivityIndicator size="large" color="#0B1E45" />
             <Text style={styles.loadingText}>Loading investments...</Text>
           </View>
-        ) : investments.length === 0 ? (
+        ) : paginated.length === 0 ? (
           <View style={styles.emptyWrap}>
             <View style={styles.emptyIconWrap}>
               <Text style={styles.emptyIcon}>📊</Text>
@@ -439,7 +528,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
             ) : null}
           </View>
         ) : (
-          investments.map(inv => {
+          paginated.map((inv: SuperAdminInvestmentRecord) => {
             const badgeStyle = getStatusBadgeStyle(inv.status);
             const initial =
               inv.investorName && inv.investorName !== 'Investor'
@@ -541,28 +630,28 @@ const InvestmentManagementScreen = ({navigation}: any) => {
         )}
 
         {/* PAGINATION CONTROLS */}
-        {!loading && totalCount > 0 && (
+        {!loading && filtered.length > 0 && (
           <View style={styles.paginationBar}>
             <Text style={styles.pageInfoText}>
-              Showing {(page - 1) * PAGE_SIZE + 1} -{' '}
-              {Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+              Showing {filtered.length === 0 ? 0 : (pageSafe - 1) * PAGE_SIZE + 1} -{' '}
+              {Math.min(pageSafe * PAGE_SIZE, filtered.length)} of {filtered.length} records
             </Text>
 
             <View style={styles.paginationBtnGroup}>
               <TouchableOpacity
-                style={[styles.pageBtn, page <= 1 && styles.pageBtnDisabled]}
-                disabled={page <= 1}
+                style={[styles.pageBtn, pageSafe <= 1 && styles.pageBtnDisabled]}
+                disabled={pageSafe <= 1}
                 onPress={handlePrevPage}>
-                <Text style={[styles.pageBtnText, page <= 1 && styles.pageBtnTextDisabled]}>
+                <Text style={[styles.pageBtnText, pageSafe <= 1 && styles.pageBtnTextDisabled]}>
                   ◀ Prev
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[styles.pageBtn, page >= totalPages && styles.pageBtnDisabled]}
-                disabled={page >= totalPages}
+                style={[styles.pageBtn, pageSafe >= totalPages && styles.pageBtnDisabled]}
+                disabled={pageSafe >= totalPages}
                 onPress={handleNextPage}>
-                <Text style={[styles.pageBtnText, page >= totalPages && styles.pageBtnTextDisabled]}>
+                <Text style={[styles.pageBtnText, pageSafe >= totalPages && styles.pageBtnTextDisabled]}>
                   Next ▶
                 </Text>
               </TouchableOpacity>
@@ -631,7 +720,7 @@ const InvestmentManagementScreen = ({navigation}: any) => {
                   </Text>
                 </TouchableOpacity>
 
-                {branches.map(b => (
+                {branchOptions.map((b: InvestmentFilterOption) => (
                   <TouchableOpacity
                     key={String(b.id)}
                     style={[

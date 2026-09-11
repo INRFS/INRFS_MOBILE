@@ -28,7 +28,18 @@ import {
 } from '../../services/superadmin/superAdminDashboardService';
 
 const screenWidth = Dimensions.get('window').width;
-const chartWidth = Math.max(screenWidth - 64, 280);
+const chartWidth = Math.max(screenWidth - 56, 280);
+
+const formatShortMonth = (val: string): string => {
+  if (!val || val === '—') return '—';
+  const trimmed = String(val).trim();
+  if (trimmed.length <= 3) return trimmed;
+  const dateAttempt = new Date(trimmed.includes('-') ? trimmed : `${trimmed} 1, 2025`);
+  if (!Number.isNaN(dateAttempt.getTime())) {
+    return dateAttempt.toLocaleDateString('en-IN', {month: 'short'});
+  }
+  return trimmed.slice(0, 3);
+};
 
 const chartConfig = {
   backgroundGradientFrom: '#FFFFFF',
@@ -36,8 +47,14 @@ const chartConfig = {
   decimalPlaces: 0,
   color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
   labelColor: (opacity = 1) => `rgba(100, 116, 139, ${opacity})`,
-  propsForDots: {r: '3.5', strokeWidth: '2', stroke: '#2563EB'},
-  propsForBackgroundLines: {stroke: '#F1F5F9'},
+  propsForDots: {r: '4', strokeWidth: '2', stroke: '#2563EB', fill: '#FFFFFF'},
+  propsForBackgroundLines: {stroke: '#F1F5F9', strokeDasharray: '3 3'},
+  propsForLabels: {fontSize: 10, fontWeight: '600', fill: '#64748B'},
+  fillShadowGradientFrom: '#2563EB',
+  fillShadowGradientFromOpacity: 0.16,
+  fillShadowGradientTo: '#2563EB',
+  fillShadowGradientToOpacity: 0.01,
+  useShadowColorFromDataset: false,
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -58,6 +75,10 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
+
+  // Interactive Selected Points for Graphs
+  const [selectedPerfPoint, setSelectedPerfPoint] = useState<{month: string; value: number} | null>(null);
+  const [selectedGrowthPoint, setSelectedGrowthPoint] = useState<{month: string; value: number} | null>(null);
 
   /* ==========================================================
      LOAD DASHBOARD DATA FROM BACKEND
@@ -176,13 +197,13 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
   const investmentPerformanceData = {
     labels:
       perfItems.length > 0
-        ? perfItems.map(p => p.month || '—')
+        ? perfItems.map(p => formatShortMonth(p.month || '—'))
         : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
     datasets: [
       {
         data:
           perfItems.length > 0
-            ? perfItems.map(p => Math.max(p.amount / 100000, 0)) // in Lakhs
+            ? perfItems.map(p => Math.max(Number(p.amount) / 100000, 0)) // in Lakhs
             : [8, 10, 12, 14, 16, 18, 20],
       },
     ],
@@ -193,13 +214,13 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
   const investorGrowthData = {
     labels:
       growthItems.length > 0
-        ? growthItems.map(g => g.month || '—')
+        ? growthItems.map(g => formatShortMonth(g.month || '—'))
         : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'],
     datasets: [
       {
         data:
           growthItems.length > 0
-            ? growthItems.map(g => g.count)
+            ? growthItems.map(g => Number(g.count))
             : [820, 880, 930, 980, 1050, 1120, 1200],
         color: (opacity = 1) => `rgba(5, 150, 105, ${opacity})`,
       },
@@ -311,22 +332,36 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
                   <Text style={styles.chartTitle}>Investment Performance</Text>
                   <Text style={styles.chartSubtitle}>Monthly investment value (in ₹ Lakhs)</Text>
                 </View>
-                <View style={[styles.chartBadge, styles.chartBadgeBlue]}>
-                  <Text style={styles.chartBadgeTextBlue}>₹ in Lakhs</Text>
+                <View
+                  style={[
+                    styles.chartBadge,
+                    selectedPerfPoint ? styles.chartBadgeActive : styles.chartBadgeBlue,
+                  ]}>
+                  <Text style={styles.chartBadgeTextBlue}>
+                    {selectedPerfPoint
+                      ? `${selectedPerfPoint.month}: ₹${selectedPerfPoint.value.toFixed(1)}L`
+                      : '₹ in Lakhs'}
+                  </Text>
                 </View>
               </View>
+
               <LineChart
                 data={investmentPerformanceData}
                 width={chartWidth}
-                height={190}
+                height={185}
                 chartConfig={{
                   ...chartConfig,
                   color: (opacity = 1) => `rgba(37, 99, 235, ${opacity})`,
-                  propsForDots: {r: '3.5', strokeWidth: '2', stroke: '#2563EB'},
-                  propsForLabels: {fontSize: 10, fontWeight: '600'},
+                  propsForDots: {r: '4', strokeWidth: '2', stroke: '#2563EB', fill: '#FFFFFF'},
+                  propsForLabels: {fontSize: 10, fontWeight: '600', fill: '#64748B'},
+                  fillShadowGradientFrom: '#2563EB',
+                  fillShadowGradientFromOpacity: 0.16,
+                  fillShadowGradientTo: '#2563EB',
+                  fillShadowGradientToOpacity: 0.01,
                 }}
                 bezier
                 fromZero
+                segments={4}
                 withInnerLines={true}
                 withOuterLines={false}
                 withVerticalLines={false}
@@ -334,8 +369,48 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
                 withDots={true}
                 withShadow={true}
                 yAxisInterval={1}
+                formatYLabel={y => `${Math.round(Number(y))}L`}
+                onDataPointClick={({index, value}) => {
+                  const mName =
+                    perfItems[index]?.month || investmentPerformanceData.labels[index];
+                  setSelectedPerfPoint(prev =>
+                    prev && prev.month === mName ? null : {month: mName, value},
+                  );
+                }}
                 style={styles.chartStyle}
               />
+
+              {/* CLEAN COMPACT METRICS STRIP UNDER CHART */}
+              <View style={styles.chartFooterStrip}>
+                <View style={styles.chartFooterItem}>
+                  <Text style={styles.chartFooterLabel}>TOTAL AUM</Text>
+                  <Text style={styles.chartFooterValue} numberOfLines={1}>
+                    {formatCurrencyAUM(summary.systemAum || 0)}
+                  </Text>
+                </View>
+                <View style={styles.chartFooterDivider} />
+                <View style={styles.chartFooterItem}>
+                  <Text style={styles.chartFooterLabel}>LATEST MONTH</Text>
+                  <Text style={styles.chartFooterValue} numberOfLines={1}>
+                    {perfItems.length > 0
+                      ? `${perfItems[perfItems.length - 1].month || '—'}: ₹${(
+                          Number(perfItems[perfItems.length - 1].amount || 0) / 100000
+                        ).toFixed(1)}L`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.chartFooterDivider} />
+                <View style={styles.chartFooterItem}>
+                  <Text style={styles.chartFooterLabel}>M-O-M GROWTH</Text>
+                  <Text
+                    style={[styles.chartFooterValue, {color: '#059669'}]}
+                    numberOfLines={1}>
+                    {summary.monthlyGrowthPercentage
+                      ? `+${summary.monthlyGrowthPercentage}%`
+                      : 'Stable'}
+                  </Text>
+                </View>
+              </View>
             </View>
 
             {/* 2. INVESTMENT STATUS */}
@@ -363,24 +438,38 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
                   <Text style={styles.chartTitle}>Investor Growth</Text>
                   <Text style={styles.chartSubtitle}>Registered investors over time</Text>
                 </View>
-                <View style={[styles.chartBadge, styles.chartBadgeGreen]}>
+                <View
+                  style={[
+                    styles.chartBadge,
+                    selectedGrowthPoint ? styles.chartBadgeActiveGreen : styles.chartBadgeGreen,
+                  ]}>
                   <Text style={styles.chartBadgeTextGreen}>
-                    {summary.investorGrowthPercentage ? `+${summary.investorGrowthPercentage}%` : 'Growth'}
+                    {selectedGrowthPoint
+                      ? `${selectedGrowthPoint.month}: ${formatIndianNumber(selectedGrowthPoint.value)}`
+                      : summary.investorGrowthPercentage
+                      ? `+${summary.investorGrowthPercentage}%`
+                      : 'Growth'}
                   </Text>
                 </View>
               </View>
+
               <LineChart
                 data={investorGrowthData}
                 width={chartWidth}
-                height={190}
+                height={185}
                 chartConfig={{
                   ...chartConfig,
                   color: (opacity = 1) => `rgba(5, 150, 105, ${opacity})`,
-                  propsForDots: {r: '3.5', strokeWidth: '2', stroke: '#059669'},
-                  propsForLabels: {fontSize: 10, fontWeight: '600'},
+                  propsForDots: {r: '4', strokeWidth: '2', stroke: '#059669', fill: '#FFFFFF'},
+                  propsForLabels: {fontSize: 10, fontWeight: '600', fill: '#64748B'},
+                  fillShadowGradientFrom: '#059669',
+                  fillShadowGradientFromOpacity: 0.16,
+                  fillShadowGradientTo: '#059669',
+                  fillShadowGradientToOpacity: 0.01,
                 }}
                 bezier
                 fromZero
+                segments={4}
                 withInnerLines={true}
                 withOuterLines={false}
                 withVerticalLines={false}
@@ -388,8 +477,52 @@ const SuperAdminDashboardScreen = ({navigation}: any) => {
                 withDots={true}
                 withShadow={true}
                 yAxisInterval={1}
+                formatYLabel={y =>
+                  Number(y) >= 1000
+                    ? `${(Number(y) / 1000).toFixed(1)}k`
+                    : `${Math.round(Number(y))}`
+                }
+                onDataPointClick={({index, value}) => {
+                  const mName =
+                    growthItems[index]?.month || investorGrowthData.labels[index];
+                  setSelectedGrowthPoint(prev =>
+                    prev && prev.month === mName ? null : {month: mName, value},
+                  );
+                }}
                 style={styles.chartStyle}
               />
+
+              {/* CLEAN COMPACT METRICS STRIP UNDER CHART */}
+              <View style={styles.chartFooterStrip}>
+                <View style={styles.chartFooterItem}>
+                  <Text style={styles.chartFooterLabel}>TOTAL INVESTORS</Text>
+                  <Text style={styles.chartFooterValue} numberOfLines={1}>
+                    {formatIndianNumber(summary.totalInvestors || 0)}
+                  </Text>
+                </View>
+                <View style={styles.chartFooterDivider} />
+                <View style={styles.chartFooterItem}>
+                  <Text style={styles.chartFooterLabel}>LATEST MONTH</Text>
+                  <Text style={styles.chartFooterValue} numberOfLines={1}>
+                    {growthItems.length > 0
+                      ? `${growthItems[growthItems.length - 1].month || '—'}: ${formatIndianNumber(
+                          growthItems[growthItems.length - 1].count || 0,
+                        )}`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.chartFooterDivider} />
+                <View style={styles.chartFooterItem}>
+                  <Text style={styles.chartFooterLabel}>GROWTH RATE</Text>
+                  <Text
+                    style={[styles.chartFooterValue, {color: '#059669'}]}
+                    numberOfLines={1}>
+                    {summary.investorGrowthPercentage
+                      ? `+${summary.investorGrowthPercentage}%`
+                      : 'Active'}
+                  </Text>
+                </View>
+              </View>
             </View>
 
             {/* 4. BRANCH PERFORMANCE */}

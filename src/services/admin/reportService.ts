@@ -8,7 +8,7 @@ import {ENV} from '../../config/env';
    CONFIG & AUTH HELPERS
    ============================================================ */
 
-export const API_BASE_URL = ENV?.API_BASE_URL || 'http://187.52.115.32:8000';
+export const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const AUTH_TOKEN_KEYS = [
   'access_token',
@@ -16,6 +16,7 @@ const AUTH_TOKEN_KEYS = [
   'token',
   'authToken',
   'auth_token',
+  'admin_token',
   'jwt',
 ];
 
@@ -73,8 +74,20 @@ const handleResponse = async (response: Response): Promise<any> => {
   return data;
 };
 
+export const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV?.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
+
 const request = async (endpoint: string, options: RequestInit = {}): Promise<any> => {
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
+  const url = endpoint.startsWith('http') ? endpoint : resolveEndpoint(endpoint);
   const headers = await getHeaders();
 
   const response = await fetch(url, {
@@ -436,6 +449,8 @@ export const getReportPendingInvestments = async ({
   return request(`/admin/reports/pending-investments?${params.toString()}`);
 };
 
+import {exportToExcel} from '../../utils/excelExport';
+
 /* ============================================================
    EXPORT HELPERS (CSV / EXCEL FOR MOBILE)
    ============================================================ */
@@ -447,49 +462,11 @@ export const exportReportCSV = async (
   rows: any[],
   filename: string = 'INRFS_Report.xlsx',
 ): Promise<void> => {
-  if (!rows || rows.length === 0) {
-    throw new Error('No data available to export.');
-  }
-
-  try {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.json_to_sheet(rows);
-    XLSX.utils.book_append_sheet(wb, ws, 'Report');
-
-    const wbout = XLSX.write(wb, {type: 'base64', bookType: 'xlsx'});
-    const cleanFilename = (filename || 'INRFS_Report.xlsx').replace(/\.csv$/i, '.xlsx');
-    const dir = RNFS.CachesDirectoryPath || RNFS.DocumentDirectoryPath;
-    const path = `${dir}/${cleanFilename}`;
-
-    await RNFS.writeFile(path, wbout, 'base64');
-
-    const exists = await RNFS.exists(path);
-    if (!exists) {
-      throw new Error('Export file could not be created on the device.');
-    }
-
-    const fileUrl = `file://${path}`;
-    if (!fileUrl) {
-      throw new Error('Generated file URI is null or invalid.');
-    }
-
-    await RNShare.open({
-      url: fileUrl,
-      title: cleanFilename,
-      subject: cleanFilename,
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      useInternalStorage: true,
-      failOnCancel: false,
-    });
-  } catch (error: any) {
-    if (
-      error?.message?.includes('User did not share') ||
-      error?.message?.includes('DISMISSED') ||
-      error?.message?.includes('cancel')
-    ) {
-      return;
-    }
-    console.warn('Export report error:', error);
-    throw error;
-  }
+  const cleanFilename = (filename || 'INRFS_Report.xlsx').replace(/\.csv$/i, '.xlsx');
+  return exportToExcel({
+    filename: cleanFilename,
+    sheetName: 'Report',
+    data: rows,
+    title: cleanFilename,
+  });
 };

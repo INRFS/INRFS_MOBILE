@@ -28,6 +28,7 @@ import {
   InvestorFilterOption,
 } from '../../services/superadmin/superAdminInvestorService';
 import {formatSuperAdminDate, formatIndianNumber} from '../../services/superadmin/superAdminDashboardService';
+import {exportToExcel} from '../../utils/excelExport';
 
 const PAGE_SIZE = 10;
 
@@ -95,35 +96,59 @@ const InvestorManagementScreen = ({navigation}: any) => {
         getInvestorStatusesFilter(),
       ]);
 
-      let records = invRes.records || [];
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        records = records.filter(
-          i =>
-            (i.name && i.name.toLowerCase().includes(q)) ||
-            (i.email && i.email.toLowerCase().includes(q)) ||
-            (i.mobile && i.mobile.includes(q)) ||
-            (i.investorId && i.investorId.toLowerCase().includes(q)) ||
-            (i.branchName && i.branchName.toLowerCase().includes(q)) ||
-            (i.status && i.status.toLowerCase().includes(q)),
-        );
-      }
+      const records = invRes.records || [];
       setInvestors(records);
-      const total = records.length > 0 ? invRes.total || records.length : 0;
+
+      let total = Number(invRes.total ?? 0);
+      if (
+        (!total || total === records.length) &&
+        !search.trim() &&
+        selectedBranchId === null &&
+        selectedStatusName === 'All Status' &&
+        sumRes?.totalInvestors &&
+        sumRes.totalInvestors > total
+      ) {
+        total = sumRes.totalInvestors;
+      }
       setTotalCount(total);
 
-      if (sumRes && sumRes.totalInvestors > 0) {
-        setSummary(sumRes);
-      } else {
-        const activeCount = records.filter(i => (i.status || '').toLowerCase() === 'active').length;
-        const inactiveCount = records.filter(i => (i.status || '').toLowerCase() !== 'active').length;
-        setSummary({
-          totalInvestors: total,
-          activeInvestors: sumRes.activeInvestors || activeCount,
-          inactiveInvestors: sumRes.inactiveInvestors || inactiveCount,
-          totalAum: sumRes.totalAum || '₹0',
-        });
+      const totalInvCount =
+        sumRes?.totalInvestors ||
+        invRes.summary?.totalInvestors ||
+        total;
+
+      const activeCount =
+        sumRes?.activeInvestors ||
+        invRes.summary?.activeInvestors ||
+        records.filter(i => (i.status || '').toLowerCase() === 'active').length;
+
+      const inactiveCount =
+        sumRes?.inactiveInvestors ||
+        invRes.summary?.inactiveInvestors ||
+        records.filter(i => (i.status || '').toLowerCase() !== 'active').length;
+
+      let aumVal: string = sumRes?.totalAum || '';
+      if (!aumVal || aumVal === '₹0') {
+        aumVal = invRes.summary?.totalAum || '';
       }
+      if (!aumVal || aumVal === '₹0') {
+        const sumRecords = records.reduce(
+          (sum, item) => sum + (Number(item.totalInvested) || 0),
+          0,
+        );
+        if (sumRecords > 0) {
+          aumVal = `₹${sumRecords.toLocaleString('en-IN')}`;
+        } else {
+          aumVal = '₹0';
+        }
+      }
+
+      setSummary({
+        totalInvestors: totalInvCount,
+        activeInvestors: activeCount,
+        inactiveInvestors: inactiveCount,
+        totalAum: aumVal || '₹0',
+      });
 
       if (branchRes && branchRes.length > 0) {
         setBranches(branchRes);
@@ -175,14 +200,32 @@ const InvestorManagementScreen = ({navigation}: any) => {
 
   const handleExport = async () => {
     try {
-      await exportInvestorsCSV();
-      Alert.alert(
-        'Export Investors',
-        `Exporting ${totalCount} investor records. The CSV download will begin shortly.`,
-        [{text: 'OK'}],
-      );
-    } catch (err) {
-      Alert.alert('Export Failed', 'Could not export investors.');
+      if (!investors.length) {
+        Alert.alert('No data', 'There are no investor records to export.');
+        return;
+      }
+
+      const rows = investors.map(inv => ({
+        'Investor ID': inv.investorId || `INV-${inv.id}`,
+        Name: inv.name,
+        Mobile: inv.mobile || '—',
+        Email: inv.email || '—',
+        Branch: inv.branchName || '—',
+        'KYC Status': inv.kycStatus || '—',
+        'Account Status': inv.status || 'Active',
+        'Total Invested (₹)': inv.totalInvested || 0,
+        'Registered Date': inv.registeredDate ? formatSuperAdminDate(inv.registeredDate) : '—',
+      }));
+
+      await exportToExcel({
+        filename: `SuperAdmin_Investors_${Date.now()}.xlsx`,
+        sheetName: 'Investors',
+        data: rows,
+        title: 'Export Investors',
+      });
+    } catch (err: any) {
+      console.warn('Export investors error:', err);
+      Alert.alert('Export Failed', err?.message || 'Could not export investors.');
     }
   };
 

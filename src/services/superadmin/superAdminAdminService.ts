@@ -1,6 +1,7 @@
 import {getAuthToken, getErrorMessage} from './superAdminDashboardService';
+import {ENV} from '../../config/env';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 export interface AdminRecord {
   id: number;
@@ -196,7 +197,15 @@ export const getAdmins = async (params?: {
 export const createAdmin = async (payload: CreateAdminPayload): Promise<any> => {
   return await apiRequest('/superadmin/admins', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      full_name: payload.full_name,
+      email: payload.email,
+      mobile: payload.mobile,
+      branch_id: Number(payload.branch_id),
+      role_id: Number(payload.role_id),
+      status_id: Number(payload.status_id || 1),
+      password: payload.password,
+    }),
   });
 };
 
@@ -204,7 +213,10 @@ export const createAdmin = async (payload: CreateAdminPayload): Promise<any> => 
  * 3. GET /superadmin/admins/{admin_id}
  */
 export const getAdminDetails = async (adminId: number | string): Promise<AdminRecord> => {
-  const response = await apiRequest(`/superadmin/admins/${adminId}`, {
+  if (!adminId) {
+    throw new Error('Admin ID is required.');
+  }
+  const response = await apiRequest(`/superadmin/admins/${encodeURIComponent(String(adminId))}`, {
     method: 'GET',
   });
   return normalizeAdmin(response?.data || response);
@@ -217,9 +229,19 @@ export const updateAdmin = async (
   adminId: number | string,
   payload: UpdateAdminPayload,
 ): Promise<any> => {
-  return await apiRequest(`/superadmin/admins/${adminId}`, {
+  if (!adminId) {
+    throw new Error('Admin ID is required.');
+  }
+  return await apiRequest(`/superadmin/admins/${encodeURIComponent(String(adminId))}`, {
     method: 'PUT',
-    body: JSON.stringify(payload),
+    body: JSON.stringify({
+      full_name: payload.full_name,
+      email: payload.email,
+      mobile: payload.mobile,
+      branch_id: Number(payload.branch_id),
+      role_id: Number(payload.role_id),
+      status_id: Number(payload.status_id),
+    }),
   });
 };
 
@@ -227,7 +249,10 @@ export const updateAdmin = async (
  * 5. PATCH /superadmin/admins/{admin_id}/suspend
  */
 export const suspendAdmin = async (adminId: number | string): Promise<any> => {
-  return await apiRequest(`/superadmin/admins/${adminId}/suspend`, {
+  if (!adminId) {
+    throw new Error('Admin ID is required.');
+  }
+  return await apiRequest(`/superadmin/admins/${encodeURIComponent(String(adminId))}/suspend`, {
     method: 'PATCH',
   });
 };
@@ -289,4 +314,11 @@ export const getAdminStatusesFilter = async (): Promise<AdminFilterOption[]> => 
   }
 };
 
+// Aliases matching Web implementation
+export const getAdminManagement = getAdmins;
+export const getAdminBranches = getAdminBranchesFilter;
+export const getAdminRoles = getAdminRolesFilter;
+export const getAdminStatuses = getAdminStatusesFilter;
+
 export {getErrorMessage};
+

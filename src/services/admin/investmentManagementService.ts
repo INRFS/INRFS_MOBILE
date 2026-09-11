@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {ENV} from '../../config/env';
 
 /* ============================================================
    CONFIG & AUTH CONSTANTS
    ============================================================ */
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const AUTH_TOKEN_KEYS = [
   'access_token',
@@ -12,6 +13,7 @@ const AUTH_TOKEN_KEYS = [
   'token',
   'authToken',
   'auth_token',
+  'admin_token',
   'jwt',
 ];
 
@@ -129,6 +131,18 @@ export const getErrorMessage = (error: any): string => {
   return 'Operation failed. Please try again.';
 };
 
+export const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV?.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
+
 /* ============================================================
    CORE API REQUEST HELPER
    ============================================================ */
@@ -151,7 +165,8 @@ const apiRequest = async (
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = resolveEndpoint(endpoint);
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...headers,
@@ -204,7 +219,7 @@ const apiRequest = async (
 };
 
 /* ============================================================
-   LIST EXTRACTION HELPER
+   LIST EXTRACTION HELPER (Matching Web getList)
    ============================================================ */
 
 export const getList = (response: any): any[] => {
@@ -212,6 +227,14 @@ export const getList = (response: any): any[] => {
   if (Array.isArray(response)) return response;
   if (Array.isArray(response.data)) return response.data;
   if (Array.isArray(response.items)) return response.items;
+  if (Array.isArray(response.results)) return response.results;
+  if (Array.isArray(response.requests)) return response.requests;
+  if (Array.isArray(response.investments)) return response.investments;
+  if (Array.isArray(response.settlements)) return response.settlements;
+  if (Array.isArray(response.preclose_requests)) return response.preclose_requests;
+  if (Array.isArray(response.tenure_extension_requests)) return response.tenure_extension_requests;
+  if (Array.isArray(response.tenure_timeout_settlements)) return response.tenure_timeout_settlements;
+  if (Array.isArray(response.closed_settlements)) return response.closed_settlements;
   return [];
 };
 
@@ -420,9 +443,23 @@ export const mapTenureExtensionRecord = (raw: any): TenureExtensionRecord => {
  * 1. GET /admin/investments
  */
 export const getInvestments = async (
-  params: { bondId?: string; limit?: number; offset?: number } = {},
+  params: {
+    search?: string;
+    branchId?: number | string | null;
+    statusId?: number | string | null;
+    bondId?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<{ records: InvestmentRecord[]; total: number; raw: any }> => {
   const query = new URLSearchParams();
+  if (params.search?.trim()) query.append('search', params.search.trim());
+  if (params.branchId !== undefined && params.branchId !== null && params.branchId !== '') {
+    query.append('branch_id', String(params.branchId));
+  }
+  if (params.statusId !== undefined && params.statusId !== null && params.statusId !== '') {
+    query.append('status_id', String(params.statusId));
+  }
   if (params.bondId?.trim()) query.append('bond_id', params.bondId.trim());
   query.append('limit', String(params.limit || 100));
   query.append('offset', String(params.offset || 0));
@@ -438,18 +475,26 @@ export const getInvestments = async (
   return { records, total, raw: response };
 };
 
+export const getAllInvestments = getInvestments;
+
 /**
  * 2. GET /admin/investments/pending
  */
 export const getPendingInvestments = async (
-  params: { limit?: number; offset?: number } = {},
+  params: {
+    branchId?: number | string | null;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<{ records: InvestmentRecord[]; total: number; raw: any }> => {
-  const query = new URLSearchParams({
-    limit: String(params.limit || 100),
-    offset: String(params.offset || 0),
-  }).toString();
+  const query = new URLSearchParams();
+  if (params.branchId !== undefined && params.branchId !== null && params.branchId !== '') {
+    query.append('branch_id', String(params.branchId));
+  }
+  query.append('limit', String(params.limit || 100));
+  query.append('offset', String(params.offset || 0));
 
-  const response = await apiRequest(`/admin/investments/pending?${query}`, {
+  const response = await apiRequest(`/admin/investments/pending?${query.toString()}`, {
     method: 'GET',
   });
 
@@ -515,34 +560,52 @@ export const getInvestmentDetails = async (
 };
 
 /**
- * 4. PUT /admin/investments/{investment_id}/approve
+ * 4. GET /admin/investments/{investment_id}/bond
+ */
+export const getInvestmentBondDetails = async (
+  investmentId: string | number,
+): Promise<any> => {
+  const idStr = String(investmentId).trim();
+  if (!idStr) throw new Error('Investment ID is required.');
+
+  return await apiRequest(`/admin/investments/${encodeURIComponent(idStr)}/bond`, {
+    method: 'GET',
+  });
+};
+
+/**
+ * 5. PUT /admin/investments/{investment_id}/approve
  */
 export const approveInvestment = async (
   investmentId: string | number,
-  payload: { interestRate: number; remarks?: string },
+  payload: { interestRate?: number; remarks?: string } = {},
 ): Promise<ApiResponse> => {
   const idStr = String(investmentId).trim();
   if (!idStr) throw new Error('Investment ID is required.');
 
-  const rateNum = Number(payload.interestRate);
-  if (isNaN(rateNum) || rateNum < 0) {
-    throw new Error('Valid numeric Interest Rate is required.');
+  const body: any = {};
+  if (
+    payload.interestRate !== undefined &&
+    payload.interestRate !== null &&
+    !isNaN(Number(payload.interestRate))
+  ) {
+    body.interest_rate = Number(payload.interestRate);
+  }
+  if (payload.remarks !== undefined) {
+    body.remarks = payload.remarks || null;
   }
 
   return await apiRequest(
     `/admin/investments/${encodeURIComponent(idStr)}/approve`,
     {
       method: 'PUT',
-      body: JSON.stringify({
-        interest_rate: rateNum,
-        remarks: payload.remarks || null,
-      }),
+      body: JSON.stringify(body),
     },
   );
 };
 
 /**
- * 5. PUT /admin/investments/{investment_id}/reject
+ * 6. PUT /admin/investments/{investment_id}/reject
  */
 export const rejectInvestment = async (
   investmentId: string | number,
@@ -552,7 +615,7 @@ export const rejectInvestment = async (
   if (!idStr) throw new Error('Investment ID is required.');
 
   if (!payload.rejectionReason?.trim()) {
-    throw new Error('Rejection Reason is required.');
+    throw new Error('Rejection reason is required.');
   }
 
   return await apiRequest(
@@ -568,17 +631,23 @@ export const rejectInvestment = async (
 };
 
 /**
- * 6. GET /admin/tenure-extensions/pending
+ * 7. GET /admin/tenure-extensions/pending
  */
 export const getPendingTenureExtensions = async (
-  params: { limit?: number; offset?: number } = {},
+  params: {
+    branchId?: number | string | null;
+    limit?: number;
+    offset?: number;
+  } = {},
 ): Promise<{ records: TenureExtensionRecord[]; total: number; raw: any }> => {
-  const query = new URLSearchParams({
-    limit: String(params.limit || 100),
-    offset: String(params.offset || 0),
-  }).toString();
+  const query = new URLSearchParams();
+  if (params.branchId !== undefined && params.branchId !== null && params.branchId !== '') {
+    query.append('branch_id', String(params.branchId));
+  }
+  query.append('limit', String(params.limit || 100));
+  query.append('offset', String(params.offset || 0));
 
-  const response = await apiRequest(`/admin/tenure-extensions/pending?${query}`, {
+  const response = await apiRequest(`/admin/tenure-extensions/pending?${query.toString()}`, {
     method: 'GET',
   });
 
@@ -590,55 +659,126 @@ export const getPendingTenureExtensions = async (
 };
 
 /**
- * 7. PUT /admin/tenure-extensions/{request_id}/approve
- * Admin directly approves the tenure extension!
+ * 8. GET /admin/tenure-extensions/{request_id}
+ */
+export const getTenureExtensionDetails = async (
+  requestId: number | string,
+): Promise<any> => {
+  const idNum = Number(requestId);
+  if (!idNum) throw new Error('Tenure extension request ID is required.');
+
+  return await apiRequest(`/admin/tenure-extensions/${encodeURIComponent(String(requestId))}`, {
+    method: 'GET',
+  });
+};
+
+/**
+ * 9. PUT /admin/tenure-extensions/{request_id}/approve
  */
 export const approveTenureExtension = async (
   requestId: number | string,
   payload: { remarks?: string } = {},
 ): Promise<ApiResponse> => {
   const idNum = Number(requestId);
-  if (!idNum) throw new Error('Valid Tenure Extension Request ID is required.');
+  if (!idNum) throw new Error('Tenure extension request ID is required.');
 
-  try {
-    return await apiRequest(`/admin/tenure-extensions/${idNum}/approve`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        remarks: payload.remarks?.trim() || 'Approved by Admin.',
-      }),
-    });
-  } catch (err) {
-    // Preserve fallback for existing backend compatibility if required
-    return await apiRequest(`/admin/tenure-extensions/${idNum}/submit`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        remarks: payload.remarks?.trim() || 'Approved by Admin.',
-      }),
-    });
-  }
+  return await apiRequest(`/admin/tenure-extensions/${encodeURIComponent(String(requestId))}/approve`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      remarks: String(payload.remarks || '').trim() || null,
+    }),
+  });
 };
 
 /**
- * 8. PUT /admin/tenure-extensions/{request_id}/reject
- * Admin rejects the tenure extension request
+ * 10. PUT /admin/tenure-extensions/{request_id}/reject
  */
 export const rejectTenureExtension = async (
   requestId: number | string,
   payload: { remarks?: string } = {},
 ): Promise<ApiResponse> => {
   const idNum = Number(requestId);
-  if (!idNum) throw new Error('Valid Tenure Extension Request ID is required.');
+  if (!idNum) throw new Error('Tenure extension request ID is required.');
 
-  return await apiRequest(`/admin/tenure-extensions/${idNum}/reject`, {
+  const reason = String(payload.remarks || '').trim();
+  if (!reason) {
+    throw new Error('Rejection reason is required.');
+  }
+
+  return await apiRequest(`/admin/tenure-extensions/${encodeURIComponent(String(requestId))}/reject`, {
     method: 'PUT',
     body: JSON.stringify({
-      remarks: payload.remarks?.trim() || 'Rejected by Admin.',
+      remarks: reason,
     }),
   });
 };
 
 /**
- * Backward compatibility alias:
- * submitTenureExtension points to approveTenureExtension
+ * 11. GET /admin/tenure-extensions/all
  */
+export const getAllTenureExtensions = async (
+  params: {
+    branchId?: number | string | null;
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<{ records: TenureExtensionRecord[]; total: number; raw: any }> => {
+  const query = new URLSearchParams();
+  if (params.branchId !== undefined && params.branchId !== null && params.branchId !== '') {
+    query.append('branch_id', String(params.branchId));
+  }
+  query.append('limit', String(params.limit || 100));
+  query.append('offset', String(params.offset || 0));
+
+  const response = await apiRequest(`/admin/tenure-extensions/all?${query.toString()}`, {
+    method: 'GET',
+  });
+
+  const rawList = getList(response);
+  const records = rawList.map(mapTenureExtensionRecord);
+  const total = Number(response?.total ?? records.length);
+
+  return { records, total, raw: response };
+};
+
+/**
+ * 12. POST /admin/settlements/tenure-timeout/{settlement_id}
+ */
+export const createTenureTimeoutSettlement = async (
+  settlementId: number | string,
+): Promise<any> => {
+  if (
+    settlementId === undefined ||
+    settlementId === null ||
+    settlementId === ''
+  ) {
+    throw new Error('Settlement ID is required.');
+  }
+
+  return await apiRequest(
+    `/admin/settlements/tenure-timeout/${encodeURIComponent(String(settlementId))}`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
+    },
+  );
+};
+
 export const submitTenureExtension = approveTenureExtension;
+
+export default {
+  getInvestments,
+  getAllInvestments,
+  getPendingInvestments,
+  getInvestmentDetails,
+  approveInvestment,
+  rejectInvestment,
+  getInvestmentBondDetails,
+  getPendingTenureExtensions,
+  getTenureExtensionDetails,
+  approveTenureExtension,
+  rejectTenureExtension,
+  getAllTenureExtensions,
+  createTenureTimeoutSettlement,
+  getList,
+};

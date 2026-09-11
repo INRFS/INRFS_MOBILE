@@ -11,6 +11,7 @@ import {
   BondData,
   ApiInvestment,
 } from '../services/investorService';
+import {generateAndDownloadBondPdf} from '../utils/pdfGenerator';
 
 const money = (value: number) =>
   '₹' + Math.round(value).toLocaleString('en-IN');
@@ -25,6 +26,7 @@ const BondDetailsScreen = ({navigation, route}: any) => {
 
   const [bond, setBond] = useState<BondData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -166,6 +168,36 @@ const BondDetailsScreen = ({navigation, route}: any) => {
     });
   };
 
+  const handleDownloadPdf = async () => {
+    if (!bond || downloadingPdf) return;
+
+    try {
+      setDownloadingPdf(true);
+      await generateAndDownloadBondPdf({
+        bondId: displayBondId,
+        investorName: investor.name,
+        investorId: investor.id,
+        mobile: investor.mobile,
+        email: investor.email,
+        principal,
+        rate,
+        tenureMonths: months,
+        investmentDate: bond.investment_date || '—',
+        maturityDate: bond.maturity_date || '—',
+        monthlyInterest,
+        expectedInterest,
+        maturityAmount,
+        status: bond.status || 'Active',
+        verificationUrl: verification,
+      });
+    } catch (err: any) {
+      console.warn('PDF download error:', err);
+      Alert.alert('Download Failed', err?.message || 'Unable to generate bond certificate PDF.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.header}>
@@ -284,15 +316,13 @@ const BondDetailsScreen = ({navigation, route}: any) => {
         </View>
 
         <TouchableOpacity
-          style={styles.downloadBtn}
-          onPress={() =>
-            Alert.alert(
-              'PDF download',
-              'No PDF endpoint is present in the supplied API contract. The live bond data is connected and the certificate can be shared.',
-            )
-          }>
-          <Icon name="download-outline" size={18} color="#8A6D2F" />
-          <Text style={styles.downloadBtnText}>Download PDF</Text>
+          style={[styles.downloadBtn, downloadingPdf && {opacity: 0.6}]}
+          disabled={downloadingPdf}
+          onPress={handleDownloadPdf}>
+          <Icon name={downloadingPdf ? 'loading' : 'download-outline'} size={18} color="#8A6D2F" />
+          <Text style={styles.downloadBtnText}>
+            {downloadingPdf ? 'Generating PDF...' : 'Download PDF'}
+          </Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>

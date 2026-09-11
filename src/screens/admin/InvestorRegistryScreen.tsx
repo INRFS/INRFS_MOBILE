@@ -20,14 +20,16 @@ import RNFS from 'react-native-fs';
 import RNShare from 'react-native-share';
 
 import {styles} from '../../styles/admin/InvestorRegistryScreen.styles';
+import {exportToExcel} from '../../utils/excelExport';
 import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import AppHeader from '../../components/AppHeader';
+import {ENV} from '../../config/env';
 
 /* ============================================================
    API CONFIG
    ============================================================ */
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 /*
  * Change this ONLY if your login code uses another AsyncStorage key.
@@ -891,7 +893,8 @@ const InvestorRegistryScreen = ({navigation}: any) => {
 
   const handleExport = async () => {
     try {
-      if (!investors.length) {
+      const recordsToExport = filtered.length > 0 ? filtered : investors;
+      if (!recordsToExport.length) {
         Alert.alert(
           'No data',
           'There are no investors to export.',
@@ -899,7 +902,7 @@ const InvestorRegistryScreen = ({navigation}: any) => {
         return;
       }
 
-      const rows = investors.map(inv => ({
+      const rows = recordsToExport.map(inv => ({
         'Investor ID': displayInvestorId(inv),
         Name: inv.name,
         Email: inv.email,
@@ -910,54 +913,18 @@ const InvestorRegistryScreen = ({navigation}: any) => {
         'Total Invested': inv.totalInvested,
       }));
 
-      const worksheet = XLSX.utils.json_to_sheet(rows);
-
-      const workbook = XLSX.utils.book_new();
-
-      XLSX.utils.book_append_sheet(
-        workbook,
-        worksheet,
-        'Investors',
-      );
-
-      const base64 = XLSX.write(workbook, {
-        type: 'base64',
-        bookType: 'xlsx',
-      });
-
-      const fileName =
-        `INRFS_Investor_Management_${Date.now()}.xlsx`;
-
-      const filePath =
-        `${RNFS.CachesDirectoryPath}/${fileName}`;
-
-      await RNFS.writeFile(
-        filePath,
-        base64,
-        'base64',
-      );
-
-      await RNShare.open({
-        url:
-          Platform.OS === 'android'
-            ? `file://${filePath}`
-            : filePath,
-
-        type:
-          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-
-        filename: fileName,
+      await exportToExcel({
+        filename: `Admin_Investors_${Date.now()}.xlsx`,
+        sheetName: 'Investors',
+        data: rows,
+        title: 'Export Investors',
       });
     } catch (error: any) {
-      if (
-        error?.message &&
-        !/user did not share/i.test(error.message)
-      ) {
-        Alert.alert(
-          'Export failed',
-          'Could not generate the Excel file. Please try again.',
-        );
-      }
+      console.warn('Export investors error:', error);
+      Alert.alert(
+        'Export failed',
+        error?.message || 'Could not generate the Excel file. Please try again.',
+      );
     }
   };
 

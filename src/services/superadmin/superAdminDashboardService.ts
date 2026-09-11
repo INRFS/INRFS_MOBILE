@@ -1,10 +1,11 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {ENV} from '../../config/env';
 
 /* ============================================================
    CONFIG & AUTH
    ============================================================ */
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 const AUTH_TOKEN_KEYS = [
   'SUPERADMIN_ACCESS_TOKEN',
@@ -422,3 +423,124 @@ export const getRecentInvestors = async (limit = 5): Promise<RecentInvestor[]> =
     };
   });
 };
+
+/* ============================================================
+   MATCHING WEB EXPORTS
+   ============================================================ */
+
+const buildQueryParams = (values: Record<string, any> = {}) => {
+  const params = new URLSearchParams();
+  Object.entries(values).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      params.set(key, String(value));
+    }
+  });
+  const str = params.toString();
+  return str ? `?${str}` : '';
+};
+
+export const getSuperAdminBranches = async ({
+  search = '',
+  limit = 100,
+  offset = 0,
+}: {search?: string; limit?: number; offset?: number} = {}) => {
+  const query = buildQueryParams({
+    search,
+    limit: Math.min(Number(limit) || 100, 100),
+    offset: Number(offset) || 0,
+  });
+  return apiRequest(`/superadmin/branches${query}`, {method: 'GET'});
+};
+
+export const getSuperAdminBranchDetails = async (branchId: number | string) => {
+  return apiRequest(`/superadmin/branches/${branchId}`, {method: 'GET'});
+};
+
+export const getSuperAdminAdmins = async ({
+  search = '',
+}: {search?: string} = {}) => {
+  const query = buildQueryParams({search});
+  return apiRequest(`/superadmin/admins${query}`, {method: 'GET'});
+};
+
+export const getSuperAdminAdminDetails = async (adminId: number | string) => {
+  return apiRequest(`/superadmin/admins/${adminId}`, {method: 'GET'});
+};
+
+export const getSuperAdminInvestors = async ({
+  search = '',
+  branchId = '',
+  statusId = '',
+  limit = 100,
+  offset = 0,
+}: {
+  search?: string;
+  branchId?: number | string;
+  statusId?: number | string;
+  limit?: number;
+  offset?: number;
+} = {}) => {
+  const query = buildQueryParams({
+    search,
+    branch_id: branchId,
+    status_id: statusId,
+    limit: Math.min(Number(limit) || 100, 100),
+    offset: Number(offset) || 0,
+  });
+  return apiRequest(`/superadmin/investors${query}`, {method: 'GET'});
+};
+
+export const getSuperAdminInvestorDetails = async (investorId: number | string) => {
+  return apiRequest(`/superadmin/investors/${investorId}`, {method: 'GET'});
+};
+
+export const getSuperAdminInvestments = async ({
+  search = '',
+  branchId = '',
+  statusId = '',
+  limit = 100,
+  offset = 0,
+}: {
+  search?: string;
+  branchId?: number | string;
+  statusId?: number | string;
+  limit?: number;
+  offset?: number;
+} = {}) => {
+  const query = buildQueryParams({
+    search,
+    branch_id: branchId,
+    status_id: statusId,
+    limit: Math.min(Number(limit) || 100, 100),
+    offset: Number(offset) || 0,
+  });
+  return apiRequest(`/superadmin/investments${query}`, {method: 'GET'});
+};
+
+export const getSuperAdminPayments = async ({
+  paymentType,
+  limit = 100,
+  offset = 0,
+}: {
+  paymentType?: string;
+  limit?: number;
+  offset?: number;
+} = {}) => {
+  const query = buildQueryParams({
+    payment_type: paymentType,
+    limit: Math.min(Number(limit) || 100, 100),
+    offset: Number(offset) || 0,
+  });
+  return apiRequest(`/superadmin/payments${query}`, {method: 'GET'});
+};
+
+export const getSuperAdminPaymentDetails = async (
+  sourceId: number | string,
+  paymentType?: string,
+) => {
+  const query = buildQueryParams({
+    payment_type: paymentType,
+  });
+  return apiRequest(`/superadmin/payments/${sourceId}${query}`, {method: 'GET'});
+};
+

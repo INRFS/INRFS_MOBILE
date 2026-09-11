@@ -1,6 +1,7 @@
 import {getAuthToken, getErrorMessage} from './superAdminDashboardService';
+import {ENV} from '../../config/env';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 export type PaymentCategory =
   | 'All'
@@ -69,6 +70,18 @@ export interface TenureExtensionRejectPayload {
   remarks: string;
 }
 
+const resolveEndpoint = (endpoint: string): string => {
+  const base = (ENV.API_BASE_URL || 'https://investor.inrfs.com/api').replace(/\/+$/, '');
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (base.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    return `${base}${cleanEndpoint.slice(4)}`;
+  }
+  if (!base.endsWith('/api') && !cleanEndpoint.startsWith('/api/')) {
+    return `${base}/api${cleanEndpoint}`;
+  }
+  return `${base}${cleanEndpoint}`;
+};
+
 const apiRequest = async (
   endpoint: string,
   options: RequestInit = {},
@@ -87,7 +100,8 @@ const apiRequest = async (
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const url = resolveEndpoint(endpoint);
+  const response = await fetch(url, {
     ...options,
     headers: {
       ...headers,
@@ -231,20 +245,78 @@ export const normalizePayment = (item: any, defaultType?: string): SuperAdminPay
     ),
   );
 
-  const rawType = String(
-    getValue(item, ['o_payment_type', 'payment_type', 'type', 'payout_type', 'settlement_type'], defaultType || 'Monthly Interest'),
-  );
+  const rawSettlementType = String(
+    getValue(
+      item,
+      [
+        'settlement_type',
+        'settlementType',
+        'o_settlement_type',
+      ],
+      '',
+    ),
+  ).trim().toUpperCase();
 
-  let paymentType: PaymentCategory = rawType;
-  const lType = rawType.toLowerCase();
-  if (lType.includes('monthly') || lType.includes('interest')) {
-    paymentType = 'Monthly Interest';
-  } else if (lType.includes('preclose') || lType.includes('pre-close') || lType.includes('pre_close')) {
+  let paymentType: PaymentCategory = '';
+
+  if (
+    rawSettlementType === 'PRECLOSE' ||
+    rawSettlementType === 'PRE_CLOSE' ||
+    rawSettlementType === 'PRE-CLOSE' ||
+    rawSettlementType.includes('PRECLOSE') ||
+    rawSettlementType.includes('PRE-CLOSE')
+  ) {
     paymentType = 'Pre-Close Settlement';
-  } else if (lType.includes('tenure_timeout') || lType.includes('tenure timeout') || lType.includes('maturity') || lType.includes('tenure settlement')) {
+  } else if (
+    rawSettlementType === 'TENURE_TIMEOUT' ||
+    rawSettlementType === 'TENURE TIMEOUT' ||
+    rawSettlementType.includes('TENURE') ||
+    rawSettlementType.includes('TIMEOUT') ||
+    rawSettlementType.includes('MATURITY')
+  ) {
     paymentType = 'Tenure Settlement';
-  } else if (lType.includes('extension') || lType.includes('tenure extension')) {
+  } else if (
+    rawSettlementType.includes('EXTENSION')
+  ) {
     paymentType = 'Tenure Extension';
+  } else {
+    const rawType = String(
+      getValue(
+        item,
+        [
+          'payment_type',
+          'paymentType',
+          'o_payment_type',
+          'type',
+          'payout_type',
+          'settlement_type',
+        ],
+        defaultType && defaultType !== 'All' ? defaultType : '',
+      ),
+    ).trim();
+
+    const lType = rawType.toLowerCase();
+    if (lType.includes('preclose') || lType.includes('pre-close') || lType.includes('pre_close')) {
+      paymentType = 'Pre-Close Settlement';
+    } else if (lType.includes('tenure_timeout') || lType.includes('tenure timeout') || lType.includes('maturity') || lType.includes('tenure settlement')) {
+      paymentType = 'Tenure Settlement';
+    } else if (lType.includes('extension') || lType.includes('tenure extension')) {
+      paymentType = 'Tenure Extension';
+    } else if (lType.includes('monthly') || lType.includes('interest')) {
+      paymentType = 'Monthly Interest';
+    } else if (item.interest_schedule_id !== undefined && item.interest_schedule_id !== null && item.interest_schedule_id !== '') {
+      paymentType = 'Monthly Interest';
+    } else if (item.preclose_request_id !== undefined && item.preclose_request_id !== null && item.preclose_request_id !== '') {
+      paymentType = 'Pre-Close Settlement';
+    } else if (item.settlement_id !== undefined && item.settlement_id !== null && item.settlement_id !== '') {
+      paymentType = 'Tenure Settlement';
+    } else if (item.extension_id !== undefined && item.extension_id !== null && item.extension_id !== '') {
+      paymentType = 'Tenure Extension';
+    } else if (defaultType && defaultType !== 'All') {
+      paymentType = defaultType;
+    } else {
+      paymentType = rawType || 'Monthly Interest';
+    }
   }
 
   const investorName = String(
@@ -454,7 +526,7 @@ export const normalizePayment = (item: any, defaultType?: string): SuperAdminPay
    ============================================================ */
 
 /**
- * 1. GET /superadmin/payments (All payments queue)
+ * 1. GET /api/superadmin/payments (All payments queue)
  */
 export const getPaymentQueue = async (params?: {
   search?: string;
@@ -465,45 +537,115 @@ export const getPaymentQueue = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<{records: SuperAdminPaymentRecord[]; total: number}> => {
-  const queryParts: string[] = [];
-  if (params?.limit !== undefined) queryParts.push(`limit=${params.limit}`);
-  else queryParts.push('limit=10');
-  if (params?.offset !== undefined) queryParts.push(`offset=${params.offset}`);
+  const safeLimit = Math.min(Math.max(Number(params?.limit) || 100, 1), 100);
+  const safeOffset = Math.max(Number(params?.offset) || 0, 0);
 
-  const pType = params?.payment_type ?? params?.paymentType;
-  if (pType && pType !== 'All') {
-    queryParts.push(`payment_type=${encodeURIComponent(pType)}`);
-  } else {
-    queryParts.push('payment_type=All');
+  const rawType = params?.payment_type ?? params?.paymentType ?? 'All';
+  const normType = String(rawType || '').trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
+
+  if (normType === 'tenure settlement') {
+    return await getTenureTimeoutSettlements({limit: safeLimit, offset: safeOffset});
   }
+
+  if (normType === 'pre-close settlement' || normType === 'preclose settlement') {
+    return await getPrecloseSettlements({limit: safeLimit, offset: safeOffset});
+  }
+
+  if (normType === 'tenure extension') {
+    return await getAllTenureExtensions({limit: safeLimit, offset: safeOffset});
+  }
+
+  if (normType === 'monthly interest') {
+    return await getMonthlyInterestPaymentQueue({limit: safeLimit, offset: safeOffset});
+  }
+
+  if (normType === 'all' || !normType) {
+    // Web All tab aggregation: Fetch all 4 sources concurrently using Promise.allSettled
+    const [monthlyRes, tenureRes, precloseRes, extensionRes] = await Promise.allSettled([
+      getMonthlyInterestPaymentQueue({limit: 100, offset: 0}),
+      getTenureTimeoutSettlements({limit: 100, offset: 0}),
+      getPrecloseSettlements({limit: 100, offset: 0}),
+      getAllTenureExtensions({limit: 100, offset: 0}),
+    ]);
+
+    const monthlyRecords = monthlyRes.status === 'fulfilled' ? monthlyRes.value.records || [] : [];
+    const tenureRecords = tenureRes.status === 'fulfilled' ? tenureRes.value.records || [] : [];
+    const precloseRecords = precloseRes.status === 'fulfilled' ? precloseRes.value.records || [] : [];
+    const extensionRecords = extensionRes.status === 'fulfilled' ? extensionRes.value.records || [] : [];
+
+    const combined = [
+      ...monthlyRecords,
+      ...tenureRecords,
+      ...precloseRecords,
+      ...extensionRecords,
+    ];
+
+    // Deduplicate records by unique key (paymentType + sourceId/id)
+    const seen = new Set<string>();
+    const unique: SuperAdminPaymentRecord[] = [];
+    for (const record of combined) {
+      const key = `${record.paymentType}-${record.sourceId || record.id}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(record);
+      }
+    }
+
+    let records = unique;
+
+    if (params?.search && params.search.trim()) {
+      const q = params.search.trim().toLowerCase();
+      records = records.filter(
+        p =>
+          p.investorName.toLowerCase().includes(q) ||
+          p.bondId.toLowerCase().includes(q) ||
+          p.branchName.toLowerCase().includes(q) ||
+          p.paymentType.toLowerCase().includes(q) ||
+          p.status.toLowerCase().includes(q) ||
+          String(p.netAmount).includes(q) ||
+          String(p.amount).includes(q),
+      );
+    }
+
+    if (params?.status && params.status !== 'All' && params.status !== 'All Status') {
+      const s = params.status.toLowerCase().trim();
+      records = records.filter(p => (p.status || '').toLowerCase().trim() === s);
+    }
+
+    return {records, total: records.length};
+  }
+
+  const queryParts: string[] = [];
+  queryParts.push(`payment_type=${encodeURIComponent(rawType)}`);
+  queryParts.push(`limit=${safeLimit}`);
+  queryParts.push(`offset=${safeOffset}`);
 
   if (params?.status && params.status !== 'All' && params.status !== 'All Status') {
     queryParts.push(`status=${encodeURIComponent(params.status)}`);
   }
 
-  if (params?.branch_id) queryParts.push(`branch_id=${params.branch_id}`);
-  if (params?.search && params.search.trim()) queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+  if (params?.branch_id) {
+    queryParts.push(`branch_id=${params.branch_id}`);
+  }
+
+  if (params?.search && params.search.trim()) {
+    queryParts.push(`search=${encodeURIComponent(params.search.trim())}`);
+  }
 
   const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/payments${qs}`, {
+    response = await apiRequest(`/api/superadmin/payments${qs}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/api/superadmin/payments${qs}`, {
-        method: 'GET',
-      });
-    } catch {
-      response = await apiRequest(`/payments${qs}`, {
-        method: 'GET',
-      });
-    }
+    response = await apiRequest(`/superadmin/payments${qs}`, {
+      method: 'GET',
+    });
   }
 
   const list = getList(response);
-  const records = list.map(item => normalizePayment(item, pType));
+  const records = list.map(item => normalizePayment(item, rawType));
   const total = Number(
     response?.total ??
     response?.total_count ??
@@ -516,23 +658,19 @@ export const getPaymentQueue = async (params?: {
 };
 
 /**
- * 2. GET /superadmin/payments/summary
+ * 2. GET /api/superadmin/payments/summary
  */
 export const getPaymentSummary = async (): Promise<PaymentSummaryData> => {
   try {
     let response: any = null;
     try {
-      response = await apiRequest('/superadmin/payments/summary', {
+      response = await apiRequest('/api/superadmin/payments/summary', {
         method: 'GET',
       });
     } catch {
-      try {
-        response = await apiRequest('/api/superadmin/payments/summary', {
-          method: 'GET',
-        });
-      } catch {
-        response = null;
-      }
+      response = await apiRequest('/superadmin/payments/summary', {
+        method: 'GET',
+      });
     }
 
     if (response) {
@@ -565,77 +703,170 @@ export const getPaymentSummary = async (): Promise<PaymentSummaryData> => {
 };
 
 /**
- * 3. GET /superadmin/payments/{id}
+ * 3. GET /api/superadmin/payments/{id}
  */
 export const getPaymentDetails = async (
   sourceId: number | string,
   paymentType?: string,
 ): Promise<SuperAdminPaymentRecord> => {
+  if (sourceId === undefined || sourceId === null || sourceId === '') {
+    throw new Error('Payment source ID is required.');
+  }
+
+  const normType = String(paymentType || '').trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ');
+
+  if (normType === 'tenure settlement') {
+    return await getTenureTimeoutSettlementDetails(sourceId);
+  }
+
+  if (normType === 'pre-close settlement' || normType === 'preclose settlement') {
+    return await getPrecloseSettlementDetails(sourceId);
+  }
+
+  if (normType === 'tenure extension') {
+    return await getTenureExtensionDetails(sourceId);
+  }
+
+  if (normType === 'monthly interest') {
+    return await getMonthlyInterestDetails(sourceId);
+  }
+
   const pTypeParam = paymentType ? `?payment_type=${encodeURIComponent(paymentType)}` : '';
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/payments/${sourceId}${pTypeParam}`, {
+    response = await apiRequest(`/api/superadmin/payments/${encodeURIComponent(String(sourceId))}${pTypeParam}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/api/superadmin/payments/${sourceId}${pTypeParam}`, {
-        method: 'GET',
-      });
-    } catch {
-      response = await apiRequest(`/payments/${sourceId}${pTypeParam}`, {
-        method: 'GET',
-      });
-    }
+    response = await apiRequest(`/superadmin/payments/${encodeURIComponent(String(sourceId))}${pTypeParam}`, {
+      method: 'GET',
+    });
   }
   return normalizePayment(response?.data || response, paymentType);
 };
 
 /**
- * 4. POST /superadmin/payments/approve
+ * 4. POST /api/superadmin/payments/approve
  */
-export const approvePayment = async (payload: PaymentActionPayload): Promise<any> => {
+export const approvePayment = async (
+  sourceIdOrPayload: number | string | PaymentActionPayload,
+  paymentType?: string,
+): Promise<any> => {
+  let source_id: number;
+  let p_type: string;
+
+  if (typeof sourceIdOrPayload === 'object' && sourceIdOrPayload !== null) {
+    source_id = Number(sourceIdOrPayload.source_id);
+    p_type = sourceIdOrPayload.payment_type;
+  } else {
+    source_id = Number(sourceIdOrPayload);
+    p_type = paymentType || '';
+  }
+
+  if (!source_id) {
+    throw new Error('Payment source ID is required.');
+  }
+
+  const payload = {
+    source_id,
+    payment_type: p_type,
+  };
+
   try {
-    return await apiRequest('/superadmin/payments/approve', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  } catch {
     return await apiRequest('/api/superadmin/payments/approve', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  } catch {
+    return await apiRequest('/superadmin/payments/approve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 };
 
 /**
- * 5. POST /superadmin/payments/reject
+ * 5. POST /api/superadmin/payments/reject
  */
-export const rejectPayment = async (payload: RejectPaymentPayload): Promise<any> => {
+export const rejectPayment = async (
+  sourceIdOrPayload: number | string | RejectPaymentPayload,
+  paymentType?: string,
+  rejectionReason?: string,
+): Promise<any> => {
+  let source_id: number;
+  let p_type: string;
+  let reason: string;
+
+  if (typeof sourceIdOrPayload === 'object' && sourceIdOrPayload !== null) {
+    source_id = Number(sourceIdOrPayload.source_id);
+    p_type = sourceIdOrPayload.payment_type;
+    reason = String(sourceIdOrPayload.rejection_reason || '').trim();
+  } else {
+    source_id = Number(sourceIdOrPayload);
+    p_type = paymentType || '';
+    reason = String(rejectionReason || '').trim();
+  }
+
+  if (!source_id) {
+    throw new Error('Payment source ID is required.');
+  }
+  if (!reason) {
+    throw new Error('Rejection reason is required.');
+  }
+
+  const payload = {
+    source_id,
+    payment_type: p_type,
+    rejection_reason: reason,
+  };
+
   try {
-    return await apiRequest('/superadmin/payments/reject', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  } catch {
     return await apiRequest('/api/superadmin/payments/reject', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  } catch {
+    return await apiRequest('/superadmin/payments/reject', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 };
 
 /**
- * 6. POST /superadmin/payments/mark-paid
+ * 6. POST /api/superadmin/payments/mark-paid
  */
-export const markPaymentPaid = async (payload: PaymentActionPayload): Promise<any> => {
+export const markPaymentPaid = async (
+  sourceIdOrPayload: number | string | PaymentActionPayload,
+  paymentType?: string,
+): Promise<any> => {
+  let source_id: number;
+  let p_type: string;
+
+  if (typeof sourceIdOrPayload === 'object' && sourceIdOrPayload !== null) {
+    source_id = Number(sourceIdOrPayload.source_id);
+    p_type = sourceIdOrPayload.payment_type;
+  } else {
+    source_id = Number(sourceIdOrPayload);
+    p_type = paymentType || '';
+  }
+
+  if (!source_id) {
+    throw new Error('Payment source ID is required.');
+  }
+
+  const payload = {
+    source_id,
+    payment_type: p_type,
+  };
+
   try {
-    return await apiRequest('/superadmin/payments/mark-paid', {
+    return await apiRequest('/api/superadmin/payments/mark-paid', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
   } catch {
-    return await apiRequest('/api/superadmin/payments/mark-paid', {
+    return await apiRequest('/superadmin/payments/mark-paid', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
@@ -650,86 +881,68 @@ export const getMonthlyInterestPaymentQueue = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<{records: SuperAdminPaymentRecord[]; total: number}> => {
-  const limit = params?.limit !== undefined ? params.limit : 10;
+  const limit = params?.limit !== undefined ? params.limit : 100;
   const offset = params?.offset !== undefined ? params.offset : 0;
 
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/payments?payment_type=MONTHLY_INTEREST&limit=${limit}&offset=${offset}`, {
+    response = await apiRequest(`/api/superadmin/payments?payment_type=MONTHLY_INTEREST&limit=${limit}&offset=${offset}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/superadmin/payments?payment_type=Monthly%20Interest&limit=${limit}&offset=${offset}`, {
-        method: 'GET',
-      });
-    } catch {
-      try {
-        response = await apiRequest(`/admin/monthly-interest?limit=${limit}&offset=${offset}`, {
-          method: 'GET',
-        });
-      } catch {
-        response = await apiRequest(`/monthly-interest?limit=${limit}&offset=${offset}`, {
-          method: 'GET',
-        });
-      }
-    }
+    response = await apiRequest(`/superadmin/payments?payment_type=MONTHLY_INTEREST&limit=${limit}&offset=${offset}`, {
+      method: 'GET',
+    });
   }
 
   const list = getList(response);
   const records = list.map(item => normalizePayment(item, 'Monthly Interest'));
-  const total = Number(response?.total || response?.count || records.length);
+  const total = Number(response?.total ?? response?.total_count ?? response?.count ?? records.length);
 
   return {records, total};
 };
 
 /**
- * 8. GET /superadmin/settlements/tenure-timeout
+ * 8. GET /api/superadmin/settlements/tenure-timeout
  */
 export const getTenureTimeoutSettlements = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<{records: SuperAdminPaymentRecord[]; total: number}> => {
-  const limit = params?.limit !== undefined ? params.limit : 10;
+  const limit = params?.limit !== undefined ? params.limit : 100;
   const offset = params?.offset !== undefined ? params.offset : 0;
 
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/settlements/tenure-timeout?limit=${limit}&offset=${offset}`, {
+    response = await apiRequest(`/api/superadmin/settlements/tenure-timeout?limit=${limit}&offset=${offset}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/superadmin/payments?payment_type=Tenure%20Settlement&limit=${limit}&offset=${offset}`, {
-        method: 'GET',
-      });
-    } catch {
-      response = await apiRequest(`/admin/settlements/tenure-timeout?limit=${limit}&offset=${offset}`, {
-        method: 'GET',
-      });
-    }
+    response = await apiRequest(`/superadmin/settlements/tenure-timeout?limit=${limit}&offset=${offset}`, {
+      method: 'GET',
+    });
   }
 
   const list = getList(response);
   const records = list.map(item => normalizePayment(item, 'Tenure Settlement'));
-  const total = Number(response?.total || response?.count || records.length);
+  const total = Number(response?.total ?? response?.total_count ?? response?.count ?? records.length);
 
   return {records, total};
 };
 
 /**
- * 8b. GET /superadmin/settlements/tenure-timeout/{settlement_id}
+ * 8b. GET /api/superadmin/settlements/tenure-timeout/{settlement_id}
  */
 export const getTenureTimeoutSettlementDetails = async (
   settlementId: number | string,
 ): Promise<SuperAdminPaymentRecord> => {
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/settlements/tenure-timeout/${settlementId}`, {
+    response = await apiRequest(`/api/superadmin/settlements/tenure-timeout/${encodeURIComponent(String(settlementId))}`, {
       method: 'GET',
     });
   } catch {
-    response = await apiRequest(`/superadmin/payments/${settlementId}?payment_type=Tenure%20Settlement`, {
+    response = await apiRequest(`/superadmin/settlements/tenure-timeout/${encodeURIComponent(String(settlementId))}`, {
       method: 'GET',
     });
   }
@@ -737,52 +950,46 @@ export const getTenureTimeoutSettlementDetails = async (
 };
 
 /**
- * 9. GET /superadmin/settlements/preclose
+ * 9. GET /api/superadmin/settlements/preclose
  */
 export const getPrecloseSettlements = async (params?: {
   limit?: number;
   offset?: number;
 }): Promise<{records: SuperAdminPaymentRecord[]; total: number}> => {
-  const limit = params?.limit !== undefined ? params.limit : 10;
+  const limit = params?.limit !== undefined ? params.limit : 100;
   const offset = params?.offset !== undefined ? params.offset : 0;
 
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/settlements/preclose?limit=${limit}&offset=${offset}`, {
+    response = await apiRequest(`/api/superadmin/settlements/preclose?limit=${limit}&offset=${offset}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/superadmin/payments?payment_type=Pre-Close%20Settlement&limit=${limit}&offset=${offset}`, {
-        method: 'GET',
-      });
-    } catch {
-      response = await apiRequest(`/admin/settlements/preclose?limit=${limit}&offset=${offset}`, {
-        method: 'GET',
-      });
-    }
+    response = await apiRequest(`/superadmin/settlements/preclose?limit=${limit}&offset=${offset}`, {
+      method: 'GET',
+    });
   }
 
   const list = getList(response);
   const records = list.map(item => normalizePayment(item, 'Pre-Close Settlement'));
-  const total = Number(response?.total || response?.count || records.length);
+  const total = Number(response?.total ?? response?.total_count ?? response?.count ?? records.length);
 
   return {records, total};
 };
 
 /**
- * 9b. GET /superadmin/settlements/preclose/{request_id}
+ * 9b. GET /api/superadmin/settlements/preclose/{request_id}
  */
 export const getPrecloseSettlementDetails = async (
   requestId: number | string,
 ): Promise<SuperAdminPaymentRecord> => {
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/settlements/preclose/${requestId}`, {
+    response = await apiRequest(`/api/superadmin/settlements/preclose/${encodeURIComponent(String(requestId))}`, {
       method: 'GET',
     });
   } catch {
-    response = await apiRequest(`/superadmin/payments/${requestId}?payment_type=Pre-Close%20Settlement`, {
+    response = await apiRequest(`/superadmin/settlements/preclose/${encodeURIComponent(String(requestId))}`, {
       method: 'GET',
     });
   }
@@ -790,47 +997,44 @@ export const getPrecloseSettlementDetails = async (
 };
 
 /**
- * 10. GET /superadmin/tenure-extensions
+ * 10. GET /api/superadmin/tenure-extensions
  */
 export const getAllTenureExtensions = async (params?: {
+  branchId?: number | null;
   limit?: number;
   offset?: number;
 }): Promise<{records: SuperAdminPaymentRecord[]; total: number}> => {
-  const limit = params?.limit !== undefined ? params.limit : 10;
+  const limit = params?.limit !== undefined ? params.limit : 100;
   const offset = params?.offset !== undefined ? params.offset : 0;
+
+  const queryParts: string[] = [`limit=${safeLimit(limit)}`, `offset=${Math.max(0, Number(offset) || 0)}`];
+  if (params?.branchId) {
+    queryParts.push(`branch_id=${params.branchId}`);
+  }
+  const qs = queryParts.length > 0 ? `?${queryParts.join('&')}` : '';
 
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/tenure-extensions?limit=${limit}&offset=${offset}`, {
+    response = await apiRequest(`/api/superadmin/tenure-extensions${qs}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/superadmin/payments?payment_type=Tenure%20Extension&limit=${limit}&offset=${offset}`, {
-        method: 'GET',
-      });
-    } catch {
-      try {
-        response = await apiRequest(`/admin/tenure-extensions?limit=${limit}&offset=${offset}`, {
-          method: 'GET',
-        });
-      } catch {
-        response = await apiRequest(`/admin/tenure-extensions/pending?limit=${limit}&offset=${offset}`, {
-          method: 'GET',
-        });
-      }
-    }
+    response = await apiRequest(`/superadmin/tenure-extensions${qs}`, {
+      method: 'GET',
+    });
   }
 
   const list = getList(response);
   const records = list.map(item => normalizePayment(item, 'Tenure Extension'));
-  const total = Number(response?.total || response?.count || records.length);
+  const total = Number(response?.total ?? response?.total_count ?? response?.count ?? records.length);
 
   return {records, total};
 };
 
+const safeLimit = (limit: any) => Math.min(Math.max(Number(limit) || 100, 1), 100);
+
 /**
- * 11. GET /superadmin/tenure-extensions/{requestId}
+ * 11. GET /api/superadmin/tenure-extensions/{requestId}
  */
 export const getTenureExtensionDetails = async (
   requestId: number | string,
@@ -838,25 +1042,19 @@ export const getTenureExtensionDetails = async (
   const idNum = Number(requestId) || requestId;
   let response: any = null;
   try {
-    response = await apiRequest(`/superadmin/tenure-extensions/${idNum}`, {
+    response = await apiRequest(`/api/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}`, {
       method: 'GET',
     });
   } catch {
-    try {
-      response = await apiRequest(`/superadmin/payments/${idNum}?payment_type=Tenure%20Extension`, {
-        method: 'GET',
-      });
-    } catch {
-      response = await apiRequest(`/admin/tenure-extensions/${idNum}`, {
-        method: 'GET',
-      });
-    }
+    response = await apiRequest(`/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}`, {
+      method: 'GET',
+    });
   }
   return normalizePayment(response?.data || response, 'Tenure Extension');
 };
 
 /**
- * 12. PUT /superadmin/tenure-extensions/{requestId}/approve
+ * 12. PUT /api/superadmin/tenure-extensions/{requestId}/approve
  */
 export const approveTenureExtension = async (
   requestId: number | string,
@@ -864,31 +1062,20 @@ export const approveTenureExtension = async (
 ): Promise<any> => {
   const idNum = Number(requestId) || requestId;
   try {
-    return await apiRequest(`/superadmin/tenure-extensions/${idNum}/approve`, {
+    return await apiRequest(`/api/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}/approve`, {
       method: 'PUT',
       body: JSON.stringify({remarks: remarks || 'Approved by Super Admin.'}),
     });
-  } catch (err1) {
-    try {
-      return await apiRequest(`/superadmin/payments/approve`, {
-        method: 'POST',
-        body: JSON.stringify({
-          source_id: Number(idNum),
-          payment_type: 'Tenure Extension',
-          remarks: remarks || 'Approved by Super Admin.',
-        }),
-      });
-    } catch {
-      return await apiRequest(`/admin/tenure-extensions/${idNum}/approve`, {
-        method: 'PUT',
-        body: JSON.stringify({remarks: remarks || 'Approved by Super Admin.'}),
-      });
-    }
+  } catch {
+    return await apiRequest(`/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}/approve`, {
+      method: 'PUT',
+      body: JSON.stringify({remarks: remarks || 'Approved by Super Admin.'}),
+    });
   }
 };
 
 /**
- * 13. PUT /superadmin/tenure-extensions/{requestId}/reject
+ * 13. PUT /api/superadmin/tenure-extensions/{requestId}/reject
  */
 export const rejectTenureExtension = async (
   requestId: number | string,
@@ -896,47 +1083,32 @@ export const rejectTenureExtension = async (
 ): Promise<any> => {
   const idNum = Number(requestId) || requestId;
   try {
-    return await apiRequest(`/superadmin/tenure-extensions/${idNum}/reject`, {
+    return await apiRequest(`/api/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}/reject`, {
       method: 'PUT',
       body: JSON.stringify({remarks: remarks || 'Rejected by Super Admin.'}),
     });
-  } catch (err1) {
-    try {
-      return await apiRequest(`/superadmin/payments/reject`, {
-        method: 'POST',
-        body: JSON.stringify({
-          source_id: Number(idNum),
-          payment_type: 'Tenure Extension',
-          rejection_reason: remarks,
-        }),
-      });
-    } catch {
-      return await apiRequest(`/admin/tenure-extensions/${idNum}/reject`, {
-        method: 'PUT',
-        body: JSON.stringify({remarks: remarks || 'Rejected by Super Admin.'}),
-      });
-    }
+  } catch {
+    return await apiRequest(`/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}/reject`, {
+      method: 'PUT',
+      body: JSON.stringify({remarks: remarks || 'Rejected by Super Admin.'}),
+    });
   }
 };
 
 /**
- * 14. PUT /superadmin/tenure-extensions/{requestId}/mark-paid
+ * 14. PUT /api/superadmin/tenure-extensions/{requestId}/mark-paid
  */
 export const markTenureExtensionPaid = async (
   requestId: number | string,
 ): Promise<any> => {
   const idNum = Number(requestId) || requestId;
   try {
-    return await apiRequest(`/superadmin/tenure-extensions/${idNum}/mark-paid`, {
+    return await apiRequest(`/api/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}/mark-paid`, {
       method: 'PUT',
     });
   } catch {
-    return await apiRequest(`/superadmin/payments/mark-paid`, {
-      method: 'POST',
-      body: JSON.stringify({
-        source_id: Number(idNum),
-        payment_type: 'Tenure Extension',
-      }),
+    return await apiRequest(`/superadmin/tenure-extensions/${encodeURIComponent(String(idNum))}/mark-paid`, {
+      method: 'PUT',
     });
   }
 };
@@ -972,4 +1144,23 @@ export const rejectPrecloseRequest = async (requestId: number | string, reason: 
 export const markPrecloseRequestPaid = async (requestId: number | string) =>
   markPaymentPaid({source_id: Number(requestId), payment_type: 'Pre-Close Settlement'});
 
+// Additional Web Aliases
+export const getMonthlyInterestQueue = getMonthlyInterestPaymentQueue;
+export const getMonthlyInterestDetails = async (interestScheduleId: number | string) => {
+  return getPaymentDetails(interestScheduleId, 'MONTHLY_INTEREST');
+};
+export const getMonthlyInterestPaymentDetails = getMonthlyInterestDetails;
+export const approveMonthlyInterest = approveMonthlyInterestPayment;
+export const rejectMonthlyInterest = rejectMonthlyInterestPayment;
+export const markMonthlyInterestPaid = markMonthlyInterestPaymentPaid;
+
+export const getSuperAdminPrecloseRequests = getPrecloseSettlements;
+export const getSuperAdminPrecloseRequestDetails = getPrecloseSettlementDetails;
+export const getPrecloseRequests = getPrecloseSettlements;
+export const getPrecloseRequestDetails = getPrecloseSettlementDetails;
+
+export const getSuperAdminTenureTimeoutSettlements = getTenureTimeoutSettlements;
+export const getSuperAdminTenureTimeoutSettlementDetails = getTenureTimeoutSettlementDetails;
+
 export {getErrorMessage};
+

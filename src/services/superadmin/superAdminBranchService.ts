@@ -1,6 +1,7 @@
 import {getAuthToken, getErrorMessage} from './superAdminDashboardService';
+import {ENV} from '../../config/env';
 
-const API_BASE_URL = 'http://187.52.115.32:8000';
+const API_BASE_URL = ENV.API_BASE_URL || 'https://investor.inrfs.com/api';
 
 export interface BranchRecord {
   id: number;
@@ -417,4 +418,25 @@ export const getBranchStates = async (): Promise<StateOption[]> => {
   }
 };
 
+/**
+ * 6. DELETE /superadmin/branch-management/{branchId}
+ */
+export const deleteBranch = async (branchId: number | string): Promise<any> => {
+  if (branchId === null || branchId === undefined || branchId === '') {
+    throw new Error('Branch ID is required.');
+  }
+
+  return await apiRequest(
+    `/superadmin/branch-management/${encodeURIComponent(String(branchId))}`,
+    {
+      method: 'DELETE',
+    },
+  );
+};
+
+// Aliases matching Web implementation
+export const getBranchManagement = getBranches;
+export const getBranchManagementDetails = getBranchDetails;
+
 export {getErrorMessage};
+
