@@ -1,42 +1,32 @@
-import React, {useEffect, useState} from 'react';
+import React, {useCallback, useEffect, useState} from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  TouchableOpacity,
-  Image,
-  Alert,
   ActivityIndicator,
-  Modal,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  RefreshControl,
+  ScrollView,
+  Text,
   TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import AppHeader from '../../components/AppHeader';
+import AdminBottomTabBar from '../../components/AdminBottomTabBar';
 import {useAppData} from '../../navigation/AppNavigator';
 import {styles} from '../../styles/admin/AdminProfileScreen.styles';
-import {SafeAreaView} from 'react-native-safe-area-context';
-import AdminBottomTabBar from '../../components/AdminBottomTabBar';
-import AppHeader from '../../components/AppHeader';
 import {validation} from '../../utils/validation';
-import {ENV} from '../../config/env';
+import {
+  getAdminProfile,
+  updateAdminProfile,
+  getErrorMessage,
+} from '../../services/admin/adminProfileService';
 
-/**
- * Backend API
- */
-const API_BASE_URL = ENV?.API_BASE_URL || 'https://investor.inrfs.com/api';
-
-/**
- * Admin Profile API response type
- *
- * The Swagger screenshot shows the response wrapped approximately like:
- *
- * {
- *   "success": true,
- *   "data": {...}
- * }
- *
- * We normalize the data below so the screen can handle the response safely.
- */
-interface AdminProfile {
+export interface AdminProfile {
   name: string;
   email: string;
   mobile: string;
@@ -49,16 +39,12 @@ interface AdminProfile {
 const DEFAULT_AVATAR =
   'https://ui-avatars.com/api/?name=Admin&background=E5E7EB&color=374151&size=256';
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const AdminProfileScreen = ({navigation}: any) => {
   const {adminProfile: contextAdminProfile} = useAppData();
 
-  /**
-   * Local profile state.
-   *
-   * We use the existing AppNavigator profile as the initial value,
-   * then replace it with the actual backend GET response.
-   */
-  const [adminProfile, setAdminProfile] = useState<AdminProfile>({
+  const [profile, setProfile] = useState<AdminProfile>({
     name: contextAdminProfile?.name || 'Admin',
     email: contextAdminProfile?.email || '',
     mobile: contextAdminProfile?.mobile || '',
@@ -69,51 +55,24 @@ const AdminProfileScreen = ({navigation}: any) => {
   });
 
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [apiError, setApiError] = useState('');
+  const [successMsg, setSuccessMsg] = useState('');
 
-  const [editModalVisible, setEditModalVisible] = useState(false);
-
-  /**
-   * Form state used by PUT /admin/profile
-   */
-  const [editName, setEditName] = useState('');
-  const [editEmail, setEditEmail] = useState('');
-  const [editMobile, setEditMobile] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-
-  /**
-   * ============================================================
-   * GET AUTH TOKEN
-   * ============================================================
-   *
-   * Your Swagger APIs are protected.
-   *
-   * This tries a few common AsyncStorage keys.
-   *
-   * If your Login API stores the token under a different key,
-   * change the keys below to match your project.
-   */
-const getAccessToken = async (): Promise<string | null> => {
-  try {
-    return await AsyncStorage.getItem('access_token');
-  } catch (error) {
-    console.log('Error getting access token:', error);
-    return null;
-  }
-};
+  // Edit Mode state (matching Super Admin Profile)
+  const [isEditing, setIsEditing] = useState(false);
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    mobile: '',
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [isSaving, setIsSaving] = useState(false);
 
   /**
    * ============================================================
    * NORMALIZE PROFILE RESPONSE
    * ============================================================
-   *
-   * Since the Swagger screenshot does not show the exact backend
-   * response properties, this supports both:
-   *
-   * response.data
-   * response.data.data
-   *
-   * and common property names.
    */
   const normalizeProfile = (response: any): AdminProfile => {
     const data =
@@ -147,17 +106,20 @@ const getAccessToken = async (): Promise<string | null> => {
       role:
         data?.role ||
         data?.user_role ||
+        data?.role_name ||
         contextAdminProfile?.role ||
         'Admin',
 
       branch:
         data?.branch ||
         data?.branch_name ||
+        data?.branchName ||
         contextAdminProfile?.branch ||
         'Main Branch',
 
       status:
         data?.status ||
+        data?.status_name ||
         contextAdminProfile?.status ||
         'Active',
 
@@ -171,784 +133,468 @@ const getAccessToken = async (): Promise<string | null> => {
     };
   };
 
-  /**
-   * ============================================================
-   * GET /admin/profile
-   * ============================================================
-   */
-  const fetchAdminProfile = async () => {
+  /* ==========================================================
+     LOAD PROFILE (GET /admin/profile)
+     ========================================================== */
+
+  const loadProfileData = useCallback(async (showLoader = true) => {
     try {
-      setLoading(true);
+      if (showLoader) setLoading(true);
+      else setRefreshing(true);
+      setApiError('');
 
-      const token = await getAccessToken();
-
-      if (!token) {
-        console.log('No access token found in AsyncStorage.');
-
-        Alert.alert(
-          'Authentication Error',
-          'Your login session could not be found. Please log in again.',
-        );
-
-        setLoading(false);
-        return;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/admin/profile`, {
-        method: 'GET',
-        headers: {
-          Accept: 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
+      const res = await getAdminProfile();
+      const normalized = normalizeProfile(res);
+      setProfile(normalized);
+      setFormData({
+        fullName: normalized.name !== '—' ? normalized.name : '',
+        email: normalized.email !== '—' ? normalized.email : '',
+        mobile: normalized.mobile !== '—' ? normalized.mobile : '',
       });
-
-      const responseText = await response.text();
-
-      let responseData: any = {};
-
-      try {
-        responseData = responseText ? JSON.parse(responseText) : {};
-      } catch (error) {
-        console.log('Invalid JSON response:', responseText);
-      }
-
-      console.log('GET /admin/profile status:', response.status);
-      console.log('GET /admin/profile response:', responseData);
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          Alert.alert(
-            'Session Expired',
-            'Your admin session has expired. Please log in again.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  navigation.reset({
-                    index: 0,
-                    routes: [{name: 'Login'}],
-                  });
-                },
-              },
-            ],
-          );
-
-          return;
-        }
-
-        throw new Error(
-          responseData?.detail ||
-            responseData?.message ||
-            'Unable to fetch admin profile.',
-        );
-      }
-
-      const normalizedProfile = normalizeProfile(responseData);
-
-      setAdminProfile(normalizedProfile);
-    } catch (error: any) {
-      console.log('GET admin profile error:', error);
-
-      Alert.alert(
-        'Unable to Load Profile',
-        error?.message ||
-          'Something went wrong while loading your admin profile.',
+    } catch (err: any) {
+      console.log('Error loading admin profile:', err);
+      // If error occurs, keep context fallback if available
+      setApiError(
+        getErrorMessage(err) || 'Unable to load profile. Please check your connection.',
       );
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  }, [contextAdminProfile]);
+
+  useEffect(() => {
+    loadProfileData(true);
+  }, [loadProfileData]);
+
+  /* ==========================================================
+     EDIT MODE TOGGLES
+     ========================================================== */
+
+  const handleStartEdit = () => {
+    setFormData({
+      fullName: profile.name !== '—' ? profile.name : '',
+      email: profile.email !== '—' ? profile.email : '',
+      mobile: profile.mobile !== '—' ? profile.mobile : '',
+    });
+    setErrors({});
+    setApiError('');
+    setSuccessMsg('');
+    setIsEditing(true);
   };
 
-  /**
-   * ============================================================
-   * PUT /admin/profile
-   * ============================================================
-   */
-  const updateAdminProfile = async () => {
-    /**
-     * Strict input validation
-     */
-    const errors: Record<string, string> = {};
+  const handleCancelEdit = () => {
+    setFormData({
+      fullName: profile.name !== '—' ? profile.name : '',
+      email: profile.email !== '—' ? profile.email : '',
+      mobile: profile.mobile !== '—' ? profile.mobile : '',
+    });
+    setErrors({});
+    setApiError('');
+    setIsEditing(false);
+  };
 
-    const nameCheck = validation.isValidName(editName);
+  /* ==========================================================
+     FIELD-LEVEL VALIDATION
+     ========================================================== */
+
+  const handleFieldChange = (field: 'fullName' | 'email' | 'mobile', value: string) => {
+    setFormData(prev => ({...prev, [field]: value}));
+    if (errors[field]) {
+      setErrors(prev => {
+        const next = {...prev};
+        delete next[field];
+        return next;
+      });
+    }
+    if (apiError) setApiError('');
+  };
+
+  const validateForm = (): boolean => {
+    const newErrors: Record<string, string> = {};
+
+    const nameCheck = validation.isValidName(formData.fullName.trim());
     if (!nameCheck.isValid) {
-      errors.name = nameCheck.error || 'Name should contain only letters and spaces.';
+      newErrors.fullName = nameCheck.error || 'Name should contain only letters and spaces.';
     }
 
-    const emailCheck = validation.isValidEmail(editEmail);
-    if (!emailCheck.isValid) {
-      errors.email = emailCheck.error || 'Please enter a valid email address.';
+    if (!formData.email.trim()) {
+      newErrors.email = 'Email address is required';
+    } else if (!EMAIL_REGEX.test(formData.email.trim())) {
+      newErrors.email = 'Please enter a valid email address';
     }
 
-    const mobileCheck = validation.isValidIndianMobile(editMobile);
-    if (!mobileCheck.isValid) {
-      errors.mobile = mobileCheck.error || 'Please enter a valid 10-digit mobile number.';
+    if (!formData.mobile.trim()) {
+      newErrors.mobile = 'Mobile number is required';
+    } else if (/\D/.test(formData.mobile.trim()) || formData.mobile.trim().length !== 10) {
+      newErrors.mobile = 'Please enter a valid 10-digit mobile number.';
     }
 
-    setFieldErrors(errors);
-    if (Object.keys(errors).length > 0) {
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  /* ==========================================================
+     SAVE CHANGES (PUT /admin/profile)
+     ========================================================== */
+
+  const handleSave = async () => {
+    if (isSaving) return;
+
+    if (!validateForm()) {
       return;
     }
 
     try {
-      setSaving(true);
+      setIsSaving(true);
+      setApiError('');
+      setSuccessMsg('');
 
-      const token = await getAccessToken();
-
-      if (!token) {
-        Alert.alert(
-          'Authentication Error',
-          'Your login session could not be found. Please log in again.',
-        );
-        return;
-      }
-
-      /**
-       * This exactly matches the Swagger PUT request body:
-       *
-       * {
-       *   "name": "string",
-       *   "email": "string",
-       *   "mobile": "string"
-       * }
-       */
-      const requestBody = {
-        name: editName.trim(),
-        email: editEmail.trim(),
-        mobile: editMobile.trim(),
-      };
-
-      console.log('PUT /admin/profile request:', requestBody);
-
-      const response = await fetch(`${API_BASE_URL}/admin/profile`, {
-        method: 'PUT',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(requestBody),
+      await updateAdminProfile({
+        name: formData.fullName.trim(),
+        email: formData.email.trim(),
+        mobile: formData.mobile.trim(),
       });
 
-      const responseText = await response.text();
+      // Re-fetch profile from backend
+      const res = await getAdminProfile();
+      const updated = normalizeProfile(res);
 
-      let responseData: any = {};
+      setProfile(updated);
+      setFormData({
+        fullName: updated.name !== '—' ? updated.name : '',
+        email: updated.email !== '—' ? updated.email : '',
+        mobile: updated.mobile !== '—' ? updated.mobile : '',
+      });
 
-      try {
-        responseData = responseText ? JSON.parse(responseText) : {};
-      } catch (error) {
-        console.log('Invalid PUT response JSON:', responseText);
-      }
+      setIsEditing(false);
+      setSuccessMsg('✓ Profile updated successfully!');
 
-      console.log('PUT /admin/profile status:', response.status);
-      console.log('PUT /admin/profile response:', responseData);
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          Alert.alert(
-            'Session Expired',
-            'Your admin session has expired. Please log in again.',
-            [
-              {
-                text: 'OK',
-                onPress: () => {
-                  navigation.reset({
-                    index: 0,
-                    routes: [{name: 'Login'}],
-                  });
-                },
-              },
-            ],
-          );
-
-          return;
-        }
-
-        throw new Error(
-          responseData?.detail ||
-            responseData?.message ||
-            'Unable to update admin profile.',
-        );
-      }
-
-      /**
-       * Some APIs return the updated object in:
-       *
-       * responseData.data
-       *
-       * Some return the updated object directly.
-       *
-       * We support both.
-       */
-      const returnedProfile = normalizeProfile(responseData);
-
-      /**
-       * Update UI immediately.
-       *
-       * If backend returned only {success: true, data: {}},
-       * preserve the values we just submitted.
-       */
-      setAdminProfile(prev => ({
-        ...prev,
-        name: returnedProfile.name || editName.trim(),
-        email: returnedProfile.email || editEmail.trim(),
-        mobile: returnedProfile.mobile || editMobile.trim(),
-      }));
-
-      setEditModalVisible(false);
-
-      Alert.alert('Success', 'Your profile has been updated successfully.');
-
-      /**
-       * Optional:
-       * Fetch once again from backend so the screen always contains
-       * the actual server-side values.
-       */
-      await fetchAdminProfile();
-    } catch (error: any) {
-      console.log('PUT admin profile error:', error);
-
-      Alert.alert(
-        'Update Failed',
-        error?.message ||
-          'Something went wrong while updating your admin profile.',
-      );
+      setTimeout(() => {
+        setSuccessMsg('');
+      }, 4000);
+    } catch (err: any) {
+      console.log('Error updating admin profile:', err);
+      setApiError(getErrorMessage(err) || 'Failed to update profile. Please try again.');
     } finally {
-      setSaving(false);
+      setIsSaving(false);
     }
   };
 
-  /**
-   * ============================================================
-   * OPEN EDIT PROFILE
-   * ============================================================
-   */
-  const openEditProfile = () => {
-    setEditName(adminProfile.name || '');
-    setEditEmail(adminProfile.email || '');
-    setEditMobile(adminProfile.mobile || '');
-    setFieldErrors({});
+  /* ==========================================================
+     LOGOUT HANDLER
+     ========================================================== */
 
-    setEditModalVisible(true);
-  };
-
-  /**
-   * ============================================================
-   * FETCH PROFILE ON SCREEN LOAD
-   * ============================================================
-   */
-  useEffect(() => {
-    fetchAdminProfile();
-  }, []);
-
-  /**
-   * ============================================================
-   * LOGOUT
-   * ============================================================
-   */
   const handleLogout = () => {
-    Alert.alert('Log out', 'Are you sure you want to log out?', [
+    Alert.alert('Log Out', 'Are you sure you want to log out of the Admin portal?', [
+      {text: 'Cancel', style: 'cancel'},
       {
-        text: 'Cancel',
-        style: 'cancel',
-      },
-      {
-        text: 'Logout',
+        text: 'Log Out',
         style: 'destructive',
         onPress: async () => {
-          /**
-           * Remove token from storage.
-           *
-           * If your login stores additional authentication data,
-           * you can clear those here as well.
-           */
-        try {
-  await AsyncStorage.removeItem('access_token');
-} catch (error) {
-  console.log('Logout storage error:', error);
-}
-
-          navigation.reset({
-            index: 0,
-            routes: [{name: 'Login'}],
-          });
+          try {
+            await AsyncStorage.removeItem('access_token');
+            await AsyncStorage.removeItem('accessToken');
+            await AsyncStorage.removeItem('token');
+            await AsyncStorage.removeItem('authToken');
+            await AsyncStorage.removeItem('auth_token');
+            await AsyncStorage.removeItem('admin_token');
+            await AsyncStorage.removeItem('jwt');
+          } catch (error) {
+            console.log('Logout storage error:', error);
+          }
+          navigation.reset({index: 0, routes: [{name: 'Login'}]});
         },
       },
     ]);
   };
 
-  /**
-   * ============================================================
-   * LOADING
-   * ============================================================
-   */
-  if (loading) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <AppHeader subtitle="Admin Portal" />
-
-        <View
-          style={{
-            flex: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-          <ActivityIndicator size="large" color="#2563EB" />
-
-          <Text
-            style={{
-              marginTop: 12,
-              fontSize: 15,
-              color: '#6B7280',
-            }}>
-            Loading profile...
-          </Text>
-        </View>
-
-        <AdminBottomTabBar
-          active="Profile"
-          navigation={navigation}
-        />
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader subtitle="Admin Portal" />
 
-      <ScrollView
-        contentContainerStyle={styles.container}
-        showsVerticalScrollIndicator={false}>
-        {/* =====================================================
-            PROFILE AVATAR
-        ====================================================== */}
-        <View style={styles.avatarWrap}>
-          <Image
-            source={{
-              uri: adminProfile.avatarUri || DEFAULT_AVATAR,
-            }}
-            style={styles.avatar}
-          />
-
-          <TouchableOpacity
-            style={styles.cameraBadge}
-            onPress={() => {
-              Alert.alert(
-                'Profile Photo',
-                'Profile photo upload is not included because the backend profile APIs shown in Swagger only support name, email and mobile.',
-              );
-            }}>
-            <Text style={styles.cameraIcon}>📷</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* =====================================================
-            BASIC PROFILE
-        ====================================================== */}
-        <Text style={styles.name}>{adminProfile.name}</Text>
-
-        <Text style={styles.email}>{adminProfile.email}</Text>
-
-        <View style={styles.roleBadge}>
-          <Text style={styles.roleBadgeText}>
-            🛡 {adminProfile.role}
-          </Text>
-        </View>
-
-        {/* =====================================================
-            ACTIONS
-        ====================================================== */}
-        <View style={styles.actionsRow}>
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={openEditProfile}>
-            <View style={styles.actionIconWrap}>
-              <Text>✎</Text>
-            </View>
-
-            <Text style={styles.actionLabel}>Edit Profile</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => navigation.navigate('AdminSettings')}>
-            <View
-              style={[
-                styles.actionIconWrap,
-                {backgroundColor: '#DBEAFE'},
-              ]}>
-              <Text>⚙️</Text>
-            </View>
-
-            <Text style={styles.actionLabel}>Settings</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* =====================================================
-            PERSONAL INFORMATION
-        ====================================================== */}
-        <Text style={styles.sectionTitle}>
-          Personal Information
-        </Text>
-
-        <View style={styles.infoCard}>
-          {/* NAME */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>🧑</Text>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>FULL NAME</Text>
-
-              <Text style={styles.infoValue}>
-                {adminProfile.name || '-'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoDivider} />
-
-          {/* MOBILE */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>📞</Text>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>MOBILE</Text>
-
-              <Text style={styles.infoValue}>
-                {adminProfile.mobile || '-'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoDivider} />
-
-          {/* EMAIL */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>✉️</Text>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>EMAIL</Text>
-
-              <Text style={styles.infoValue}>
-                {adminProfile.email || '-'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoDivider} />
-
-          {/* ROLE */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>💼</Text>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>ROLE</Text>
-
-              <Text style={styles.infoValue}>
-                {adminProfile.role || 'Admin'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoDivider} />
-
-          {/* BRANCH */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>🏢</Text>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>BRANCH</Text>
-
-              <Text style={styles.infoValue}>
-                {adminProfile.branch || '-'}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.infoDivider} />
-
-          {/* STATUS */}
-          <View style={styles.infoRow}>
-            <Text style={styles.infoIcon}>✓</Text>
-
-            <View style={styles.infoTextWrap}>
-              <Text style={styles.infoLabel}>STATUS</Text>
-
-              <Text style={styles.infoValue}>
-                {adminProfile.status || '-'}
-              </Text>
-            </View>
-
-            <View
-              style={[
-                styles.statusDot,
-                {
-                  backgroundColor:
-                    adminProfile.status?.toLowerCase() ===
-                    'active'
-                      ? '#16A34A'
-                      : '#9CA3AF',
-                },
-              ]}
+      <KeyboardAvoidingView
+        style={{flex: 1}}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => loadProfileData(false)}
+              colors={['#0B1E45', '#2563EB']}
             />
-          </View>
-        </View>
+          }>
+          {/* SUCCESS BANNER */}
+          {successMsg ? (
+            <View style={styles.successBanner}>
+              <Text style={styles.successIcon}>✓</Text>
+              <Text style={styles.successText}>{successMsg}</Text>
+            </View>
+          ) : null}
 
-        {/* =====================================================
-            LOGOUT
-        ====================================================== */}
-        <TouchableOpacity
-          style={styles.logoutBtn}
-          onPress={handleLogout}>
-          <Text style={styles.logoutBtnText}>
-            ⎋ Logout Session
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.versionText}>
-          Version 2.4.0 (Enterprise Build)
-        </Text>
-      </ScrollView>
-
-      {/* =======================================================
-          EDIT PROFILE MODAL
-      ======================================================== */}
-      <Modal
-        visible={editModalVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() => {
-          if (!saving) {
-            setEditModalVisible(false);
-          }
-        }}>
-        <View
-          style={{
-            flex: 1,
-            backgroundColor: 'rgba(0,0,0,0.45)',
-            justifyContent: 'flex-end',
-          }}>
-          <View
-            style={{
-              backgroundColor: '#FFFFFF',
-              borderTopLeftRadius: 24,
-              borderTopRightRadius: 24,
-              paddingHorizontal: 20,
-              paddingTop: 20,
-              paddingBottom: 30,
-            }}>
-            {/* MODAL HEADER */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: 20,
-              }}>
-              <Text
-                style={{
-                  fontSize: 22,
-                  fontWeight: '700',
-                  color: '#111827',
-                }}>
-                Edit Profile
-              </Text>
-
+          {/* ERROR BANNER */}
+          {apiError ? (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{apiError}</Text>
               <TouchableOpacity
-                disabled={saving}
-                onPress={() => setEditModalVisible(false)}>
-                <Text
-                  style={{
-                    fontSize: 26,
-                    color: '#6B7280',
-                  }}>
-                  ×
-                </Text>
+                style={styles.retryButton}
+                onPress={() => loadProfileData(true)}>
+                <Text style={styles.retryButtonText}>Retry</Text>
               </TouchableOpacity>
             </View>
+          ) : null}
 
-            {/* NAME */}
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: 7,
-              }}>
-              FULL NAME
-            </Text>
-
-            <TextInput
-              value={editName}
-              onChangeText={text => {
-                setEditName(text);
-                if (fieldErrors.name) setFieldErrors(prev => ({...prev, name: ''}));
-              }}
-              placeholder="Enter your full name"
-              placeholderTextColor="#9CA3AF"
-              editable={!saving}
-              style={{
-                height: 50,
-                borderWidth: 1,
-                borderColor: '#D1D5DB',
-                borderRadius: 10,
-                paddingHorizontal: 14,
-                fontSize: 15,
-                color: '#111827',
-                marginBottom: fieldErrors.name ? 6 : 16,
-              }}
-            />
-            {fieldErrors.name ? (
-              <Text style={{color: '#DC2626', fontSize: 12, marginTop: -2, marginBottom: 12}}>
-                {fieldErrors.name}
+          {/* LOADING SPINNER */}
+          {loading ? (
+            <View style={{paddingVertical: 50, alignItems: 'center'}}>
+              <ActivityIndicator size="large" color="#0B1E45" />
+              <Text style={{marginTop: 14, color: '#6B7280', fontSize: 14, fontWeight: '500'}}>
+                Loading profile...
               </Text>
-            ) : null}
+            </View>
+          ) : (
+            <>
+              {/* ---------- Hero Summary Card (Matching Super Admin) ---------- */}
+              <View style={styles.heroCard}>
+                <View style={styles.heroGlow} pointerEvents="none" />
 
-            {/* EMAIL */}
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: 7,
-              }}>
-              EMAIL
-            </Text>
+                <View style={styles.heroTopRow}>
+                  <View style={styles.avatarRing}>
+                    <View style={styles.avatarWrap}>
+                      <View style={styles.avatarCircle}>
+                        {profile.avatarUri ? (
+                          <Image source={{uri: profile.avatarUri}} style={styles.avatarImage} />
+                        ) : (
+                          <Text style={styles.avatarInitial}>
+                            {profile.name?.charAt(0)?.toUpperCase() || 'A'}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={styles.avatarBadge}>
+                        <Text style={styles.avatarBadgeIcon}>✓</Text>
+                      </View>
+                    </View>
+                  </View>
 
-            <TextInput
-              value={editEmail}
-              onChangeText={text => {
-                setEditEmail(text);
-                if (fieldErrors.email) setFieldErrors(prev => ({...prev, email: ''}));
-              }}
-              placeholder="Enter your email"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!saving}
-              style={{
-                height: 50,
-                borderWidth: 1,
-                borderColor: '#D1D5DB',
-                borderRadius: 10,
-                paddingHorizontal: 14,
-                fontSize: 15,
-                color: '#111827',
-                marginBottom: fieldErrors.email ? 6 : 16,
-              }}
-            />
-            {fieldErrors.email ? (
-              <Text style={{color: '#DC2626', fontSize: 12, marginTop: -2, marginBottom: 12}}>
-                {fieldErrors.email}
-              </Text>
-            ) : null}
+                  <View style={styles.heroTextCol}>
+                    <Text style={styles.name}>{profile.name}</Text>
+                    <Text style={styles.email}>{profile.email || '-'}</Text>
+                    <View style={styles.rolePill}>
+                      <Text style={styles.rolePillText}>{profile.role?.toUpperCase() || 'ADMIN'}</Text>
+                    </View>
+                  </View>
+                </View>
 
-            {/* MOBILE */}
-            <Text
-              style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: '#374151',
-                marginBottom: 7,
-              }}>
-              MOBILE
-            </Text>
+                <View style={styles.goldDivider} />
 
-            <TextInput
-              value={editMobile}
-              onChangeText={text => {
-                setEditMobile(text);
-                if (fieldErrors.mobile) setFieldErrors(prev => ({...prev, mobile: ''}));
-              }}
-              placeholder="Enter your mobile number"
-              placeholderTextColor="#9CA3AF"
-              keyboardType="phone-pad"
-              editable={!saving}
-              style={{
-                height: 50,
-                borderWidth: 1,
-                borderColor: '#D1D5DB',
-                borderRadius: 10,
-                paddingHorizontal: 14,
-                fontSize: 15,
-                color: '#111827',
-                marginBottom: fieldErrors.mobile ? 6 : 22,
-              }}
-            />
-            {fieldErrors.mobile ? (
-              <Text style={{color: '#DC2626', fontSize: 12, marginTop: -2, marginBottom: 16}}>
-                {fieldErrors.mobile}
-              </Text>
-            ) : null}
+                <View style={styles.heroStatsRow}>
+                  <View style={styles.heroStatCol}>
+                    <Text style={styles.heroStatLabel}>BRANCH</Text>
+                    <Text style={styles.heroStatValue}>{profile.branch || 'Main Branch'}</Text>
+                  </View>
+                  <View style={styles.heroStatCol}>
+                    <Text style={styles.heroStatLabel}>ACCOUNT STATUS</Text>
+                    <Text style={styles.heroStatValue}>{profile.status || 'Active'}</Text>
+                  </View>
+                </View>
+              </View>
 
-            {/* BUTTONS */}
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: 12,
-              }}>
-              <TouchableOpacity
-                disabled={saving}
-                onPress={() => setEditModalVisible(false)}
-                style={{
-                  flex: 1,
-                  height: 50,
-                  borderRadius: 10,
-                  borderWidth: 1,
-                  borderColor: '#D1D5DB',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                <Text
-                  style={{
-                    fontSize: 15,
-                    fontWeight: '600',
-                    color: '#374151',
-                  }}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
+              {/* ---------- Personal Information Card (Matching Super Admin) ---------- */}
+              <View style={styles.card}>
+                <View style={styles.cardHeaderRow}>
+                  <View style={styles.cardHeaderLeft}>
+                    <View style={styles.cardHeaderIconWrap}>
+                      <Text style={styles.cardHeaderIcon}>👤</Text>
+                    </View>
+                    <Text style={styles.cardHeaderText}>Personal Information</Text>
+                  </View>
 
-              <TouchableOpacity
-                disabled={saving}
-                onPress={updateAdminProfile}
-                style={{
-                  flex: 1,
-                  height: 50,
-                  borderRadius: 10,
-                  backgroundColor: '#2563EB',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}>
-                {saving ? (
-                  <ActivityIndicator
-                    size="small"
-                    color="#FFFFFF"
-                  />
-                ) : (
-                  <Text
-                    style={{
-                      fontSize: 15,
-                      fontWeight: '700',
-                      color: '#FFFFFF',
-                    }}>
-                    Save Changes
-                  </Text>
+                  {!isEditing && (
+                    <TouchableOpacity
+                      style={styles.editBtn}
+                      onPress={handleStartEdit}>
+                      <Text style={styles.editText}>✏️ Edit Profile</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+
+                <View style={styles.divider} />
+
+                {/* FULL NAME */}
+                <View style={styles.infoRow}>
+                  <View style={styles.fieldIconWrap}>
+                    <Text style={styles.fieldIcon}>👤</Text>
+                  </View>
+                  <View style={styles.infoTextCol}>
+                    <View style={styles.infoLabelRow}>
+                      <Text style={styles.infoLabel}>FULL NAME *</Text>
+                    </View>
+                    {isEditing ? (
+                      <>
+                        <TextInput
+                          style={[styles.input, errors.fullName && styles.inputError]}
+                          value={formData.fullName}
+                          onChangeText={val => handleFieldChange('fullName', val)}
+                          placeholder="Enter your full name"
+                          placeholderTextColor="#9CA3AF"
+                          autoCapitalize="words"
+                        />
+                        {errors.fullName ? (
+                          <Text style={styles.errorTextSmall}>{errors.fullName}</Text>
+                        ) : null}
+                      </>
+                    ) : (
+                      <Text style={styles.infoValue}>{profile.name || '-'}</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* MOBILE */}
+                <View style={styles.infoRow}>
+                  <View style={styles.fieldIconWrapGreen}>
+                    <Text style={styles.fieldIcon}>📞</Text>
+                  </View>
+                  <View style={styles.infoTextCol}>
+                    <View style={styles.infoLabelRow}>
+                      <Text style={styles.infoLabel}>MOBILE *</Text>
+                    </View>
+                    {isEditing ? (
+                      <>
+                        <TextInput
+                          style={[styles.input, errors.mobile && styles.inputError]}
+                          value={formData.mobile}
+                          onChangeText={val => handleFieldChange('mobile', val)}
+                          placeholder="Enter mobile number"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="phone-pad"
+                        />
+                        {errors.mobile ? (
+                          <Text style={styles.errorTextSmall}>{errors.mobile}</Text>
+                        ) : null}
+                      </>
+                    ) : (
+                      <Text style={styles.infoValue}>{profile.mobile || '—'}</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* EMAIL */}
+                <View style={styles.infoRow}>
+                  <View style={styles.fieldIconWrap}>
+                    <Text style={styles.fieldIcon}>✉️</Text>
+                  </View>
+                  <View style={styles.infoTextCol}>
+                    <View style={styles.infoLabelRow}>
+                      <Text style={styles.infoLabel}>EMAIL ADDRESS *</Text>
+                    </View>
+                    {isEditing ? (
+                      <>
+                        <TextInput
+                          style={[styles.input, errors.email && styles.inputError]}
+                          value={formData.email}
+                          onChangeText={val => handleFieldChange('email', val)}
+                          placeholder="Enter email address"
+                          placeholderTextColor="#9CA3AF"
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                        />
+                        {errors.email ? (
+                          <Text style={styles.errorTextSmall}>{errors.email}</Text>
+                        ) : null}
+                      </>
+                    ) : (
+                      <Text style={styles.infoValue}>{profile.email || '—'}</Text>
+                    )}
+                  </View>
+                </View>
+
+                {/* ROLE (Read-only) */}
+                <View style={styles.infoRow}>
+                  <View style={styles.fieldIconWrapGold}>
+                    <Text style={styles.fieldIcon}>🛡️</Text>
+                  </View>
+                  <View style={styles.infoTextCol}>
+                    <View style={styles.infoLabelRow}>
+                      <Text style={styles.infoLabel}>ROLE</Text>
+                      {isEditing && <Text style={styles.readOnlyBadge}>🔒 Read-only</Text>}
+                    </View>
+                    <Text style={styles.infoValue}>{profile.role || 'Admin'}</Text>
+                  </View>
+                </View>
+
+                {/* BRANCH (Read-only) */}
+                <View style={styles.infoRow}>
+                  <View style={styles.fieldIconWrapPurple}>
+                    <Text style={styles.fieldIcon}>🏢</Text>
+                  </View>
+                  <View style={styles.infoTextCol}>
+                    <View style={styles.infoLabelRow}>
+                      <Text style={styles.infoLabel}>BRANCH</Text>
+                      {isEditing && <Text style={styles.readOnlyBadge}>🔒 Read-only</Text>}
+                    </View>
+                    <Text style={styles.infoValue}>{profile.branch || 'Main Branch'}</Text>
+                  </View>
+                </View>
+
+                {/* STATUS (Read-only) */}
+                <View style={styles.infoRow}>
+                  <View style={styles.fieldIconWrapGreen}>
+                    <Text style={styles.fieldIcon}>✓</Text>
+                  </View>
+                  <View style={styles.infoTextCol}>
+                    <View style={styles.infoLabelRow}>
+                      <Text style={styles.infoLabel}>STATUS</Text>
+                      {isEditing && <Text style={styles.readOnlyBadge}>🔒 Read-only</Text>}
+                    </View>
+                    <View style={styles.statusRow}>
+                      <View style={styles.statusDot} />
+                      <Text style={[styles.infoValue, {color: '#059669'}]}>
+                        {profile.status || 'Active'}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* EDIT MODE ACTIONS: CANCEL & SAVE CHANGES */}
+                {isEditing && (
+                  <View style={styles.editActionsRow}>
+                    <TouchableOpacity
+                      style={styles.cancelButton}
+                      disabled={isSaving}
+                      onPress={handleCancelEdit}>
+                      <Text style={styles.cancelButtonText}>Cancel</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                      disabled={isSaving}
+                      onPress={handleSave}>
+                      {isSaving ? (
+                        <ActivityIndicator color="#FFFFFF" size="small" />
+                      ) : (
+                        <Text style={styles.saveButtonText}>Save Changes</Text>
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
+              </View>
 
-      {/* =======================================================
-          BOTTOM TAB
-      ======================================================== */}
-      <AdminBottomTabBar
-        active="Profile"
-        navigation={navigation}
-      />
+              {/* ---------- Logout button (Matching Super Admin) ---------- */}
+              {!isEditing && (
+                <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
+                  <Text style={styles.logoutIcon}>🚪</Text>
+                  <Text style={styles.logoutText}>Log Out</Text>
+                </TouchableOpacity>
+              )}
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <AdminBottomTabBar navigation={navigation} active="Profile" />
     </SafeAreaView>
   );
 };

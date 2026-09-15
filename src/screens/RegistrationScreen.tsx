@@ -151,6 +151,125 @@ const local = StyleSheet.create({
     marginTop: 8,
     textAlign: 'right',
   },
+  /* Calendar Modal */
+  calModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  calCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  calHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    paddingHorizontal: 4,
+  },
+  calMonthYearText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  calNavBtnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  calNavBtn: {
+    paddingHorizontal: 7,
+    height: 28,
+    borderRadius: 6,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  calNavBtnText: {
+    fontSize: 11,
+    color: '#4B5563',
+    fontWeight: '700',
+  },
+  calWeekRow: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  calWeekDayCol: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  calWeekDayText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  calDaysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  calDayCell: {
+    width: `${100 / 7}%`,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    marginVertical: 2,
+  },
+  calDayCellSelected: {
+    backgroundColor: '#3B5BFF',
+  },
+  calDayText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  calDayTextDimmed: {
+    color: '#D1D5DB',
+    fontWeight: '400',
+  },
+  calDayTextToday: {
+    color: '#3B5BFF',
+    fontWeight: '800',
+  },
+  calDayTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  calFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+    paddingHorizontal: 4,
+  },
+  calFooterBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+  },
+  calClearText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  calTodayText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#3B5BFF',
+  },
 });
 
 const emptyForm = {
@@ -181,6 +300,29 @@ const toApiDate = (dob: string): string | null => {
   return `${yyyy}-${mm}-${dd}`;
 };
 
+const CAL_MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const getDaysInMonth = (year: number, month: number) => {
+  return new Date(year, month + 1, 0).getDate();
+};
+
+const getFirstDayOfMonth = (year: number, month: number) => {
+  return new Date(year, month, 1).getDay(); // 0 = Sunday
+};
+
 const RegistrationScreen = ({ navigation }: any) => {
   const { registerInvestor } = useAppData();
   const [step, setStep] = useState(1);
@@ -208,12 +350,134 @@ const RegistrationScreen = ({ navigation }: any) => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
+  // Date of Birth Calendar Picker Modal state
+  const [dobPickerVisible, setDobPickerVisible] = useState(false);
+  const [calViewYear, setCalViewYear] = useState(() => 2000);
+  const [calViewMonth, setCalViewMonth] = useState(0);
+
   const [agreed, setAgreed] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   const [submittedModalVisible, setSubmittedModalVisible] = useState(false);
+
+  // Sync calendar picker month/year when modal opens
+  useEffect(() => {
+    if (dobPickerVisible) {
+      if (form.dob && form.dob.trim()) {
+        const match = form.dob.trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+        if (match) {
+          const [, , mm, yyyy] = match;
+          const y = parseInt(yyyy, 10);
+          const m = parseInt(mm, 10) - 1;
+          if (!isNaN(y) && !isNaN(m) && m >= 0 && m <= 11) {
+            setCalViewYear(y);
+            setCalViewMonth(m);
+            return;
+          }
+        }
+      }
+      const defaultYear = new Date().getFullYear() - 20;
+      setCalViewYear(defaultYear);
+      setCalViewMonth(0);
+    }
+  }, [dobPickerVisible, form.dob]);
+
+  const todayIso = useMemo(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${d}-${m}-${y}`;
+  }, []);
+
+  const selectedDob = useMemo(() => {
+    return form.dob ? form.dob.trim() : '';
+  }, [form.dob]);
+
+  const calendarGridDays = useMemo(() => {
+    const daysInMonth = getDaysInMonth(calViewYear, calViewMonth);
+    const firstDayIndex = getFirstDayOfMonth(calViewYear, calViewMonth); // 0 = Sunday
+
+    const prevMonthDays =
+      calViewMonth === 0
+        ? getDaysInMonth(calViewYear - 1, 11)
+        : getDaysInMonth(calViewYear, calViewMonth - 1);
+
+    const cells: {
+      day: number;
+      month: number;
+      year: number;
+      isCurrentMonth: boolean;
+      formatted: string;
+    }[] = [];
+
+    // Prev month trailing days
+    for (let i = firstDayIndex - 1; i >= 0; i--) {
+      const d = prevMonthDays - i;
+      const m = calViewMonth === 0 ? 11 : calViewMonth - 1;
+      const y = calViewMonth === 0 ? calViewYear - 1 : calViewYear;
+      const formatted = `${String(d).padStart(2, '0')}-${String(m + 1).padStart(2, '0')}-${y}`;
+      cells.push({ day: d, month: m, year: y, isCurrentMonth: false, formatted });
+    }
+
+    // Current month days
+    for (let d = 1; d <= daysInMonth; d++) {
+      const m = calViewMonth;
+      const formatted = `${String(d).padStart(2, '0')}-${String(m + 1).padStart(2, '0')}-${calViewYear}`;
+      cells.push({ day: d, month: m, year: calViewYear, isCurrentMonth: true, formatted });
+    }
+
+    // Next month leading days to complete grid to multiple of 7
+    const remaining = (7 - (cells.length % 7)) % 7;
+    for (let d = 1; d <= remaining; d++) {
+      const m = calViewMonth === 11 ? 0 : calViewMonth + 1;
+      const y = calViewMonth === 11 ? calViewYear + 1 : calViewYear;
+      const formatted = `${String(d).padStart(2, '0')}-${String(m + 1).padStart(2, '0')}-${y}`;
+      cells.push({ day: d, month: m, year: y, isCurrentMonth: false, formatted });
+    }
+
+    return cells;
+  }, [calViewYear, calViewMonth]);
+
+  const handlePrevMonth = () => {
+    if (calViewMonth === 0) {
+      setCalViewYear(prev => prev - 1);
+      setCalViewMonth(11);
+    } else {
+      setCalViewMonth(prev => prev - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (calViewMonth === 11) {
+      setCalViewYear(prev => prev + 1);
+      setCalViewMonth(0);
+    } else {
+      setCalViewMonth(prev => prev + 1);
+    }
+  };
+
+  const handlePrevYear = () => {
+    setCalViewYear(prev => prev - 1);
+  };
+
+  const handleNextYear = () => {
+    setCalViewYear(prev => prev + 1);
+  };
+
+  const handleSelectCalendarDate = (formattedDate: string) => {
+    update('dob', formattedDate);
+    setFieldErrors(prev => {
+      if (!prev.dob) return prev;
+      const next = { ...prev };
+      delete next.dob;
+      return next;
+    });
+    setErrorMessage(null);
+    setDobPickerVisible(false);
+  };
 
   const update = (key: keyof typeof form, value: any) =>
     setForm(prev => ({ ...prev, [key]: value }));
@@ -984,7 +1248,11 @@ const RegistrationScreen = ({ navigation }: any) => {
                 onChangeText={handleDobChange}
                 onBlur={handleDobBlur}
               />
-              <Icon name="calendar-month-outline" size={18} color="#9CA3AF" />
+              <TouchableOpacity
+                onPress={() => setDobPickerVisible(true)}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Icon name="calendar-month-outline" size={20} color="#3B5BFF" />
+              </TouchableOpacity>
             </View>
             {fieldErrors.dob ? (
               <Text style={local.fieldError}>{fieldErrors.dob}</Text>
@@ -1374,6 +1642,112 @@ const RegistrationScreen = ({ navigation }: any) => {
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* ======================================================
+          DATE OF BIRTH CALENDAR PICKER MODAL
+          ====================================================== */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={dobPickerVisible}
+        onRequestClose={() => setDobPickerVisible(false)}>
+        <TouchableOpacity
+          style={local.calModalOverlay}
+          activeOpacity={1}
+          onPress={() => setDobPickerVisible(false)}>
+          <TouchableOpacity
+            activeOpacity={1}
+            style={local.calCard}
+            onPress={e => e.stopPropagation()}>
+            {/* Header: Month & Year + Controls */}
+            <View style={local.calHeader}>
+              <Text style={local.calMonthYearText}>
+                {CAL_MONTH_NAMES[calViewMonth]}, {calViewYear}
+              </Text>
+              <View style={local.calNavBtnRow}>
+                <TouchableOpacity
+                  style={local.calNavBtn}
+                  onPress={handlePrevYear}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Text style={local.calNavBtnText}>« Yr</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={local.calNavBtn}
+                  onPress={handlePrevMonth}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Text style={local.calNavBtnText}>▲</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={local.calNavBtn}
+                  onPress={handleNextMonth}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Text style={local.calNavBtnText}>▼</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={local.calNavBtn}
+                  onPress={handleNextYear}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
+                  <Text style={local.calNavBtnText}>Yr »</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Weekday Headers */}
+            <View style={local.calWeekRow}>
+              {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => (
+                <View key={day} style={local.calWeekDayCol}>
+                  <Text style={local.calWeekDayText}>{day}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Days Grid */}
+            <View style={local.calDaysGrid}>
+              {calendarGridDays.map((cell, idx) => {
+                const isSelected = cell.formatted === selectedDob;
+                const isToday = cell.formatted === todayIso;
+
+                return (
+                  <TouchableOpacity
+                    key={`${cell.formatted}-${idx}`}
+                    style={[
+                      local.calDayCell,
+                      isSelected && local.calDayCellSelected,
+                    ]}
+                    onPress={() => handleSelectCalendarDate(cell.formatted)}>
+                    <Text
+                      style={[
+                        local.calDayText,
+                        !cell.isCurrentMonth && local.calDayTextDimmed,
+                        isToday && !isSelected && local.calDayTextToday,
+                        isSelected && local.calDayTextSelected,
+                      ]}>
+                      {cell.day}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Footer Actions */}
+            <View style={local.calFooter}>
+              <TouchableOpacity
+                style={local.calFooterBtn}
+                onPress={() => {
+                  update('dob', '');
+                  setDobPickerVisible(false);
+                }}>
+                <Text style={local.calClearText}>Clear</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={local.calFooterBtn}
+                onPress={() => handleSelectCalendarDate(todayIso)}>
+                <Text style={local.calTodayText}>Today</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );

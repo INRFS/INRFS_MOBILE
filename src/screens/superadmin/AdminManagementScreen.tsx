@@ -15,6 +15,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import AppHeader from '../../components/AppHeader';
 import SuperAdminBottomTabBar from './components/SuperAdminBottomTabBar';
 import {styles} from '../../styles/superadmin/AdminManagementScreen.styles';
+import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import {validation} from '../../utils/validation';
 import {
   getAdmins,
@@ -48,6 +49,7 @@ const AdminManagementScreen = ({navigation}: any) => {
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState<number | null>(null);
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [addErrors, setAddErrors] = useState<Record<string, string>>({});
 
@@ -169,6 +171,7 @@ const AdminManagementScreen = ({navigation}: any) => {
       setEmail('');
       setMobile('');
       setPassword('');
+      setShowPassword(false);
       setSelectedBranchId(null);
       setSelectedRoleId(null);
       setAddModalVisible(false);
@@ -304,6 +307,7 @@ const AdminManagementScreen = ({navigation}: any) => {
           activeOpacity={0.85}
           onPress={() => {
             setAddErrors({});
+            setShowPassword(false);
             setAddModalVisible(true);
           }}>
           <Text style={styles.addBtnText}>+ Add</Text>
@@ -613,17 +617,29 @@ const AdminManagementScreen = ({navigation}: any) => {
               ) : null}
 
               <Text style={styles.inputLabel}>Password *</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Minimum 8 characters"
-                placeholderTextColor="#94A3B8"
-                secureTextEntry
-                value={password}
-                onChangeText={t => {
-                  setPassword(t);
-                  if (addErrors.password) setAddErrors(prev => ({...prev, password: ''}));
-                }}
-              />
+              <View style={styles.passwordInputWrapper}>
+                <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Minimum 8 characters"
+                  placeholderTextColor="#94A3B8"
+                  secureTextEntry={!showPassword}
+                  value={password}
+                  onChangeText={t => {
+                    setPassword(t);
+                    if (addErrors.password) setAddErrors(prev => ({...prev, password: ''}));
+                  }}
+                />
+                <TouchableOpacity
+                  style={styles.eyeBtn}
+                  onPress={() => setShowPassword(prev => !prev)}
+                  hitSlop={{top: 10, bottom: 10, left: 10, right: 10}}>
+                  <Icon
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={20}
+                    color="#64748B"
+                  />
+                </TouchableOpacity>
+              </View>
               {addErrors.password ? (
                 <Text style={styles.fieldError}>{addErrors.password}</Text>
               ) : null}
